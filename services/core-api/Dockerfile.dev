@@ -1,0 +1,28 @@
+FROM node:22-slim AS base
+
+# Stage 1: Install dependencies
+FROM base AS installer
+WORKDIR /app
+
+# Copy workspace root files
+COPY package*.json ./
+
+# Copy core-api package files
+COPY services/core-api/package*.json ./services/core-api/
+
+# Install all dependencies
+RUN npm install --workspace=core-api
+
+# Copy all source code
+COPY services/core-api ./services/core-api
+
+# Stage 2: Runner
+FROM base AS runner
+WORKDIR /home/node
+USER node
+COPY --from=installer --chown=node:node /app/ .
+
+WORKDIR /home/node/services/core-api
+EXPOSE 3001
+
+CMD ["npm", "run", "dev"]

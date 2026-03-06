@@ -1,0 +1,111 @@
+version: '3.8'
+
+services:
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: vouch-nginx
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./services/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./services/nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      - core-api
+      - credit-score-api
+    networks:
+      - vouch-network
+    restart: unless-stopped
+
+  # Core Node.js API
+  core-api:
+    build:
+      context: .
+      dockerfile: services/core-api/Dockerfile.dev
+    container_name: vouch-core-api
+    environment:
+      - NODE_ENV=development
+      - CORE_API_PORT=3001
+      - ML_API_URL=http://credit-score-api:8000
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - RPC_URL_MAINNET=${RPC_URL_MAINNET}
+    ports:
+      - '3001:3001'
+    networks:
+      - vouch-network
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3001/api/v1/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Python ML Credit Score Service
+  credit-score-api:
+    build:
+      context: ./services/credit-score
+      dockerfile: Dockerfile.dev
+    container_name: vouch-credit-score
+    environment:
+      - MODEL_PATH=/app/models
+      - RPC_URL_MAINNET=${RPC_URL_MAINNET}
+      - ETHERSCAN_API_KEY=${ETHERSCAN_API_KEY}
+    ports:
+      - '8000:8000'
+    volumes:
+      - ./services/credit-score/models:/app/models
+    networks:
+      - vouch-network
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8000/api/ml/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Python Liquidation Bot
+  liquidation-bot:
+    build:
+      context: ./services/liquidation-bot
+      dockerfile: Dockerfile.dev
+    container_name: vouch-liquidation-bot
+    environment:
+      - RPC_URL_MAINNET=${RPC_URL_MAINNET}
+      - PRIVATE_KEY=${PRIVATE_KEY}
+      - LENDING_POOL_ADDRESS=${LENDING_POOL_ADDRESS}
+      - CHECK_INTERVAL_SECONDS=60
+    volumes:
+      - ./services/liquidation-bot/logs:/app/logs
+    networks:
+      - vouch-network
+    restart: unless-stopped
+    depends_on:
+      - core-api
+
+  # SvelteKit Frontend
+  client:
+    build:
+      context: .
+      dockerfile: services/client/Dockerfile.dev
+    container_name: vouch-frontend
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://core-api:3001
+    ports:
+      - '3000:3000'
+    networks:
+      - vouch-network
+    restart: unless-stopped
+    depends_on:
+      - core-api
+
+networks:
+  vouch-network:
+    driver: bridge
+
+volumes:
+  models:
+  logs:

@@ -1,0 +1,31 @@
+FROM node:22-slim AS base
+
+# Stage 1: Install dependencies
+FROM base AS installer
+WORKDIR /app
+
+# Copy workspace root files
+COPY package*.json ./
+
+# Copy client package files
+COPY services/client/package*.json ./services/client/
+
+# Install all dependencies with proper handling of optional dependencies
+# Remove package-lock to avoid npm optional dependency bug
+RUN rm -f package-lock.json services/client/package-lock.json && \
+    npm install --workspace=client --force && \
+    npm rebuild --workspace=client
+
+# Copy all source code
+COPY services/client ./services/client
+
+# Stage 2: Runner
+FROM base AS runner
+WORKDIR /home/node
+USER node
+COPY --from=installer --chown=node:node /app/ .
+
+WORKDIR /home/node/services/client
+EXPOSE 3000
+
+CMD ["npm", "run", "dev"]

@@ -1,0 +1,40 @@
+FROM node:22-slim AS base
+
+# Stage 1: Install dependencies and build
+FROM base AS builder
+WORKDIR /app
+
+# Copy workspace root files
+COPY package*.json ./
+
+# Copy core-api package files
+COPY services/core-api/package*.json ./services/core-api/
+
+# Install all dependencies
+RUN npm ci --workspace=core-api
+
+# Copy source code
+COPY services/core-api ./services/core-api
+
+# Build the application
+RUN npm run build --workspace=core-api
+
+# Stage 2: Production dependencies
+FROM base AS prod-deps
+WORKDIR /app
+COPY package*.json ./
+COPY services/core-api/package*.json ./services/core-api/
+RUN npm ci --workspace=core-api --omit=dev
+
+# Stage 3: Runner
+FROM base AS runner
+WORKDIR /home/node
+USER node
+COPY --from=builder --chown=node:node /app/services/core-api/dist ./dist
+COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
+COPY --from=prod-deps --chown=node:node /app/services/core-api/node_modules ./services/core-api/node_modules
+COPY --from=builder --chown=node:node /app/services/core-api/package*.json ./
+
+EXPOSE 3001
+
+CMD ["npm", "start"]

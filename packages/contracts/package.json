@@ -1,0 +1,24 @@
+{
+  "name": "@vouch/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Smart contracts for Vouch P2P lending platform",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy": "hardhat run scripts/deploy.ts",
+    "deploy:sepolia": "hardhat run scripts/deploy.ts --network sepolia",
+    "verify": "hardhat verify",
+    "clean": "hardhat clean"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "@typechain/hardhat": "^9.1.0",
+    "hardhat": "^2.28.6",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.1",
+    "dotenv": "^16.4.1"
+  }
+}
