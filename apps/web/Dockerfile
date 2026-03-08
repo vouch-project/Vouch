@@ -13,7 +13,7 @@ COPY apps/web/ apps/web/
 COPY packages/config/ packages/config/
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm turbo run build --filter=web
+RUN pnpm turbo run build --filter=@vouch/web
 
 # ── Production Stage ─────────────────────────
 FROM node:20-alpine AS runner
@@ -25,6 +25,6 @@ COPY --from=builder /app/apps/web/package.json ./
 COPY --from=builder /app/node_modules ./node_modules
 
 ENV NODE_ENV=production
-EXPOSE 5173
+EXPOSE 3000
 
 CMD ["node", "build"]

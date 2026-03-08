@@ -54,6 +54,7 @@ supabase/.env
 # Docker
 # ========================
 docker-compose.override.yml
+certs/
 
 # ========================
 # IDE & OS
