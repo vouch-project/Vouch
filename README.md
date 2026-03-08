@@ -8,88 +8,92 @@ Vouch is a peer-to-peer crypto lending protocol that enables under-collateralize
 vouch/
 ├── apps/
 │   ├── web/            # SvelteKit frontend
-│   ├── api/            # NestJS core backend service
-│   ├── ml-engine/      # Credit Scoring ML Engine (Python / FastAPI)
-│   └── keeper/         # Protocol Keeper / Liquidation Bot (Python)
+│   ├── api/            # NestJS backend API
+│   ├── ml-engine/      # Credit scoring ML engine (Python / FastAPI)
+│   └── keeper/         # Liquidation bot (Python)
 ├── packages/
 │   ├── contracts/      # Solidity smart contracts (Hardhat)
 │   └── config/         # Shared ESLint, Prettier & TypeScript configs
-├── docker-compose.yml  # Local dev environment
+├── supabase/           # Supabase config & migrations
+├── docker-compose.yml  # Production container orchestration
+├── nginx.conf          # Nginx reverse proxy config
 └── turbo.json          # Turborepo pipeline config
 ```
 
+## Tech Stack
+
+| Layer           | Technology                         |
+| --------------- | ---------------------------------- |
+| Frontend        | SvelteKit, TypeScript              |
+| Backend API     | NestJS, TypeScript                 |
+| Database        | Supabase (Postgres, Auth, Storage) |
+| Smart Contracts | Solidity, Hardhat                  |
+| ML Engine       | Python, FastAPI, scikit-learn      |
+| Keeper Bot      | Python, web3.py                    |
+| Monorepo        | Turborepo, pnpm workspaces         |
+| Deployment      | Docker Compose, Nginx              |
+
 ## Prerequisites
 
-| Tool                    | Version |
-| ----------------------- | ------- |
-| Node.js                 | ≥ 18    |
-| pnpm                    | ≥ 9     |
-| Python                  | ≥ 3.11  |
-| Docker & Docker Compose | Latest  |
+| Tool                    | Version                                      |
+| ----------------------- | -------------------------------------------- |
+| Node.js                 | ≥ 20                                         |
+| pnpm                    | ≥ 9                                          |
+| Docker & Docker Compose | Latest                                       |
+| Python                  | ≥ 3.11 _(optional — for ML Engine & Keeper)_ |
 
-## Getting Started
-
-### 1. Install Dependencies
+## Quick Start
 
 ```bash
-# Install Node.js / TypeScript dependencies across all workspaces
+# 1. Install dependencies
 pnpm install
 
-# Install Python dependencies for ML Engine
-cd apps/ml-engine && python -m venv .venv && source .venv/bin/activate && pip install -e . && cd ../..
+# 2. Start Supabase (Postgres, Auth, Storage, Studio)
+npx supabase start
 
-# Install Python dependencies for Keeper
-cd apps/keeper && python -m venv .venv && source .venv/bin/activate && pip install -e . && cd ../..
+# 3. Set up environment variables (first time only)
+cp .env.example .env
+# Fill in the keys printed by `supabase start`
+
+# 4. Start web + API in dev mode
+pnpm dev
 ```
 
-### 2. Start Local Environment with Docker
+| Service         | URL                    |
+| --------------- | ---------------------- |
+| Web (SvelteKit) | http://localhost:5173  |
+| API (NestJS)    | http://localhost:3000  |
+| Supabase Studio | http://localhost:54323 |
+
+For detailed instructions on running all services, see [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md).
+
+## Scripts
 
 ```bash
-# Start all services (PostgreSQL, Hardhat node, API, Web, ML Engine, Keeper)
-docker-compose up
-
-# Or start only infrastructure (database + chain)
-docker-compose up postgres hardhat-node
+pnpm dev        # Start all JS/TS apps in dev mode
+pnpm build      # Build all workspaces
+pnpm lint       # Lint all workspaces
+pnpm test       # Run all tests
 ```
 
-### 3. Run in Development Mode
-
-```bash
-# Run all JS/TS apps in dev mode via Turborepo
-pnpm turbo run dev
-
-# Run a specific app
-pnpm turbo run dev --filter=web
-pnpm turbo run dev --filter=api
-```
-
-### 4. Build & Test
-
-```bash
-# Build all workspaces
-pnpm turbo run build
-
-# Run all tests
-pnpm turbo run test
-
-# Lint all workspaces
-pnpm turbo run lint
-```
-
-### 5. Smart Contracts
+## Smart Contracts
 
 ```bash
 cd packages/contracts
-
-# Compile contracts
-npx hardhat compile
-
-# Run tests
-npx hardhat test
-
-# Start a local Hardhat node
-npx hardhat node
+npx hardhat compile     # Compile contracts
+npx hardhat test        # Run tests
+npx hardhat node        # Start local chain
 ```
+
+## Deployment
+
+Production runs via Docker Compose behind Nginx on a Linux VM:
+
+```bash
+docker compose up -d --build
+```
+
+See [docker-compose.yml](docker-compose.yml) and [nginx.conf](nginx.conf) for the full setup.
 
 ## License
 
