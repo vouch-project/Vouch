@@ -1,0 +1,76 @@
+# ========================
+# Node.js / pnpm / Turborepo
+# ========================
+node_modules/
+.turbo/
+dist/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+
+# ========================
+# SvelteKit
+# ========================
+.svelte-kit/
+build/
+
+# ========================
+# NestJS
+# ========================
+dist/
+
+# ========================
+# Hardhat / Solidity
+# ========================
+artifacts/
+cache/
+typechain-types/
+coverage/
+coverage.json
+
+# ========================
+# Python
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+*.egg
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# ========================
+# Supabase
+# ========================
+supabase/.temp/
+supabase/.env
+
+# ========================
+# Docker
+# ========================
+docker-compose.override.yml
+
+# ========================
+# IDE & OS
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ========================
+# Logs
+# ========================
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*

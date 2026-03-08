@@ -1,0 +1,77 @@
+services:
+  # ─────────────────────────────────────────────
+  # Reverse Proxy
+  # ─────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/ssl:ro
+    depends_on:
+      - web
+      - api
+      - ml-engine
+
+  # ─────────────────────────────────────────────
+  # Infrastructure
+  # ─────────────────────────────────────────────
+  hardhat-node:
+    image: node:20-alpine
+    restart: unless-stopped
+    working_dir: /app
+    command: npx hardhat node --hostname 0.0.0.0
+    ports:
+      - '8545:8545'
+    volumes:
+      - ./packages/contracts:/app
+
+  # ─────────────────────────────────────────────
+  # Applications
+  # ─────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    expose:
+      - '3000'
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      RPC_URL: http://hardhat-node:8545
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    expose:
+      - '3000'
+    env_file: .env
+    environment:
+      NODE_ENV: production
+
+  ml-engine:
+    build:
+      context: .
+      dockerfile: apps/ml-engine/Dockerfile
+    restart: unless-stopped
+    expose:
+      - '8001'
+    env_file: .env
+
+  keeper:
+    build:
+      context: .
+      dockerfile: apps/keeper/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      RPC_URL: http://hardhat-node:8545
+    depends_on:
+      hardhat-node:
+        condition: service_started

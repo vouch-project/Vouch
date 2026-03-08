@@ -1,0 +1,69 @@
+# Vouch Monorepo Scaffold — Walkthrough
+
+## What Was Already Created
+
+Root tooling (`package.json`, `pnpm-workspace.yaml`, `turbo.json`, `README.md`, `docker-compose.yml`), Python apps (`apps/ml-engine`, `apps/keeper`), shared config package (`packages/config`), and Dockerfiles for `apps/web` and `apps/api`.
+
+## What Was Added
+
+### Root
+
+- [.gitignore](file:///Users/nadavbarak/Projects/Vouch/.gitignore) — comprehensive ignore for Node, Python, Hardhat, SvelteKit, Docker, IDE files
+
+---
+
+### `apps/web` — SvelteKit Frontend (manual scaffold)
+
+> [!NOTE]
+> The `sv create` CLI requires Node 22+. We're on Node 20.10, so the SvelteKit project was manually scaffolded.
+
+| File                                                                                                | Purpose                                               |
+| --------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| [package.json](file:///Users/nadavbarak/Projects/Vouch/apps/web/package.json)                       | Svelte 5, SvelteKit 2, Vite 6, svelte-check           |
+| [svelte.config.js](file:///Users/nadavbarak/Projects/Vouch/apps/web/svelte.config.js)               | Auto adapter + Vite preprocessing                     |
+| [vite.config.ts](file:///Users/nadavbarak/Projects/Vouch/apps/web/vite.config.ts)                   | SvelteKit Vite plugin                                 |
+| [tsconfig.json](file:///Users/nadavbarak/Projects/Vouch/apps/web/tsconfig.json)                     | Strict TS config extending SvelteKit generated config |
+| [src/app.html](file:///Users/nadavbarak/Projects/Vouch/apps/web/src/app.html)                       | App shell HTML template                               |
+| [src/routes/+page.svelte](file:///Users/nadavbarak/Projects/Vouch/apps/web/src/routes/+page.svelte) | Minimal index route                                   |
+| [src/app.d.ts](file:///Users/nadavbarak/Projects/Vouch/apps/web/src/app.d.ts)                       | App type declarations                                 |
+
+---
+
+### `apps/api` — NestJS Backend (CLI scaffold)
+
+Scaffolded via `npx @nestjs/cli new api --skip-git --package-manager pnpm --strict`.
+
+| File                                                                                            | Purpose                       |
+| ----------------------------------------------------------------------------------------------- | ----------------------------- |
+| [package.json](file:///Users/nadavbarak/Projects/Vouch/apps/api/package.json)                   | NestJS deps, jest test config |
+| [src/main.ts](file:///Users/nadavbarak/Projects/Vouch/apps/api/src/main.ts)                     | NestJS bootstrap              |
+| [src/app.module.ts](file:///Users/nadavbarak/Projects/Vouch/apps/api/src/app.module.ts)         | Root module                   |
+| [src/app.controller.ts](file:///Users/nadavbarak/Projects/Vouch/apps/api/src/app.controller.ts) | Sample controller             |
+| [src/app.service.ts](file:///Users/nadavbarak/Projects/Vouch/apps/api/src/app.service.ts)       | Sample service                |
+
+---
+
+### `packages/contracts` — Hardhat / Solidity (manual scaffold)
+
+> [!NOTE]
+> Hardhat v3 also requires Node 22+. Used Hardhat v2 (`^2.22.0`) with `@nomicfoundation/hardhat-toolbox`.
+
+| File                                                                                                            | Purpose                                |
+| --------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| [package.json](file:///Users/nadavbarak/Projects/Vouch/packages/contracts/package.json)                         | Hardhat v2 + toolbox                   |
+| [hardhat.config.ts](file:///Users/nadavbarak/Projects/Vouch/packages/contracts/hardhat.config.ts)               | Solidity 0.8.24 config                 |
+| [contracts/VouchVault.sol](file:///Users/nadavbarak/Projects/Vouch/packages/contracts/contracts/VouchVault.sol) | Sample deposit/withdraw vault contract |
+| [test/VouchVault.test.ts](file:///Users/nadavbarak/Projects/Vouch/packages/contracts/test/VouchVault.test.ts)   | Tests for deposit & withdraw           |
+| [scripts/deploy.ts](file:///Users/nadavbarak/Projects/Vouch/packages/contracts/scripts/deploy.ts)               | Deploy script                          |
+
+---
+
+## Verification Results
+
+| Check                            | Result                                                                                     |
+| -------------------------------- | ------------------------------------------------------------------------------------------ |
+| `pnpm install`                   | ✅ 1065 packages installed cleanly                                                         |
+| `pnpm turbo run build --dry-run` | ✅ 4 workspace packages resolved: `@vouch/web`, `@vouch/contracts`, `@vouch/config`, `api` |
+| `cd apps/api && pnpm build`      | ✅ NestJS compiles                                                                         |
+| `docker compose config`          | ✅ Parses OK (warning: `version` key is obsolete)                                          |
+| Directory tree                   | ✅ Matches plan                                                                            |
