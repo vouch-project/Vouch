@@ -13,7 +13,7 @@ COPY apps/api/ apps/api/
 COPY packages/config/ packages/config/
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm turbo run build --filter=api
+RUN pnpm turbo run build --filter=@vouch/api
 
 # ── Production Stage ─────────────────────────
 FROM node:20-alpine AS runner
