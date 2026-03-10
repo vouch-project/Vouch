@@ -7,7 +7,7 @@
  * therefore be executed client-side (e.g. inside onMount or event handlers).
  */
 import { browser } from '$app/environment';
-import { PUBLIC_REOWN_PROJECT_ID } from '$env/static/public';
+import { PUBLIC_REOWN_PROJECT_ID } from '$lib/env';
 import type { AppKit } from '@reown/appkit';
 import { createAppKit } from '@reown/appkit';
 import { EthersAdapter } from '@reown/appkit-adapter-ethers';
