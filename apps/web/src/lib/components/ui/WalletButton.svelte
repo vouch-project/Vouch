@@ -31,7 +31,7 @@
 
   const btnClass = $derived(
     [
-      'inline-flex items-center gap-2 px-[1.125rem] py-2 border-[1.5px] rounded-[0.625rem] bg-white text-sm font-semibold cursor-pointer transition-all duration-150 whitespace-nowrap disabled:opacity-65 disabled:cursor-not-allowed',
+      'inline-flex items-center justify-center gap-2 min-w-[9rem] px-[1.125rem] py-2 border-[1.5px] rounded-[0.625rem] bg-white text-sm font-semibold cursor-pointer transition-all duration-150 whitespace-nowrap disabled:opacity-65 disabled:cursor-not-allowed',
       $walletIsConnected
         ? 'border-green-600 text-green-700 hover:bg-green-50 hover:border-green-700'
         : $walletIsLoading
