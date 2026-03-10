@@ -7,6 +7,7 @@
  * therefore be executed client-side (e.g. inside onMount or event handlers).
  */
 import { browser } from '$app/environment';
+import { PUBLIC_REOWN_PROJECT_ID } from '$env/static/public';
 import type { AppKit } from '@reown/appkit';
 import { createAppKit } from '@reown/appkit';
 import { EthersAdapter } from '@reown/appkit-adapter-ethers';
@@ -16,7 +17,7 @@ import { arbitrum, mainnet, polygon, sepolia } from '@reown/appkit/networks';
 // Configuration
 // ---------------------------------------------------------------------------
 
-const projectId = import.meta.env.VITE_REOWN_PROJECT_ID ?? '';
+const projectId = PUBLIC_REOWN_PROJECT_ID ?? '';
 
 /**
  * Networks the app supports, in priority order.
@@ -40,7 +41,7 @@ export function getAppKit(): AppKit | undefined {
 
   if (!projectId) {
     console.warn(
-      '[Vouch] VITE_REOWN_PROJECT_ID is not set – wallet features are disabled. ' +
+      '[Vouch] PUBLIC_REOWN_PROJECT_ID is not set – wallet features are disabled. ' +
         'Get a free project ID at https://cloud.reown.com',
     );
     return undefined;
