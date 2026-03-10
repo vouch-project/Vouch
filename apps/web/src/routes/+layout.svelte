@@ -9,6 +9,7 @@
   import Header from '$lib/components/layout/Header.svelte';
   import { initWalletSubscriptions } from '$lib/wallet/store';
   import { onMount } from 'svelte';
+  import '../app.css';
 
   let { children } = $props();
 
@@ -24,36 +25,6 @@
 
 <Header />
 
-<main>
+<main class="min-h-[calc(100vh-57px)] p-8 max-w-[1200px] mx-auto">
   {@render children()}
 </main>
-
-<style>
-  :global(*) {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
-
-  :global(body) {
-    font-family:
-      system-ui,
-      -apple-system,
-      'Segoe UI',
-      sans-serif;
-    background: #f9fafb;
-    color: #111827;
-    -webkit-font-smoothing: antialiased;
-  }
-
-  :global(a) {
-    color: inherit;
-  }
-
-  main {
-    min-height: calc(100vh - 57px);
-    padding: 2rem;
-    max-width: 1200px;
-    margin: 0 auto;
-  }
-</style>

@@ -1,8 +1,9 @@
 import { sveltekit } from '@sveltejs/kit/vite';
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  plugins: [sveltekit()],
+  plugins: [tailwindcss(), sveltekit()],
 
   // AppKit and its dependencies use browser-only APIs.  Bundling them for SSR
   // (noExternal) gives Vite full control over their ESM graph and avoids

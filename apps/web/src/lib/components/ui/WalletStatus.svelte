@@ -26,110 +26,38 @@
 </script>
 
 {#if $walletIsConnected}
-  <div class="wallet-status" role="region" aria-label="Connected wallet">
-    <div class="row">
-      <span class="label">Address</span>
+  <div
+    class="flex flex-col gap-[0.875rem] p-[1.125rem] border border-gray-200 rounded-[0.875rem] bg-white shadow-sm min-w-[220px]"
+    role="region"
+    aria-label="Connected wallet"
+  >
+    <div class="flex items-center justify-between gap-4">
+      <span class="text-[0.7rem] font-semibold uppercase tracking-[0.06em] text-gray-500">Address</span>
       <button
-        class="address-btn"
+        class="inline-flex items-center gap-[0.375rem] px-2 py-1 bg-gray-50 border border-gray-200 rounded-md cursor-pointer text-[0.8rem] text-gray-900 transition-colors duration-100 hover:bg-gray-100"
         onclick={copyAddress}
         title={copied ? 'Copied!' : 'Click to copy address'}
         aria-label={copied ? 'Address copied' : 'Copy wallet address'}
       >
-        <span class="monospace">{$shortAddress}</span>
-        <span class="copy-icon" aria-hidden="true">{copied ? '✓' : '⧉'}</span>
+        <span class="font-mono">{$shortAddress}</span>
+        <span class="text-xs text-gray-400" aria-hidden="true">{copied ? '✓' : '⧉'}</span>
       </button>
     </div>
 
     {#if $networkName}
-      <div class="row">
-        <span class="label">Network</span>
-        <span class="network-badge">{$networkName}</span>
+      <div class="flex items-center justify-between gap-4">
+        <span class="text-[0.7rem] font-semibold uppercase tracking-[0.06em] text-gray-500">Network</span>
+        <span class="text-xs font-semibold px-[0.625rem] py-1 rounded-full bg-blue-50 text-blue-700 tracking-[0.02em]"
+          >{$networkName}</span
+        >
       </div>
     {/if}
 
-    <button class="disconnect-btn" onclick={disconnect}> Disconnect </button>
+    <button
+      class="self-start px-[0.875rem] py-[0.4rem] border border-red-300 rounded-lg bg-transparent text-red-600 text-[0.8rem] font-semibold cursor-pointer transition-colors duration-100 hover:bg-red-50"
+      onclick={disconnect}
+    >
+      Disconnect
+    </button>
   </div>
 {/if}
-
-<style>
-  .wallet-status {
-    display: flex;
-    flex-direction: column;
-    gap: 0.875rem;
-    padding: 1.125rem;
-    border: 1px solid #e5e7eb;
-    border-radius: 0.875rem;
-    background: #fff;
-    box-shadow: 0 1px 3px rgb(0 0 0 / 0.06);
-    min-width: 220px;
-  }
-
-  .row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-
-  .label {
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #6b7280;
-  }
-
-  .address-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.5rem;
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
-    border-radius: 0.375rem;
-    cursor: pointer;
-    font-size: 0.8rem;
-    color: #111827;
-    transition: background 0.1s;
-  }
-
-  .address-btn:hover {
-    background: #f3f4f6;
-  }
-
-  .monospace {
-    font-family: ui-monospace, 'Cascadia Code', monospace;
-  }
-
-  .copy-icon {
-    font-size: 0.75rem;
-    color: #9ca3af;
-  }
-
-  .network-badge {
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 0.25rem 0.625rem;
-    border-radius: 9999px;
-    background: #eff6ff;
-    color: #1d4ed8;
-    letter-spacing: 0.02em;
-  }
-
-  .disconnect-btn {
-    align-self: flex-start;
-    padding: 0.4rem 0.875rem;
-    border: 1px solid #fca5a5;
-    border-radius: 0.5rem;
-    background: none;
-    color: #dc2626;
-    font-size: 0.8rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.1s;
-  }
-
-  .disconnect-btn:hover {
-    background: #fef2f2;
-  }
-</style>
