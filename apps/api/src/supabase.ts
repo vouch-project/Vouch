@@ -9,12 +9,10 @@ let client: SupabaseClient | null = null;
 export function getSupabaseClient(): SupabaseClient {
   if (!client) {
     const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const key = process.env.SUPABASE_SECRET_KEY;
 
     if (!url || !key) {
-      throw new Error(
-        'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars',
-      );
+      throw new Error('Missing SUPABASE_URL or SUPABASE_SECRET_KEY env vars');
     }
 
     client = createClient(url, key, {
