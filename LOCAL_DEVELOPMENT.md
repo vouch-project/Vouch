@@ -79,13 +79,13 @@ npx supabase stop
 
 Copy `.env.example` to `.env` and fill in:
 
-| Variable                    | Used By                | Description                    |
-| --------------------------- | ---------------------- | ------------------------------ |
-| `SUPABASE_URL`              | API                    | Supabase API endpoint          |
-| `SUPABASE_SERVICE_ROLE_KEY` | API                    | Server-side key (bypasses RLS) |
-| `VITE_SUPABASE_URL`         | Web                    | Client-side Supabase URL       |
-| `VITE_SUPABASE_ANON_KEY`    | Web                    | Client-side publishable key    |
-| `DATABASE_URL`              | API, ML Engine, Keeper | Direct Postgres connection     |
+| Variable                        | Used By                | Description                    |
+| ------------------------------- | ---------------------- | ------------------------------ |
+| `SUPABASE_URL`                  | API                    | Supabase API endpoint          |
+| `SUPABASE_SERVICE_ROLE_KEY`     | API                    | Server-side key (bypasses RLS) |
+| `VITE_SUPABASE_URL`             | Web                    | Client-side Supabase URL       |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Web                    | Client-side publishable key    |
+| `DATABASE_URL`                  | API, ML Engine, Keeper | Direct Postgres connection     |
 
 > **Note:** `VITE_` prefixed vars are exposed to the browser by Vite. Never put secrets in `VITE_` vars.
 

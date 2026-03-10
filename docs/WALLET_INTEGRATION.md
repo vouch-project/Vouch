@@ -215,11 +215,11 @@ import { mainnet, sepolia, polygon, arbitrum, base } from '@reown/appkit/network
 
 ## Environment variables
 
-| Variable                 | Required | Description                               |
-| ------------------------ | -------- | ----------------------------------------- |
-| `VITE_REOWN_PROJECT_ID`  | **Yes**  | Project ID from <https://cloud.reown.com> |
-| `VITE_SUPABASE_URL`      | Yes      | Supabase project URL                      |
-| `VITE_SUPABASE_ANON_KEY` | Yes      | Supabase anon key                         |
+| Variable                        | Required | Description                               |
+| ------------------------------- | -------- | ----------------------------------------- |
+| `VITE_REOWN_PROJECT_ID`         | **Yes**  | Project ID from <https://cloud.reown.com> |
+| `VITE_SUPABASE_URL`             | Yes      | Supabase project URL                      |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Yes      | Supabase publishable key                  |
 
 All `VITE_*` variables are exposed to the browser bundle. Do **not** put
 server secrets in these variables.
