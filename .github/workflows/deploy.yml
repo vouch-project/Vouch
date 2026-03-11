@@ -31,7 +31,7 @@ jobs:
           echo "${{ vars.ENV_VARS }}" > .env
           echo "${{ secrets.ENV_SECRETS }}" >> .env
 
-      - name: Pull latest images & rebuild
+      - name: Pull latest images
         run: docker compose pull
 
       - name: Build & start services
