@@ -13,8 +13,16 @@ jobs:
   deploy:
     name: Deploy to Cloud
     runs-on: self-hosted
+    if: github.ref == 'refs/heads/main'
 
     steps:
+      - name: Install Docker if not present
+        run: |
+          if ! command -v docker &> /dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y docker.io docker-compose-plugin
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 
