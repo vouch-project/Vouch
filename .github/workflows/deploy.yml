@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Pull latest images & rebuild
-        run: docker compose pull --ignore-pull-failures
+        run: docker compose pull
 
       - name: Build & start services
         run: docker compose up --build --detach --remove-orphans
