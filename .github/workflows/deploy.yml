@@ -26,6 +26,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Write .env file
+        run: |
+          echo "${{ vars.ENV_VARS }}" > .env
+          echo "${{ secrets.ENV_SECRETS }}" >> .env
+
       - name: Pull latest images & rebuild
         run: docker compose pull
 
