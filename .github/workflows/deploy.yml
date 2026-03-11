@@ -1,0 +1,28 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Cloud
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pull latest images & rebuild
+        run: docker compose pull --ignore-pull-failures
+
+      - name: Build & start services
+        run: docker compose up --build --detach --remove-orphans
+
+      - name: Remove dangling images
+        run: docker image prune --force
