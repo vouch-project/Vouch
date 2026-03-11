@@ -24,5 +24,5 @@ jobs:
       - name: Build & start services
         run: docker compose up --build --detach --remove-orphans
 
-      - name: Remove dangling images
-        run: docker image prune --force
+      - name: Remove old dangling images
+        run: docker image prune --force --filter "until=168h"
