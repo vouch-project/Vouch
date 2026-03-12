@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import WalletButton from '$lib/components/ui/WalletButton.svelte';
   import WalletStatus from '$lib/components/ui/WalletStatus.svelte';
+  import { navLinksMap } from '$lib/navLinks';
   import { walletIsConnected } from '$lib/wallet/store';
 </script>
 
@@ -21,8 +23,9 @@
   <div class="flex items-center justify-center gap-4 flex-wrap mb-7">
     <WalletButton />
     {#if $walletIsConnected}
-      <a href="/dashboard" class="text-[0.9rem] font-semibold text-indigo-600 no-underline hover:underline"
-        >Go to Dashboard →</a
+      <a
+        href={resolve(navLinksMap.Dashboard)}
+        class="text-[0.9rem] font-semibold text-indigo-600 no-underline hover:underline">Go to Dashboard →</a
       >
     {/if}
   </div>

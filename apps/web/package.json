@@ -21,8 +21,10 @@
     "globals": "^16.0.0",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
+    "svelte-eslint-parser": "^1.6.0",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.0.0",
+    "typescript-eslint": "^8.56.1",
     "vite": "^6.0.0"
   },
   "type": "module",

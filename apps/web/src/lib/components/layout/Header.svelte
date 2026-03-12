@@ -1,20 +1,16 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import WalletButton from '$lib/components/ui/WalletButton.svelte';
 
   let menuOpen = $state(false);
 
-  const navLinks = [
-    { href: '/', label: 'Home' },
-    { href: '/dashboard', label: 'Dashboard' },
-    { href: '/borrow', label: 'Borrow' },
-    { href: '/lend', label: 'Lend' },
-  ];
+  import { navLinks, navLinksMap } from '$lib/navLinks';
 </script>
 
 <header class="border-b border-gray-200 bg-white sticky top-0 z-50">
   <div class="flex items-center py-[0.875rem] px-8">
     <a
-      href="/"
+      href={resolve(navLinksMap.Home)}
       class="group inline-flex items-center gap-2 no-underline text-gray-900 flex-1"
       aria-label="Vouch – home"
     >
@@ -27,9 +23,9 @@
 
     <!-- Desktop nav -->
     <nav class="hidden sm:flex gap-7" aria-label="Main navigation">
-      {#each navLinks as link}
+      {#each navLinks as link (link.href)}
         <a
-          href={link.href}
+          href={resolve(link.href)}
           class="no-underline text-gray-500 text-sm font-medium transition-colors duration-[120ms] hover:text-gray-900"
         >
           {link.label}
@@ -84,9 +80,9 @@
   <!-- Mobile dropdown -->
   {#if menuOpen}
     <nav class="sm:hidden flex flex-col border-t border-gray-100 px-8 py-3 gap-1" aria-label="Mobile navigation">
-      {#each navLinks as link}
+      {#each navLinks as link (link.href)}
         <a
-          href={link.href}
+          href={resolve(link.href)}
           class="no-underline text-gray-600 text-sm font-medium py-2 hover:text-gray-900 transition-colors"
           onclick={() => (menuOpen = false)}
         >
