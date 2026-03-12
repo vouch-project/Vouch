@@ -6,12 +6,12 @@
  * calling code that interacts with the modal (open, disconnect, etc.) must
  * therefore be executed client-side (e.g. inside onMount or event handlers).
  */
-import { browser } from '$app/environment';
+import { browser, dev } from '$app/environment';
 import { PUBLIC_REOWN_PROJECT_ID } from '$lib/env';
 import type { AppKit } from '@reown/appkit';
 import { createAppKit } from '@reown/appkit';
 import { EthersAdapter } from '@reown/appkit-adapter-ethers';
-import { arbitrum, mainnet, polygon, sepolia } from '@reown/appkit/networks';
+import { arbitrum, localhost, mainnet, polygon, sepolia } from '@reown/appkit/networks';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -24,7 +24,10 @@ const projectId = PUBLIC_REOWN_PROJECT_ID ?? '';
  * LocalHost (chain 31337) is added when running in development mode so that
  * testers can connect to the local Hardhat node started by docker-compose.
  */
-export const SUPPORTED_NETWORKS = [mainnet, sepolia, polygon, arbitrum] as const;
+export const SUPPORTED_NETWORKS: Parameters<typeof createAppKit>[0]['networks'] = dev
+  ? [localhost, mainnet, sepolia, polygon, arbitrum]
+  : [mainnet, sepolia, polygon, arbitrum];
+export const DEFAULT_NETWORK = dev ? localhost : mainnet;
 
 // ---------------------------------------------------------------------------
 // Singleton modal instance
@@ -52,8 +55,8 @@ export function getAppKit(): AppKit | undefined {
   _modal = createAppKit({
     adapters: [new EthersAdapter()],
     projectId,
-    networks: [mainnet, sepolia, polygon, arbitrum],
-    defaultNetwork: mainnet,
+    networks: SUPPORTED_NETWORKS,
+    defaultNetwork: DEFAULT_NETWORK,
     metadata: {
       name: 'Vouch',
       description: 'Decentralized P2P Crypto Lending',
