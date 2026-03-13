@@ -112,12 +112,15 @@ warning — no crash.
 
 ### Networks
 
-| Network          | Chain ID |
-| ---------------- | -------- |
-| Ethereum Mainnet | 1        |
-| Sepolia testnet  | 11155111 |
-| Polygon          | 137      |
-| Arbitrum One     | 42161    |
+| Network             | Chain ID |
+| ------------------- | -------- |
+| Ethereum Mainnet    | 1        |
+| Sepolia testnet     | 11155111 |
+| Polygon             | 137      |
+| Arbitrum One        | 42161    |
+| **Local (Hardhat)** | 31337    |
+
+**Note:** The local Hardhat network (chain ID 31337) is automatically available when running the app in development mode (e.g., with `pnpm dev`). This allows you to connect your wallet to a local blockchain node started by Hardhat or Docker Compose. The local network will not appear in production builds.
 
 ---
 
