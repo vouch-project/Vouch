@@ -31,8 +31,7 @@ MetaMask must be manually configured to "see" the development network.
 By default, MetaMask accounts have 0 ETH.\
 To test features, you must import one of the deterministic development keys:
 
-1. Obtain a **Private Key** from the project's environment documentation.
-   - _Example Dev Key:_ `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266`
+1. Obtain a **Private Key** from the `@vouch/contracts:dev` logs.
 2. In MetaMask, click the **Account Selector** (top left).
 3. Click **Add wallet** -> **Import an account**.
 4. Paste the Private Key and click **Import**.
