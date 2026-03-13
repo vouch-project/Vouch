@@ -24,9 +24,11 @@
     <WalletButton />
     {#if $walletIsConnected}
       <a
+        class="text-[0.9rem] font-semibold text-indigo-600 no-underline hover:underline"
         href={resolve(navLinksMap.Dashboard)}
-        class="text-[0.9rem] font-semibold text-indigo-600 no-underline hover:underline">Go to Dashboard →</a
       >
+        Go to Dashboard →
+      </a>
     {/if}
   </div>
 

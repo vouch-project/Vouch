@@ -11,23 +11,23 @@
    */
   import { shortAddress, walletAddress, walletIsConnected, walletIsLoading } from '$lib/wallet/store';
 
-  async function openConnectModal() {
+  const openConnectModal = async () => {
     const { getAppKit } = await import('$lib/wallet/appkit');
     getAppKit()?.open();
-  }
+  };
 
-  async function openAccountModal() {
+  const openAccountModal = async () => {
     const { getAppKit } = await import('$lib/wallet/appkit');
     getAppKit()?.open({ view: 'Account' });
-  }
+  };
 
-  function handleClick() {
+  const handleClick = () => {
     if ($walletIsConnected) {
       openAccountModal();
     } else {
       openConnectModal();
     }
-  }
+  };
 
   const btnClass = $derived(
     [
@@ -43,9 +43,10 @@
 
 <button
   class={btnClass}
-  onclick={handleClick}
-  disabled={$walletIsLoading}
   aria-label={$walletIsConnected ? `Wallet: ${$walletAddress ?? ''}` : 'Connect Wallet'}
+  disabled={$walletIsLoading}
+  onclick={handleClick}
+  type="button"
 >
   {#if $walletIsLoading}
     <span
