@@ -37,12 +37,3 @@ jobs:
 
       - name: Test
         run: pnpm test
-
-      - name: List repo vars and secrets
-        run: |
-          echo "Repository Variables:"
-          gh variable list
-          echo "Repository Secrets:"
-          gh secret list
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

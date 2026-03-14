@@ -28,8 +28,12 @@ jobs:
 
       - name: Write .env file
         run: |
-          echo "${{ vars.ENV_VARS }}" > .env
-          echo "${{ secrets.ENV_SECRETS }}" >> .env
+          echo "SUPABASE_URL=${{ vars.SUPABASE_URL }}" > .env
+          echo "SUPABASE_SECRET_KEY=${{ secrets.SUPABASE_SECRET_KEY }}" >> .env
+          echo "PUBLIC_SUPABASE_URL=${{ vars.SUPABASE_URL }}" >> .env
+          echo "PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ vars.PUBLIC_SUPABASE_PUBLISHABLE_KEY }}" >> .env
+          echo "PUBLIC_REOWN_PROJECT_ID=${{ vars.PUBLIC_REOWN_PROJECT_ID }}" >> .env
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env
 
       - name: Pull latest images
         run: docker compose pull
