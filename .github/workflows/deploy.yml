@@ -1,0 +1,55 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Cloud
+    runs-on: self-hosted
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Install Docker if not present
+        run: |
+          if ! command -v docker &> /dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y docker.io docker-compose-plugin
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: vouch
+
+      - name: Generate SSL certs for nginx
+        run: ./generate-certs.sh
+        working-directory: vouch
+
+      - name: Write .env file
+        run: |
+          echo "SUPABASE_URL=${{ vars.SUPABASE_URL }}" > .env
+          echo "SUPABASE_SECRET_KEY=${{ secrets.SUPABASE_SECRET_KEY }}" >> .env
+          echo "PUBLIC_SUPABASE_URL=${{ vars.SUPABASE_URL }}" >> .env
+          echo "PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ vars.SUPABASE_PUBLISHABLE_KEY }}" >> .env
+          echo "PUBLIC_REOWN_PROJECT_ID=${{ vars.REOWN_PROJECT_ID }}" >> .env
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env
+        working-directory: vouch
+
+      - name: Pull latest images
+        run: docker compose pull
+        working-directory: vouch
+
+      - name: Build & start services
+        run: docker compose up --build --detach --remove-orphans
+        working-directory: vouch
+
+      - name: Remove old dangling images
+        run: docker image prune --force --filter "until=168h"
+        working-directory: vouch
