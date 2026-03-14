@@ -1,6 +1,6 @@
 import eslint from '@eslint/js';
-import tseslint from 'typescript-eslint';
 import prettierConfig from 'eslint-config-prettier';
+import tseslint from 'typescript-eslint';
 
 /** @type {import("eslint").Linter.Config[]} */
 export default [
@@ -24,6 +24,7 @@ export default [
       '**/.svelte-kit/**',
       '**/artifacts/**',
       '**/typechain-types/**',
+      'eslint.config.mjs',
     ],
   },
 ];
