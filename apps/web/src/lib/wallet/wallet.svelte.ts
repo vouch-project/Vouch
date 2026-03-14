@@ -62,8 +62,14 @@ export const initWalletSubscriptions = (modal: AppKit): (() => void) => {
     wallet.isConnected = account.isConnected;
   });
 
+  let prevChainId: number | undefined = undefined;
   const unsubNetwork = modal.subscribeNetwork((network) => {
-    wallet.chainId = network.chainId ? Number(network.chainId) : undefined;
+    const newChainId = network.chainId ? Number(network.chainId) : undefined;
+    // Only trigger modal navigation if the network actually changes (not on initial load)
+    if (prevChainId !== undefined && prevChainId !== newChainId) modal.open({ view: 'Account' });
+
+    wallet.chainId = newChainId;
+    prevChainId = newChainId;
   });
 
   const unsubState = modal.subscribeState((state) => {
