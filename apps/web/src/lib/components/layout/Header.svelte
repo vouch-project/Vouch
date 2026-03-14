@@ -14,12 +14,13 @@
       aria-label="Vouch – home"
       href={resolve(navLinksMap.Home)}
     >
-      <span
-        class="inline-flex items-center justify-center w-8 h-8 bg-gray-900 text-white rounded-lg font-extrabold text-base transition-colors duration-150 group-hover:bg-gray-700"
+      <img
+        class="inline-flex items-center justify-center w-8 h-8 rounded-lg"
+        alt="Vouch logo"
         aria-hidden="true"
-      >
-        V
-      </span>
+        draggable="false"
+        src="/favicon.svg"
+      />
       <span class="text-[1.2rem] font-bold tracking-[-0.02em]">Vouch</span>
     </a>
 

@@ -61,7 +61,7 @@ export const getAppKit = (): AppKit | undefined => {
       name: 'Vouch',
       description: 'Decentralized P2P Crypto Lending',
       url: window.location.origin,
-      icons: [`${window.location.origin}/favicon.png`],
+      icons: [`${window.location.origin}/favicon.svg`],
     },
     features: {
       // Disable e-mail / social login – keep the experience to on-chain wallets
