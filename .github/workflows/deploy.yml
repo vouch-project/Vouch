@@ -25,6 +25,12 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          path: vouch
+
+      - name: Generate SSL certs for nginx
+        run: ./generate-certs.sh
+        working-directory: vouch
 
       - name: Write .env file
         run: |
@@ -34,12 +40,16 @@ jobs:
           echo "PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ vars.SUPABASE_PUBLISHABLE_KEY }}" >> .env
           echo "PUBLIC_REOWN_PROJECT_ID=${{ vars.REOWN_PROJECT_ID }}" >> .env
           echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env
+        working-directory: vouch
 
       - name: Pull latest images
         run: docker compose pull
+        working-directory: vouch
 
       - name: Build & start services
         run: docker compose up --build --detach --remove-orphans
+        working-directory: vouch
 
       - name: Remove old dangling images
         run: docker image prune --force --filter "until=168h"
+        working-directory: vouch
