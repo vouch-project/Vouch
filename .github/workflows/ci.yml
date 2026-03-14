@@ -37,3 +37,8 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - name: echo vars
+        run: |
+          echo "ENV_VARS=${{ vars.ENV_VARS }}"
+          echo "ENV_SECRETS=${{ secrets.ENV_SECRETS }}"
