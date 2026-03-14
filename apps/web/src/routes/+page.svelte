@@ -3,7 +3,7 @@
   import WalletButton from '$lib/components/ui/WalletButton.svelte';
   import WalletStatus from '$lib/components/ui/WalletStatus.svelte';
   import { navLinksMap } from '$lib/navLinks';
-  import { walletIsConnected } from '$lib/wallet/store';
+  import { wallet } from '$lib/wallet/wallet.svelte';
 </script>
 
 <section class="text-center pt-16 pb-12 px-4">
@@ -22,7 +22,7 @@
 
   <div class="flex items-center justify-center gap-4 flex-wrap mb-7">
     <WalletButton />
-    {#if $walletIsConnected}
+    {#if wallet.isConnected}
       <a
         class="text-[0.9rem] font-semibold text-indigo-600 no-underline hover:underline"
         href={resolve(navLinksMap.Dashboard)}
@@ -32,7 +32,7 @@
     {/if}
   </div>
 
-  {#if $walletIsConnected}
+  {#if wallet.isConnected}
     <div class="inline-block mt-2">
       <WalletStatus />
     </div>

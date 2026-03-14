@@ -39,7 +39,7 @@ let _modal: AppKit | undefined;
  * Returns the AppKit modal singleton.
  * Returns `undefined` on the server or when the project ID is missing.
  */
-export function getAppKit(): AppKit | undefined {
+export const getAppKit = (): AppKit | undefined => {
   if (!browser) return undefined;
 
   if (!projectId) {
@@ -72,4 +72,4 @@ export function getAppKit(): AppKit | undefined {
   });
 
   return _modal;
-}
+};

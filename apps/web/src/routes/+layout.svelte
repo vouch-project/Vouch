@@ -7,7 +7,7 @@
    * stores and see live, reactive wallet state.
    */
   import Header from '$lib/components/layout/Header.svelte';
-  import { initWalletSubscriptions } from '$lib/wallet/store';
+  import { initWalletSubscriptions } from '$lib/wallet/wallet.svelte';
   import { onMount } from 'svelte';
   import '../app.css';
 

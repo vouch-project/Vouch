@@ -1,6 +1,4 @@
-import js from '@eslint/js';
 import svelte from 'eslint-plugin-svelte';
-import { defineConfig } from 'eslint/config';
 import globals from 'globals';
 import path from 'path';
 import svelteParser from 'svelte-eslint-parser';
@@ -10,15 +8,40 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export default defineConfig(
+export default [
   {
-    ignores: ['eslint.config.js'],
+    ignores: ['eslint.config.js', 'svelte.config.js', 'build/', '.svelte-kit/', 'dist/'],
   },
-  js.configs.recommended,
   ...tseslint.configs.recommended,
   ...svelte.configs['flat/recommended'],
   {
-    files: ['**/*.svelte'],
+    files: ['**/*.ts'],
+    languageOptions: {
+      parser: tseslint.parser,
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir: __dirname,
+      },
+    },
+    rules: {
+      'func-style': ['error', 'expression'],
+      'prefer-arrow-callback': 'error',
+    },
+  },
+  {
+    files: ['**/*.js'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Program',
+          message: 'JavaScript files are not allowed. Use TypeScript (.ts) files only.',
+        },
+      ],
+    },
+  },
+  {
+    files: ['**/*.svelte*'],
     languageOptions: {
       parser: svelteParser,
       parserOptions: {
@@ -32,7 +55,6 @@ export default defineConfig(
       svelte: svelte,
     },
     rules: {
-      // Enforce arrow functions only
       'func-style': ['error', 'expression'],
       'prefer-arrow-callback': 'error',
       // Possible Errors (recommended)
@@ -55,7 +77,7 @@ export default defineConfig(
       // Security
       'svelte/no-at-html-tags': 'error',
       // Best Practices
-      'svelte/block-lang': ['warn', { script: ['ts'] }],
+      'svelte/block-lang': ['error', { script: ['ts'] }],
       'svelte/button-has-type': 'warn',
       'svelte/no-add-event-listener': 'warn',
       'svelte/no-at-debug-tags': 'warn',
@@ -109,7 +131,4 @@ export default defineConfig(
       },
     },
   },
-  {
-    ignores: ['build/', '.svelte-kit/', 'dist/'],
-  },
-);
+];

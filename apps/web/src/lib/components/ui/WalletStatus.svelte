@@ -5,18 +5,18 @@
    * Displays the current address (click to copy) and the active network.
    * Provides a disconnect action.
    */
-  import { networkName, shortAddress, walletAddress, walletIsConnected } from '$lib/wallet/store';
+  import { wallet } from '$lib/wallet/wallet.svelte';
 
   let copied = $state(false);
   let copyTimer: ReturnType<typeof setTimeout>;
 
-  const copyAddress = () => {
-    if (!$walletAddress) return;
-    navigator.clipboard.writeText($walletAddress).then(() => {
-      copied = true;
-      clearTimeout(copyTimer);
-      copyTimer = setTimeout(() => (copied = false), 1500);
-    });
+  const copyAddress = async () => {
+    if (!wallet.address) return;
+    await navigator.clipboard.writeText(wallet.address || '');
+
+    copied = true;
+    clearTimeout(copyTimer);
+    copyTimer = setTimeout(() => (copied = false), 1500);
   };
 
   const disconnect = async () => {
@@ -25,7 +25,7 @@
   };
 </script>
 
-{#if $walletIsConnected}
+{#if wallet.isConnected}
   <div
     class="flex flex-col gap-[0.875rem] p-[1.125rem] border border-gray-200 rounded-[0.875rem] bg-white shadow-sm min-w-[220px]"
     aria-label="Connected wallet"
@@ -40,16 +40,16 @@
         title={copied ? 'Copied!' : 'Click to copy address'}
         type="button"
       >
-        <span class="font-mono">{$shortAddress}</span>
+        <span class="font-mono">{wallet.shortAddress}</span>
         <span class="text-xs text-gray-400" aria-hidden="true">{copied ? '✓' : '⧉'}</span>
       </button>
     </div>
 
-    {#if $networkName}
+    {#if wallet.networkName}
       <div class="flex items-center justify-between gap-4">
         <span class="text-[0.7rem] font-semibold uppercase tracking-[0.06em] text-gray-500">Network</span>
         <span class="text-xs font-semibold px-[0.625rem] py-1 rounded-full bg-blue-50 text-blue-700 tracking-[0.02em]">
-          {$networkName}
+          {wallet.networkName}
         </span>
       </div>
     {/if}

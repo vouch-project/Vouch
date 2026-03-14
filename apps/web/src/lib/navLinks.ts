@@ -1,4 +1,4 @@
-import { objectFromEntries } from './types/types';
+import { objectFromEntries } from './utils';
 
 export const navLinks = [
   { href: '/', label: 'Home' },
