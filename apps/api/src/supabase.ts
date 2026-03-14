@@ -6,15 +6,13 @@ let client: SupabaseClient | null = null;
  * Returns a singleton Supabase admin client using the service-role key.
  * Use this for server-side operations that bypass RLS.
  */
-export function getSupabaseClient(): SupabaseClient {
+export const getSupabaseClient = (): SupabaseClient => {
   if (!client) {
     const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const key = process.env.SUPABASE_SECRET_KEY;
 
     if (!url || !key) {
-      throw new Error(
-        'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars',
-      );
+      throw new Error('Missing SUPABASE_URL or SUPABASE_SECRET_KEY env vars');
     }
 
     client = createClient(url, key, {
@@ -23,4 +21,4 @@ export function getSupabaseClient(): SupabaseClient {
   }
 
   return client;
-}
+};

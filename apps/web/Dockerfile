@@ -13,6 +13,7 @@ COPY apps/web/ apps/web/
 COPY packages/config/ packages/config/
 
 RUN pnpm install --frozen-lockfile
+RUN pnpm --filter=@vouch/web exec svelte-kit sync
 RUN pnpm turbo run build --filter=@vouch/web
 
 # Use pnpm deploy to create a standalone bundle (resolves symlinks)
