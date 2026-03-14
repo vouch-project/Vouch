@@ -1,5 +1,3 @@
-import { objectFromEntries } from './utils';
-
 export const navLinks = [
   { href: '/', label: 'Home' },
   { href: '/dashboard', label: 'Dashboard' },
@@ -7,4 +5,6 @@ export const navLinks = [
   { href: '/lend', label: 'Lend' },
 ] as const;
 
-export const navLinksMap = objectFromEntries(navLinks.map((link) => [link.label, link.href]));
+export const navLinksMap = Object.fromEntries(navLinks.map((link) => [link.label, link.href])) as {
+  [K in (typeof navLinks)[number] as K['label']]: K['href'];
+};

@@ -12,11 +12,10 @@ SvelteKit frontend (`apps/web`).
 3. [Quick start](#quick-start)
 4. [Supported wallets & networks](#supported-wallets--networks)
 5. [Using wallet state in a component](#using-wallet-state-in-a-component)
-6. [Using the built-in AppKit web-components](#using-the-built-in-appkit-web-components)
-7. [Adding a new network](#adding-a-new-network)
-8. [Environment variables](#environment-variables)
-9. [Troubleshooting](#troubleshooting)
-10. [Browser compatibility](#browser-compatibility)
+6. [Adding a new network](#adding-a-new-network)
+7. [Environment variables](#environment-variables)
+8. [Troubleshooting](#troubleshooting)
+9. [Browser compatibility](#browser-compatibility)
 
 ---
 
@@ -25,13 +24,13 @@ SvelteKit frontend (`apps/web`).
 Vouch uses **Reown AppKit v1** (formerly known as Web3Modal) together with the
 **Ethers v6 adapter** to provide wallet connectivity. The integration exposes:
 
-| Feature          | Details                                                                                            |
-| ---------------- | -------------------------------------------------------------------------------------------------- |
-| Wallet providers | MetaMask, WalletConnect, Coinbase Wallet, Trust Wallet, Rabby, 300+ via WalletConnect              |
-| Networks         | Ethereum Mainnet, Sepolia testnet, Polygon, Arbitrum                                               |
-| UI               | Custom `WalletButton` + `WalletStatus` Svelte components; optional `<appkit-button>` web-component |
-| State management | Svelte writable stores (`$lib/wallet/store.ts`)                                                    |
-| SSR safety       | AppKit is loaded only in the browser via dynamic import inside `onMount`                           |
+| Feature          | Details                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------- |
+| Wallet providers | MetaMask, WalletConnect, Coinbase Wallet, Trust Wallet, Rabby, 300+ via WalletConnect |
+| Networks         | Ethereum Mainnet, Sepolia testnet, Polygon, Arbitrum                                  |
+| UI               | Custom `WalletButton` + `WalletStatus` Svelte components                              |
+| State management | Svelte writable stores (`$lib/wallet/store.ts`)                                       |
+| SSR safety       | AppKit is loaded only in the browser via dynamic import inside `onMount`              |
 
 ---
 
@@ -118,9 +117,9 @@ warning — no crash.
 | Sepolia testnet     | 11155111 |
 | Polygon             | 137      |
 | Arbitrum One        | 42161    |
-| **Local (Hardhat)** | 31337    |
+| **Local (Hardhat)** | 1337     |
 
-**Note:** The local Hardhat network (chain ID 31337) is automatically available when running the app in development mode (e.g., with `pnpm dev`). This allows you to connect your wallet to a local blockchain node started by Hardhat or Docker Compose. The local network will not appear in production builds.
+**Note:** The local Hardhat network (chain ID 1337) is automatically available when running the app in development mode (e.g., with `pnpm dev`). This allows you to connect your wallet to a local blockchain node started by Hardhat or Docker Compose. The local network will not appear in production builds.
 
 ---
 
@@ -178,26 +177,6 @@ await getAppKit()?.disconnect();
 
 ---
 
-## Using the built-in AppKit web-components
-
-AppKit ships unstyled web-components as a quick drop-in alternative. After
-AppKit is initialised (i.e., anywhere after the root layout has mounted) you
-can use:
-
-```svelte
-<!-- Connect / Account toggle button -->
-<appkit-button />
-
-<!-- Network switcher button -->
-<appkit-network-button />
-
-<!-- Compact account pill -->
-<appkit-account-button balance="show" />
-```
-
-These register themselves automatically when `createAppKit()` is called.
-TypeScript types for the custom elements are declared in `src/app.d.ts`.
-
 ---
 
 ## Adding a new network
@@ -253,20 +232,6 @@ This means AppKit code is being evaluated server-side. Make sure:
 The `browser` guard in `appkit.ts` will always return `undefined` on the
 server, but it cannot prevent the module's static imports from running. The
 dynamic import in `+layout.svelte`'s `onMount` is the primary SSR guard.
-
-### TypeScript errors about `appkit-button` element
-
-The type declarations are in `src/app.d.ts`. If you still see errors, run:
-
-```bash
-pnpm --filter @vouch/web check
-```
-
-and ensure the `.svelte-kit/tsconfig.json` is generated first:
-
-```bash
-pnpm --filter @vouch/web run check
-```
 
 ### Wallet state not updating after connection
 

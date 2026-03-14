@@ -20,7 +20,7 @@ MetaMask must be manually configured to "see" the development network.
 4. Enter these exact values:
    - **Network Name:** `Hardhat Local`
    - **New RPC URL:** `http://127.0.0.1:8545`
-   - **Chain ID:** `31337`
+   - **Chain ID:** `1337`
    - **Currency Symbol:** `ETH`
 5. Click **Save** and ensure it is the active network.
 

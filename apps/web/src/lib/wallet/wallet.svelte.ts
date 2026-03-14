@@ -23,23 +23,24 @@ class WalletState {
    * A shortened display form of the wallet address, e.g. `0x1234…abcd`.
    * Returns an empty string when disconnected.
    */
-  shortAddress = $derived.by(() => {
+  get shortAddress() {
     if (!this.address) return '';
     return `${this.address.slice(0, 6)}\u2026${this.address.slice(-4)}`;
-  });
+  }
 
   /** Human-readable name for the currently connected network. */
-  networkName = $derived.by(() => {
+  get networkName() {
     const NAMES: Record<number, string> = {
       1: 'Ethereum',
       11155111: 'Sepolia',
       137: 'Polygon',
       42161: 'Arbitrum',
-      31337: 'Localhost',
+      1337: 'Localhost',
     };
+
     if (!this.chainId) return '';
     return NAMES[this.chainId] ?? `Chain ${this.chainId}`;
-  });
+  }
 }
 
 export const wallet = new WalletState();
@@ -61,8 +62,14 @@ export const initWalletSubscriptions = (modal: AppKit): (() => void) => {
     wallet.isConnected = account.isConnected;
   });
 
+  let prevChainId: number | undefined = undefined;
   const unsubNetwork = modal.subscribeNetwork((network) => {
-    wallet.chainId = network.chainId ? Number(network.chainId) : undefined;
+    const newChainId = network.chainId ? Number(network.chainId) : undefined;
+    // Only trigger modal navigation if the network actually changes (not on initial load)
+    if (prevChainId !== undefined && prevChainId !== newChainId) modal.open({ view: 'Account' });
+
+    wallet.chainId = newChainId;
+    prevChainId = newChainId;
   });
 
   const unsubState = modal.subscribeState((state) => {
