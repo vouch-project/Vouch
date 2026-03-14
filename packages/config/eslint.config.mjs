@@ -24,7 +24,8 @@ export default [
       '**/.svelte-kit/**',
       '**/artifacts/**',
       '**/typechain-types/**',
-      'eslint.config.mjs',
+      '**/eslint.config.*',
+      '**/prettier.config.*',
     ],
   },
 ];
