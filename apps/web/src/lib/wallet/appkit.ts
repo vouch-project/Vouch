@@ -21,7 +21,7 @@ const projectId = PUBLIC_REOWN_PROJECT_ID ?? '';
 
 /**
  * Networks the app supports, in priority order.
- * LocalHost (chain 31337) is added when running in development mode so that
+ * LocalHost (chain 1337) is added when running in development mode so that
  * testers can connect to the local Hardhat node started by docker-compose.
  */
 export const SUPPORTED_NETWORKS: Parameters<typeof createAppKit>[0]['networks'] = dev

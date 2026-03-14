@@ -35,8 +35,9 @@ class WalletState {
       11155111: 'Sepolia',
       137: 'Polygon',
       42161: 'Arbitrum',
-      31337: 'Localhost',
+      1337: 'Localhost',
     };
+
     if (!this.chainId) return '';
     return NAMES[this.chainId] ?? `Chain ${this.chainId}`;
   });
