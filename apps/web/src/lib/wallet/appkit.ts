@@ -7,7 +7,7 @@
  * therefore be executed client-side (e.g. inside onMount or event handlers).
  */
 import { browser, dev } from '$app/environment';
-import { PUBLIC_REOWN_PROJECT_ID } from '$lib/env';
+import { REOWN_PROJECT_ID } from '$lib/env';
 import type { AppKit } from '@reown/appkit';
 import { createAppKit } from '@reown/appkit';
 import { EthersAdapter } from '@reown/appkit-adapter-ethers';
@@ -16,8 +16,6 @@ import { arbitrum, localhost, mainnet, polygon, sepolia } from '@reown/appkit/ne
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
-
-const projectId = PUBLIC_REOWN_PROJECT_ID ?? '';
 
 /**
  * Networks the app supports, in priority order.
@@ -42,7 +40,7 @@ let _modal: AppKit | undefined;
 export const getAppKit = (): AppKit | undefined => {
   if (!browser) return undefined;
 
-  if (!projectId) {
+  if (!REOWN_PROJECT_ID) {
     console.warn(
       '[Vouch] PUBLIC_REOWN_PROJECT_ID is not set – wallet features are disabled. ' +
         'Get a free project ID at https://cloud.reown.com',
@@ -54,7 +52,7 @@ export const getAppKit = (): AppKit | undefined => {
 
   _modal = createAppKit({
     adapters: [new EthersAdapter()],
-    projectId,
+    projectId: REOWN_PROJECT_ID,
     networks: SUPPORTED_NETWORKS,
     defaultNetwork: DEFAULT_NETWORK,
     metadata: {

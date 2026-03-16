@@ -1,10 +1,8 @@
+import { createLoanApiRequest } from '$lib/api/createLoanApiRequest';
+import { VOUCH_VAULT_ADDRESS } from '$lib/env';
 import { Contract, ContractTransactionResponse, ethers } from 'ethers';
 import VouchVaultAbi from '../abi/VouchVault.json';
 import { safeResolveAddress } from './safeResolveAddress';
-
-// Replace with your deployed contract address
-// Example: export const VOUCH_VAULT_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
-export const VOUCH_VAULT_ADDRESS = '0x5FbDB2315678afecb367f032d93F642f64180aa3';
 
 export interface Loan {
   borrower: string;
@@ -44,6 +42,8 @@ export const createLoan = async (
   borrower?: string,
 ): Promise<ContractTransactionResponse> => {
   const contract = await getVouchVaultContract();
+  const signer = contract.runner as ethers.Signer;
+  await createLoanApiRequest({ collateralEth, borrower }, signer);
   if (borrower) {
     // Use provider from contract and resolve, but not used in contract call (for future use)
     const provider = contract.runner?.provider as ethers.BrowserProvider;
