@@ -1,11 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { SupabaseService } from 'src/supabase/supabase.service';
+import { CreateLoanDto } from './dto/create-loan.dto';
 
 @Injectable()
 export class LoanService {
   constructor(private readonly supabaseService: SupabaseService) {}
 
-  create() {
+  async create({ collateralEth }: CreateLoanDto, borrower: string) {
+    await this.supabaseService.client.from('loans').insert({
+      borrower,
+      collateral_amount: collateralEth,
+    });
+
     return [];
   }
 }

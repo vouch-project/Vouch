@@ -37,10 +37,7 @@ export const getVouchVaultContract = async (): Promise<Contract> => {
  * @param collateralEth Amount of ETH collateral
  * @param borrower ENS name or address (optional, defaults to signer)
  */
-export const createLoan = async (
-  collateralEth: number | string,
-  borrower?: string,
-): Promise<ContractTransactionResponse> => {
+export const createLoan = async (collateralEth: number, borrower?: string): Promise<ContractTransactionResponse> => {
   const contract = await getVouchVaultContract();
   const signer = contract.runner as ethers.Signer;
   await createLoanApiRequest({ collateralEth, borrower }, signer);
