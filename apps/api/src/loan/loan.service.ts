@@ -15,6 +15,6 @@ export class LoanService {
           collateral_amount: collateralEth,
         })
         .select('*')
-    ).data;
+    ).data?.[0];
   }
 }
