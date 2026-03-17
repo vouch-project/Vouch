@@ -7,11 +7,14 @@ export class LoanService {
   constructor(private readonly supabaseService: SupabaseService) {}
 
   async create({ collateralEth }: CreateLoanDto, borrower: string) {
-    await this.supabaseService.client.from('loans').insert({
-      borrower,
-      collateral_amount: collateralEth,
-    });
-
-    return [];
+    return (
+      await this.supabaseService.client
+        .from('loans')
+        .insert({
+          borrower,
+          collateral_amount: collateralEth,
+        })
+        .select('*')
+    ).data;
   }
 }

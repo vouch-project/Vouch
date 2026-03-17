@@ -1,19 +1,14 @@
-import { Injectable, Scope } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Database } from './database.types';
 
-@Injectable({ scope: Scope.REQUEST })
+@Injectable()
 export class SupabaseService {
   private clientInstance: SupabaseClient<Database>;
+  private readonly logger = new Logger(SupabaseService.name);
 
-  constructor(private configService: ConfigService) {}
-
-  get client() {
-    if (this.clientInstance) {
-      return this.clientInstance;
-    }
-
+  constructor(private readonly configService: ConfigService) {
     const url = this.configService.get<string>('SUPABASE_URL');
     const key = this.configService.get<string>('SUPABASE_SECRET_KEY');
 
@@ -25,6 +20,20 @@ export class SupabaseService {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
+    void this.isDatabaseActive();
+  }
+
+  get client() {
     return this.clientInstance;
+  }
+
+  private async isDatabaseActive() {
+    this.logger.log('Checking Supabase DB connectivity...');
+
+    const { error } = await this.client.from('loans').select('*').limit(1);
+    if (error)
+      this.logger.error(`Supabase DB health check failed: ${error.message}`);
+
+    this.logger.log('Supabase DB is active and reachable');
   }
 }
