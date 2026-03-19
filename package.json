@@ -6,9 +6,14 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
-    "test": "turbo run test"
+    "test": "turbo run test",
+    "db:migrate": "supabase db push",
+    "db:generate": "supabase db diff --file supabase/migrations/$(date +%Y%m%d%H%M%S)_migration.sql",
+    "db:reset": "supabase db reset",
+    "db:generate:types": "supabase gen types typescript --local > apps/api/src/supabase/database.types.ts"
   },
   "devDependencies": {
+    "supabase": "^2.81.2",
     "turbo": "^2"
   },
   "packageManager": "pnpm@9.15.4"

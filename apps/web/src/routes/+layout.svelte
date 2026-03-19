@@ -6,7 +6,9 @@
    * any SSR issues.  All child routes can then import `$lib/wallet/store`
    * stores and see live, reactive wallet state.
    */
+  import { getTokenList } from '$lib/api/tokenList';
   import Header from '$lib/components/layout/Header.svelte';
+  import { tokenListStore } from '$lib/stores/tokenListStore.svelte';
   import { initWalletSubscriptions } from '$lib/wallet/wallet.svelte';
   import { onMount } from 'svelte';
   import '../app.css';
@@ -17,8 +19,13 @@
     // Dynamic import keeps AppKit (and its browser-only polyfills) out of SSR.
     const { getAppKit } = await import('$lib/wallet/appkit');
     const modal = getAppKit();
-    if (modal) {
-      initWalletSubscriptions(modal);
+    if (modal) initWalletSubscriptions(modal);
+
+    try {
+      const tokens = await getTokenList();
+      tokenListStore.tokens = tokens;
+    } catch (e) {
+      console.error('Failed to fetch token list', e);
     }
   });
 </script>

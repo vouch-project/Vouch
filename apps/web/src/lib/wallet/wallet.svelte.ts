@@ -7,6 +7,8 @@
  */
 
 import type { AppKit } from '@reown/appkit';
+import { JWT_STORAGE_KEY } from '../../constants';
+import { loginUserWithWallet } from './loginUserWithWallet';
 
 // ---------------------------------------------------------------------------
 // Raw state variables
@@ -57,9 +59,22 @@ export const wallet = new WalletState();
  * Returns an unsubscribe function that cancels all subscriptions.
  */
 export const initWalletSubscriptions = (modal: AppKit): (() => void) => {
-  const unsubAccount = modal.subscribeAccount((account) => {
+  const unsubAccount = modal.subscribeAccount(async (account) => {
+    const wasConnected = wallet.isConnected;
     wallet.address = account.address;
     wallet.isConnected = account.isConnected;
+
+    if (!wasConnected && account.isConnected && account.address) {
+      try {
+        await loginUserWithWallet();
+      } catch (err) {
+        console.error('Wallet login failed:', err);
+      }
+    }
+
+    if (wasConnected && !account.isConnected) {
+      localStorage.removeItem(JWT_STORAGE_KEY);
+    }
   });
 
   let prevChainId: number | undefined = undefined;

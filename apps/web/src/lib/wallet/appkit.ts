@@ -11,7 +11,7 @@ import { REOWN_PROJECT_ID } from '$lib/env';
 import type { AppKit } from '@reown/appkit';
 import { createAppKit } from '@reown/appkit';
 import { EthersAdapter } from '@reown/appkit-adapter-ethers';
-import { arbitrum, localhost, mainnet, polygon, sepolia } from '@reown/appkit/networks';
+import { localhost, mainnet } from '@reown/appkit/networks';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -23,9 +23,11 @@ import { arbitrum, localhost, mainnet, polygon, sepolia } from '@reown/appkit/ne
  * testers can connect to the local Hardhat node started by docker-compose.
  */
 export const SUPPORTED_NETWORKS: Parameters<typeof createAppKit>[0]['networks'] = dev
-  ? [localhost, mainnet, sepolia, polygon, arbitrum]
-  : [mainnet, sepolia, polygon, arbitrum];
+  ? [localhost, mainnet]
+  : [mainnet];
 export const DEFAULT_NETWORK = dev ? localhost : mainnet;
+
+export const SUPPORTED_CHAIN_IDS = SUPPORTED_NETWORKS.map(({ id }) => BigInt(id));
 
 // ---------------------------------------------------------------------------
 // Singleton modal instance

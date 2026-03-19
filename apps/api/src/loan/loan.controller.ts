@@ -1,18 +1,25 @@
-import { Body, Controller, Headers, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
 import { CreateLoanDto } from './dto/create-loan.dto';
-import { VerifySignatureGuard } from './guards/verify-signature.guard';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { LoanService } from './loan.service';
+
+type AuthenticatedRequest = Request & {
+  user?: { address?: string };
+};
 
 @Controller('loan')
 export class LoanController {
   constructor(private readonly loanService: LoanService) {}
 
   @Post()
-  @UseGuards(VerifySignatureGuard)
+  @UseGuards(JwtAuthGuard)
   createLoan(
     @Body() createLoanDto: CreateLoanDto,
-    @Headers('x-address') borrower: string,
+    @Req() req: AuthenticatedRequest,
   ) {
+    const borrower = req.user?.address;
+    if (!borrower) throw new Error('No borrower address found in JWT');
+
     return this.loanService.create(createLoanDto, borrower);
   }
 }

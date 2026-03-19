@@ -6,15 +6,14 @@ import { CreateLoanDto } from './dto/create-loan.dto';
 export class LoanService {
   constructor(private readonly supabaseService: SupabaseService) {}
 
-  async create({ collateralEth }: CreateLoanDto, borrower: string) {
-    return (
-      await this.supabaseService.client
-        .from('loans')
-        .insert({
-          borrower,
-          collateral_amount: collateralEth,
-        })
-        .select('*')
-    ).data?.[0];
+  async create(createLoanDto: CreateLoanDto, borrower: string) {
+    const { data, error } = await this.supabaseService.client
+      .from('loans')
+      .insert({ borrower, ...createLoanDto })
+      .select('*');
+
+    if (error) throw error;
+
+    return data?.[0];
   }
 }
