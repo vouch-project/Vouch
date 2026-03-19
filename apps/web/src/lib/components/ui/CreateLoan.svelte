@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Token } from '$lib/api/tokenList';
+  import type { Token } from '$lib/api/tokenList';
   import { tokenListStore } from '$lib/stores/tokenListStore.svelte';
   import { createLoan } from '$lib/wallet/vouchVault';
 
