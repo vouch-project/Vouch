@@ -3,7 +3,7 @@
   import { tokenListStore } from '$lib/stores/tokenListStore.svelte';
   import { createLoan } from '$lib/wallet/vouchVault';
 
-  let optionRefs: HTMLElement[] = $state([]);
+  const optionRefs: HTMLElement[] = $state([]);
   let focusedIndex = $state(-1);
 
   $effect(() => {
@@ -89,24 +89,24 @@
     <span>Collateral Token:</span>
     <div class="relative w-full">
       <input
-        type="text"
-        bind:value={selectedToken}
         class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
-        placeholder="Type to search token symbol..."
-        oninput={() => {
-          showDropdown = true;
-          focusedIndex = -1;
-        }}
-        onfocus={() => {
-          showDropdown = true;
-        }}
+        autocomplete="off"
         onblur={() =>
           setTimeout(() => {
             showDropdown = false;
             focusedIndex = -1;
           }, 100)}
+        onfocus={() => {
+          showDropdown = true;
+        }}
+        oninput={() => {
+          showDropdown = true;
+          focusedIndex = -1;
+        }}
         onkeydown={handleKeydown}
-        autocomplete="off"
+        placeholder="Type to search token symbol..."
+        type="text"
+        bind:value={selectedToken}
       />
       {#if showDropdown && filteredTokens.length > 0}
         <ul
@@ -115,13 +115,12 @@
           {#each filteredTokens as token, i (`${token.chainId}:${token.address}`)}
             <li>
               <button
-                type="button"
-                class="w-full text-left px-4 py-2 cursor-pointer flex items-center {focusedIndex === i
-                  ? 'bg-blue-100'
-                  : ''}"
+                bind:this={optionRefs[i]}
+                class="w-full text-left px-4 py-2 cursor-pointer flex items-center"
+                class:bg-blue-100={focusedIndex === i}
                 onmousedown={() => selectToken(token.symbol)}
                 tabindex="-1"
-                bind:this={optionRefs[i]}
+                type="button"
               >
                 <span class="font-mono">{token.symbol}</span>
                 <span class="ml-2 text-xs text-gray-500">{token.name}</span>
@@ -135,17 +134,17 @@
   <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
     <span>Collateral to Deposit ({selectedToken}):</span>
     <input
+      class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
       min="0"
       step="0.01"
       type="number"
       bind:value={collateralAmount}
-      class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
     />
   </label>
   <button
-    type="submit"
     class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-2 rounded-lg shadow transition disabled:opacity-60 disabled:cursor-not-allowed"
     disabled={status === 'Waiting for wallet confirmation...'}
+    type="submit"
   >
     {status === 'Waiting for wallet confirmation...' ? 'Processing...' : 'Create Loan'}
   </button>

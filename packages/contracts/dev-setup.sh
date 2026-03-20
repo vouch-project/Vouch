@@ -1,7 +1,8 @@
 #!/bin/bash
 
+
 # 1. Define paths
-ABI_DEST="../../apps/web/src/lib/abi"
+ABI_DEST="../../packages/abi"
 ARTIFACTS="./artifacts/contracts"
 
 # 2. Run the deployment

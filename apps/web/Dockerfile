@@ -11,6 +11,7 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* turbo.json ./
 # Copy the web app + shared configs
 COPY apps/web/ apps/web/
 COPY packages/config/ packages/config/
+COPY packages/abi/ packages/abi/
 
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter=@vouch/web exec svelte-kit sync

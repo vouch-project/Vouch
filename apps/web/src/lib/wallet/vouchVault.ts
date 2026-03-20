@@ -1,16 +1,14 @@
 import { dev } from '$app/environment';
-import { createLoanApiRequest } from '$lib/api/loan';
 import type { Token } from '$lib/api/tokenList';
 import { VOUCH_VAULT_ADDRESS } from '$lib/env';
 import { Contract, ContractTransactionResponse, ethers } from 'ethers';
+import VouchVaultAbiDev from '../../../../../packages/abi/VouchVault.json';
+import VouchVaultAbiProd from '../../../../../packages/abi/prod/VouchVault.json';
 import { SUPPORTED_CHAIN_IDS } from './appkit';
 import { safeResolveAddress } from './safeResolveAddress';
 import { wallet } from './wallet.svelte';
 
-// Use production ABI in production, dev ABI otherwise
-const VouchVaultAbi: { abi: ethers.InterfaceAbi } = await import(
-  dev ? '../abi/VouchVault.json' : '../abi/prod/VouchVault.json'
-);
+const VouchVaultAbi = dev ? VouchVaultAbiDev : VouchVaultAbiProd;
 
 export const getVouchVaultContract = async (): Promise<Contract> => {
   if (!window.ethereum) throw new Error('No wallet found');
@@ -77,15 +75,15 @@ export const createLoan = async (collateralAmount: number, token: Token): Promis
 
   if (!receipt) throw new Error('Transaction failed');
 
-  await createLoanApiRequest({
-    chainId,
-    collateralAmount,
-    collateralTxHash: receipt.hash,
-    collateralBlockNumber: receipt.blockNumber ?? 0,
-    collateralBlockHash: receipt.blockHash ?? '',
-    collateralLockedAt: new Date().toISOString(),
-    collateralTokenId: token.id,
-  });
+  // await createLoanApiRequest({
+  //   chainId,
+  //   collateralAmount,
+  //   collateralTxHash: receipt.hash,
+  //   collateralBlockNumber: receipt.blockNumber ?? 0,
+  //   collateralBlockHash: receipt.blockHash ?? '',
+  //   collateralLockedAt: new Date().toISOString(),
+  //   collateralTokenId: token.id,
+  // });
 
   return receipt;
 };

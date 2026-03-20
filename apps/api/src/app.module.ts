@@ -4,6 +4,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { BlockchainListenerModule } from './blockchain-listener/blockchain-listener.module';
 import { LoanModule } from './loan/loan.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { TokenListModule } from './token-list/token-list.module';
@@ -23,6 +24,7 @@ import { TokenListModule } from './token-list/token-list.module';
       inject: [ConfigService],
     }),
     AuthModule,
+    BlockchainListenerModule,
     LoanModule,
     SupabaseModule,
     TokenListModule,
