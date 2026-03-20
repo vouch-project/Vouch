@@ -1,9 +1,9 @@
 import { dev } from '$app/environment';
-import type { Token } from '$lib/api/tokenList';
 import { VOUCH_VAULT_ADDRESS } from '$lib/env';
 import { Contract, ContractTransactionResponse, ethers } from 'ethers';
 import VouchVaultAbiDev from '../../../../../packages/abi/VouchVault.json';
 import VouchVaultAbiProd from '../../../../../packages/abi/prod/VouchVault.json';
+import type { Token } from '../../api/tokenList';
 import { SUPPORTED_CHAIN_IDS } from './appkit';
 import { safeResolveAddress } from './safeResolveAddress';
 import { wallet } from './wallet.svelte';
@@ -48,11 +48,7 @@ export const createLoan = async (collateralAmount: number, token: Token): Promis
 
   let receipt: ContractTransactionResponse;
 
-  if (
-    token.address === undefined ||
-    token.address === '' ||
-    token.address === '0x0000000000000000000000000000000000000000'
-  ) {
+  if (token.address === undefined || token.address === '' || token.address === ethers.ZeroAddress) {
     // ETH collateral
     const parsedCollateral = ethers.parseEther(collateralAmount.toString());
     const tx = await contract.createLoan({ value: parsedCollateral });
@@ -74,16 +70,6 @@ export const createLoan = async (collateralAmount: number, token: Token): Promis
   }
 
   if (!receipt) throw new Error('Transaction failed');
-
-  // await createLoanApiRequest({
-  //   chainId,
-  //   collateralAmount,
-  //   collateralTxHash: receipt.hash,
-  //   collateralBlockNumber: receipt.blockNumber ?? 0,
-  //   collateralBlockHash: receipt.blockHash ?? '',
-  //   collateralLockedAt: new Date().toISOString(),
-  //   collateralTokenId: token.id,
-  // });
 
   return receipt;
 };

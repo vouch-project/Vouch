@@ -6,11 +6,11 @@
    * any SSR issues.  All child routes can then import `$lib/wallet/store`
    * stores and see live, reactive wallet state.
    */
-  import { getTokenList } from '$lib/api/tokenList';
   import Header from '$lib/components/layout/Header.svelte';
   import { tokenListStore } from '$lib/stores/tokenListStore.svelte';
   import { initWalletSubscriptions, wallet } from '$lib/wallet/wallet.svelte';
   import { onMount } from 'svelte';
+  import { getTokenList } from '../api/tokenList';
   import '../app.css';
 
   const { children } = $props();

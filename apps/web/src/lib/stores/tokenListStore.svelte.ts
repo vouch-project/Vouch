@@ -1,4 +1,4 @@
-import type { Token } from '$lib/api/tokenList';
+import type { Token } from '../../api/tokenList';
 
 class TokenListStore {
   tokens = $state<Token[]>([]);
