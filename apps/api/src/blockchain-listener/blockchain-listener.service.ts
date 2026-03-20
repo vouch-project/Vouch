@@ -16,7 +16,7 @@ const VouchVaultAbi = JSON.parse(readFileSync(abiPath, 'utf-8')) as {
 @Injectable()
 export class BlockchainListenerService implements OnModuleInit {
   private readonly logger = new Logger(BlockchainListenerService.name);
-  private provider: ethers.JsonRpcProvider;
+  private provider: ethers.JsonRpcProvider | ethers.WebSocketProvider;
   private contract: ethers.Contract;
   private contractAddress: string;
 
@@ -24,8 +24,11 @@ export class BlockchainListenerService implements OnModuleInit {
 
   async onModuleInit() {
     const rpcUrl =
-      this.configService.get<string>('RPC_URL') ?? 'http://localhost:8545';
-    this.provider = new ethers.JsonRpcProvider(rpcUrl);
+      this.configService.get<string>('RPC_URL') ?? 'ws://localhost:8545';
+    this.provider = rpcUrl.startsWith('ws')
+      ? new ethers.WebSocketProvider(rpcUrl)
+      : new ethers.JsonRpcProvider(rpcUrl);
+
     this.contractAddress =
       this.configService.get<string>('PUBLIC_VOUCH_VAULT_ADDRESS') ?? '';
 
@@ -36,9 +39,8 @@ export class BlockchainListenerService implements OnModuleInit {
         `Connected to chain: ${network.chainId} (${network.name})`,
       );
 
-      // Hardhat HTTP polling can be slow (default is 4s).
-      // Speed it up for local dev:
-      this.provider.pollingInterval = 500;
+      if (this.provider instanceof ethers.JsonRpcProvider)
+        this.provider.pollingInterval = 500;
 
       this.setupEventListener();
     } catch (error) {
