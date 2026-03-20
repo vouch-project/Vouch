@@ -7,8 +7,8 @@
  */
 
 import type { AppKit } from '@reown/appkit';
+import { loginWithWallet } from '../../api/auth';
 import { JWT_STORAGE_KEY } from '../../constants';
-import { loginUserWithWallet } from './loginUserWithWallet';
 
 // ---------------------------------------------------------------------------
 // Raw state variables
@@ -66,7 +66,7 @@ export const initWalletSubscriptions = (modal: AppKit): (() => void) => {
 
     if (!wasConnected && account.isConnected && account.address) {
       try {
-        await loginUserWithWallet();
+        await loginWithWallet();
       } catch (err) {
         console.error('Wallet login failed:', err);
       }
