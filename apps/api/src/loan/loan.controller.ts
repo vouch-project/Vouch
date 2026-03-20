@@ -1,6 +1,6 @@
 import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { CreateLoanDto } from './dto/create-loan.dto';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { LoanService } from './loan.service';
 
 type AuthenticatedRequest = Request & {
