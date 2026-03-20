@@ -27,7 +27,7 @@
     }
   };
 
-  let collateral = $state(1.0); // Amount
+  let collateralAmount = $state(1.0);
   let status = $state('');
   let selectedToken = $state('ETH');
   let showDropdown = $state(false);
@@ -76,7 +76,7 @@
     }
 
     try {
-      await createLoan(collateral, token);
+      await createLoan(collateralAmount, token);
       status = 'Loan created!';
     } catch (e) {
       status = e instanceof Error ? e.message : 'Transaction failed';
@@ -138,7 +138,7 @@
       min="0"
       step="0.01"
       type="number"
-      bind:value={collateral}
+      bind:value={collateralAmount}
       class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
     />
   </label>

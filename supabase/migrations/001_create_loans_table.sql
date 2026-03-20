@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS token_list (
     "updatedAt" timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS token_list_chainId_address_unique ON token_list ("chainId", address);
+
 CREATE INDEX IF NOT EXISTS "token_list_chainId_idx" ON token_list ("chainId");
 
 CREATE INDEX IF NOT EXISTS token_list_address_idx ON token_list (address);

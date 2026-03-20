@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { TokenListService } from './token-list.service';
 
 @Controller('token-list')
@@ -6,7 +6,9 @@ export class TokenListController {
   constructor(private readonly tokenListService: TokenListService) {}
 
   @Get()
-  getTokens() {
-    return this.tokenListService.tokenList;
+  getTokens(@Query('chainId') chainId: string) {
+    return this.tokenListService.tokenList.filter(
+      (token) => token.chainId === Number(chainId),
+    );
   }
 }

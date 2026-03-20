@@ -1,11 +1,16 @@
+import { dev } from '$app/environment';
 import { createLoanApiRequest } from '$lib/api/loan';
 import type { Token } from '$lib/api/tokenList';
 import { VOUCH_VAULT_ADDRESS } from '$lib/env';
 import { Contract, ContractTransactionResponse, ethers } from 'ethers';
-import VouchVaultAbi from '../abi/VouchVault.json';
 import { SUPPORTED_CHAIN_IDS } from './appkit';
 import { safeResolveAddress } from './safeResolveAddress';
 import { wallet } from './wallet.svelte';
+
+// Use production ABI in production, dev ABI otherwise
+const VouchVaultAbi: { abi: ethers.InterfaceAbi } = await import(
+  dev ? '../abi/VouchVault.json' : '../abi/prod/VouchVault.json'
+);
 
 export const getVouchVaultContract = async (): Promise<Contract> => {
   if (!window.ethereum) throw new Error('No wallet found');
@@ -25,7 +30,7 @@ export const getVouchVaultContract = async (): Promise<Contract> => {
     if (!resolved) throw new Error('ENS contract address could not be resolved.');
     contractAddress = resolved;
   }
-  return new ethers.Contract(contractAddress, VouchVaultAbi.abi as ethers.InterfaceAbi, signer);
+  return new ethers.Contract(contractAddress, VouchVaultAbi.abi, signer);
 };
 
 /**

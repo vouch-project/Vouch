@@ -60,13 +60,6 @@ export class TokenListService implements OnModuleInit {
         },
       };
 
-      const chainIds = Object.keys(raw.tokens).map(Number);
-
-      await this.supabaseService.client
-        .from('token_list')
-        .delete()
-        .in('chainId', chainIds);
-
       const tokensArr = Object.values(raw.tokens).flat();
 
       const tokens = tokensArr.map((token) => ({
@@ -80,7 +73,7 @@ export class TokenListService implements OnModuleInit {
 
       const { data, error } = await this.supabaseService.client
         .from('token_list')
-        .insert(tokens)
+        .upsert(tokens, { onConflict: 'chainId,address' })
         .select('*');
 
       if (error) this.logger.error(`Error upserting tokens:`, error);

@@ -11,7 +11,9 @@ export type Token = {
 };
 
 /**
- * Fetches the token list from the backend API.
+ * Fetches the token list from the backend API for a specific chain ID.
+ * @param chainId The ID of the blockchain network
  * @returns An array of tokens with their details
  */
-export const getTokenList = async () => (await axiosApi.get<Token[]>('/token-list')).data;
+export const getTokenList = async (chainId: number) =>
+  (await axiosApi.get<Token[]>('/token-list', { params: { chainId } })).data;

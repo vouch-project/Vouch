@@ -9,24 +9,34 @@
   import { getTokenList } from '$lib/api/tokenList';
   import Header from '$lib/components/layout/Header.svelte';
   import { tokenListStore } from '$lib/stores/tokenListStore.svelte';
-  import { initWalletSubscriptions } from '$lib/wallet/wallet.svelte';
+  import { initWalletSubscriptions, wallet } from '$lib/wallet/wallet.svelte';
   import { onMount } from 'svelte';
   import '../app.css';
 
-  let { children } = $props();
+  const { children } = $props();
 
   onMount(async () => {
     // Dynamic import keeps AppKit (and its browser-only polyfills) out of SSR.
     const { getAppKit } = await import('$lib/wallet/appkit');
     const modal = getAppKit();
     if (modal) initWalletSubscriptions(modal);
+  });
 
-    try {
-      const tokens = await getTokenList();
-      tokenListStore.tokens = tokens;
-    } catch (e) {
-      console.error('Failed to fetch token list', e);
-    }
+  $effect(() => {
+    const fetchTokens = async () => {
+      try {
+        if (wallet.chainId) {
+          const tokens = await getTokenList(wallet.chainId);
+          tokenListStore.tokens = tokens;
+        } else {
+          console.warn('No chain ID found in wallet; skipping token list fetch');
+        }
+      } catch (e) {
+        console.error('Failed to fetch token list', e);
+      }
+    };
+
+    void fetchTokens();
   });
 </script>
 

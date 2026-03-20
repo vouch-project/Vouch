@@ -3,13 +3,20 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "hardhat node",
+    "dev": "concurrently \"hardhat node\" \"sleep 10s && bash ./dev-setup.sh\"",
     "build": "hardhat compile",
     "test": "hardhat test",
     "clean": "hardhat clean"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-ethers": "^3.0.0",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/hardhat-upgrades": "^3.9.1",
+    "concurrently": "^8.2.2",
     "hardhat": "^2.22.0"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.6.1",
+    "@openzeppelin/contracts-upgradeable": "^5.6.1"
   }
 }
