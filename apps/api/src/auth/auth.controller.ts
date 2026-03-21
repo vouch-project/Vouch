@@ -7,12 +7,12 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Get('nonce')
-  getNonce(@Query('address') address: string) {
-    return { nonce: this.authService.getNonce(address) };
+  async getNonce(@Query('address') address: string) {
+    return { nonce: await this.authService.getNonce(address) };
   }
 
   @Post('login')
-  login(@Body() loginDto: LoginDto) {
-    return { token: this.authService.login(loginDto) };
+  async login(@Body() loginDto: LoginDto) {
+    return { token: await this.authService.login(loginDto) };
   }
 }

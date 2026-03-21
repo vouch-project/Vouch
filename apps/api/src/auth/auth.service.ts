@@ -1,37 +1,37 @@
+import { InjectRedis } from '@nestjs-modules/ioredis';
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'crypto';
 import { ethers } from 'ethers';
+import type { Redis } from 'ioredis';
 import { LoginDto } from './dto/login.dto';
-
-type NonceEntry = { nonce: string; createdAt: number };
 
 @Injectable()
 export class AuthService {
-  private nonces: Record<string, NonceEntry> = {};
-  private nonceTtlMs = 10 * 60 * 1000; // 10 minutes
+  private nonceTtlSec = 10 * 60; // 10 minutes in seconds
 
-  constructor(private readonly jwtService: JwtService) {
-    setInterval(() => this.cleanupOldNonces(), 60 * 1000);
-  }
+  constructor(
+    private readonly jwtService: JwtService,
+    @InjectRedis() private readonly redis: Redis,
+  ) {}
 
-  getNonce(address: string) {
+  async getNonce(address: string): Promise<string> {
     if (!address) throw new Error('Missing address');
 
     const nonce = randomBytes(16).toString('hex');
-    this.nonces[address.toLowerCase()] = { nonce, createdAt: Date.now() };
+    await this.redis.set(this.nonceKey(address), nonce, 'EX', this.nonceTtlSec);
 
     return nonce;
   }
 
-  login({ address, signature, loginMessage }: LoginDto) {
+  async login({ address, signature, loginMessage }: LoginDto): Promise<string> {
     const match = loginMessage.match(/Nonce: ([a-fA-F0-9]{32})/);
     const nonce = match ? match[1] : undefined;
     if (!nonce) throw new Error('No nonce for address');
 
-    const entry = this.nonces[address.toLowerCase()];
-    if (!entry) throw new Error('No stored nonce for address');
-    if (nonce !== entry.nonce) throw new Error('Nonce does not match');
+    const storedNonce = await this.redis.get(this.nonceKey(address));
+    if (!storedNonce) throw new Error('No stored nonce for address');
+    if (nonce !== storedNonce) throw new Error('Nonce does not match');
 
     const recovered = ethers.verifyMessage(loginMessage, signature);
     if (recovered.toLowerCase() !== address.toLowerCase())
@@ -40,16 +40,12 @@ export class AuthService {
     const payload = { address };
     const token = this.jwtService.sign(payload);
 
-    delete this.nonces[address.toLowerCase()];
+    await this.redis.del(this.nonceKey(address));
 
     return token;
   }
 
-  private cleanupOldNonces() {
-    const now = Date.now();
-
-    for (const [address, entry] of Object.entries(this.nonces)) {
-      if (now - entry.createdAt > this.nonceTtlMs) delete this.nonces[address];
-    }
+  private nonceKey(address: string): string {
+    return `nonce:${address.toLowerCase()}`;
   }
 }
