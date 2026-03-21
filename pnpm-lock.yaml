@@ -221,6 +221,18 @@ importers:
         specifier: ^2.22.0
         version: 2.28.6(bufferutil@4.1.0)(ts-node@10.9.2(@types/node@22.19.15)(typescript@5.9.3))(typescript@5.9.3)
 
+  packages/redis-logs: {}
+
+  packages/supabase-auth-logs: {}
+
+  packages/supabase-db-logs: {}
+
+  packages/supabase-edge-runtime-logs: {}
+
+  packages/supabase-kong-logs: {}
+
+  packages/supabase-rest-logs: {}
+
 packages:
 
   '@adraffy/ens-normalize@1.10.1':
