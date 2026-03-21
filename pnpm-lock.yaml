@@ -227,12 +227,6 @@ importers:
 
   packages/supabase-db-logs: {}
 
-  packages/supabase-edge-runtime-logs: {}
-
-  packages/supabase-kong-logs: {}
-
-  packages/supabase-rest-logs: {}
-
 packages:
 
   '@adraffy/ens-normalize@1.10.1':
