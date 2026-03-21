@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { LoanService } from '../loan/loan.service';
 
 const abiPath =
   process.env.NODE_ENV === 'production'
@@ -19,8 +20,12 @@ export class BlockchainListenerService implements OnModuleInit {
   private provider: ethers.JsonRpcProvider | ethers.WebSocketProvider;
   private contract: ethers.Contract;
   private contractAddress: string;
+  private network: ethers.Network;
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly loanService: LoanService,
+  ) {}
 
   async onModuleInit() {
     const rpcUrl =
@@ -33,10 +38,9 @@ export class BlockchainListenerService implements OnModuleInit {
       this.configService.get<string>('PUBLIC_VOUCH_VAULT_ADDRESS') ?? '';
 
     try {
-      // In v6, this is how you check if the provider is actually connected
-      const network = await this.provider.getNetwork();
+      this.network = await this.provider.getNetwork();
       this.logger.log(
-        `Connected to chain: ${network.chainId} (${network.name})`,
+        `Connected to chain: ${this.network.chainId} (${this.network.name})`,
       );
 
       if (this.provider instanceof ethers.JsonRpcProvider)
@@ -51,7 +55,6 @@ export class BlockchainListenerService implements OnModuleInit {
   }
 
   private setupEventListener() {
-    // Use a WebSocket provider (wss://) for real-time, low-latency listening
     this.contract = new ethers.Contract(
       this.contractAddress,
       VouchVaultAbi.abi,
@@ -60,42 +63,50 @@ export class BlockchainListenerService implements OnModuleInit {
 
     this.logger.log('Listening for LoanCreated events...');
 
-    // The actual listener
     void this.contract.on(
       'LoanCreated',
       (
-        user: string,
-        amount: string,
-        collateralToken: string,
-        collateralAmount: string,
-        { transactionHash }: ethers.EventLog,
+        loanId: bigint,
+        borrower: string,
+        collateralTokenAddress: string,
+        collateralAmount: bigint,
+        timestamp: bigint,
+        { log: eventLog }: ethers.ContractEventPayload,
       ) => {
-        this.handleLoanCreated(
-          user,
-          BigInt(amount),
-          collateralToken,
-          BigInt(collateralAmount),
-          transactionHash,
+        void this.handleLoanCreated(
+          loanId,
+          borrower,
+          collateralTokenAddress,
+          collateralAmount,
+          timestamp,
+          eventLog,
         );
       },
     );
   }
 
-  private handleLoanCreated(
-    user: string,
-    amount: bigint,
-    collateralToken: string,
+  private async handleLoanCreated(
+    loanId: bigint,
+    borrower: string,
+    collateralTokenAddress: string,
     collateralAmount: bigint,
-    txHash: string,
+    timestamp: bigint,
+    eventLog: ethers.EventLog,
   ) {
-    this.logger.log(
-      `New Loan! User: ${user}, Amount: ${ethers.formatEther(amount)}, Collateral Token: ${collateralToken}, Collateral Amount: ${ethers.formatEther(collateralAmount)}, TxHash: ${txHash}`,
-    );
-    this.logger.log(
-      `Full event data: ${JSON.stringify({ user, amount, collateralToken, collateralAmount, txHash })}`,
-    );
-
-    // TODO: Update your database (TypeORM/Prisma) here
-    // await this.loansService.create({ user, amount, collateralToken, collateralAmount, txHash });
+    try {
+      await this.loanService.create({
+        loanId: loanId.toString(),
+        borrower,
+        collateralAmount: collateralAmount.toString(),
+        collateralTokenAddress,
+        collateralTxHash: eventLog.transactionHash,
+        collateralBlockNumber: eventLog.blockNumber.toString(),
+        collateralBlockHash: eventLog.blockHash,
+        collateralLockedAt: new Date(Number(timestamp) * 1000).toISOString(),
+        chainId: this.network.chainId.toString(),
+      });
+    } catch (error) {
+      this.logger.error('Failed to create loan in DB', error);
+    }
   }
 }

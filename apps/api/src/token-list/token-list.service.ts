@@ -7,7 +7,7 @@ import type { Redis } from 'ioredis';
 import { SupabaseService } from '../supabase/supabase.service';
 import { tokenListMock } from './token-list.mock';
 
-export type Token = {
+export type ResponseToken = {
   chainId: number;
   address: string;
   symbol: string;
@@ -20,8 +20,17 @@ export type Token = {
 
 export type TokenListResponse = {
   tokens: {
-    [chainId: string]: Token[];
+    [chainId: string]: ResponseToken[];
   };
+};
+
+export type Token = {
+  chainId: string;
+  address: string;
+  symbol: string;
+  name: string | null;
+  decimals: number | null;
+  logoURI: string | null;
 };
 
 @Injectable()
@@ -54,15 +63,15 @@ export class TokenListService implements OnModuleInit {
           await this.httpService.axiosRef.get<TokenListResponse>(
             this.tokenListUrl,
           )
-        ).data,
+        ).data.tokens,
         ...(HARDCODED_MOCK_ERC20_ADDRESS &&
           tokenListMock(HARDCODED_MOCK_ERC20_ADDRESS)),
       };
 
-      const tokensArr = Object.values(raw.tokens).flat();
+      const tokensArr = Object.values(raw).flat();
 
       const tokens = tokensArr.map((token) => ({
-        chainId: token.chainId,
+        chainId: token.chainId.toString(),
         address: token.address,
         symbol: token.symbol,
         name: token.name,
@@ -101,13 +110,13 @@ export class TokenListService implements OnModuleInit {
     }
   }
 
-  async getTokenList(chainId: number): Promise<Token[]> {
+  async getTokenList(chainId: number): Promise<ResponseToken[]> {
     const redisKey = `${this.redisKeyPrefix}${chainId}`;
     // Try Redis cache first
     const cached = await this.redis.get(redisKey);
     if (cached) {
       try {
-        return JSON.parse(cached) as Token[];
+        return JSON.parse(cached) as ResponseToken[];
       } catch {
         this.logger.warn(
           `Failed to parse token list for chainId ${chainId} from Redis, refetching...`,
@@ -117,6 +126,6 @@ export class TokenListService implements OnModuleInit {
     // Fallback: fetch and cache again
     await this.fetchTokenList();
     const refreshed = await this.redis.get(redisKey);
-    return refreshed ? (JSON.parse(refreshed) as Token[]) : [];
+    return refreshed ? (JSON.parse(refreshed) as ResponseToken[]) : [];
   }
 }

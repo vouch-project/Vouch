@@ -9,7 +9,7 @@ export default [
       'eslint.config.mjs',
       'dist/**',
       'node_modules/**',
-      '**/database.types.ts',
+      '**/database-generated.types.ts',
     ],
   },
   eslint.configs.recommended,

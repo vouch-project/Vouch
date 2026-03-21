@@ -31,7 +31,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 indexed loanId, 
         address indexed borrower, 
         address collateralToken, 
-        uint256 collateralAmount
+        uint256 collateralAmount,
+        uint256 timestamp
     );
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -78,7 +79,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             active: true
         });
 
-        emit LoanCreated(nextLoanId, msg.sender, address(0), msg.value);
+        emit LoanCreated(nextLoanId, msg.sender, address(0), msg.value, block.timestamp);
         nextLoanId++;
     }
 
@@ -99,7 +100,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             active: true
         });
 
-        emit LoanCreated(nextLoanId, msg.sender, token, amount);
+        emit LoanCreated(nextLoanId, msg.sender, token, amount, block.timestamp);
         nextLoanId++;
     }
 

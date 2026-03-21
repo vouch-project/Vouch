@@ -26,14 +26,15 @@ END$$;
 
 CREATE TABLE IF NOT EXISTS loans (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "loanId" numeric NOT NULL,
     borrower text NOT NULL,
-    "chainId" bigint NOT NULL DEFAULT 1,
+    "chainId" bigint NOT NULL,
     status loan_status NOT NULL DEFAULT 'pending',
     "collateralAmount" numeric NOT NULL,
-    "collateralTxHash" text,
-    "collateralBlockNumber" bigint,
-    "collateralBlockHash" text,
-    "collateralLockedAt" timestamptz,
+    "collateralTxHash" text NOT NULL,
+    "collateralBlockNumber" bigint NOT NULL,
+    "collateralBlockHash" text NOT NULL,
+    "collateralLockedAt" timestamptz NOT NULL,
     "collateralTokenId" uuid NOT NULL REFERENCES token_list (id),
     "createdAt" timestamptz NOT NULL DEFAULT now()
 );
