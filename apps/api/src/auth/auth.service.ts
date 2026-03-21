@@ -1,5 +1,9 @@
 import { InjectRedis } from '@nestjs-modules/ioredis';
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'crypto';
 import { ethers } from 'ethers';
@@ -16,7 +20,7 @@ export class AuthService {
   ) {}
 
   async getNonce(address: string): Promise<string> {
-    if (!address) throw new Error('Missing address');
+    if (!address) throw new BadRequestException('Missing address');
 
     const nonce = randomBytes(16).toString('hex');
     await this.redis.set(this.nonceKey(address), nonce, 'EX', this.nonceTtlSec);
@@ -27,15 +31,18 @@ export class AuthService {
   async login({ address, signature, loginMessage }: LoginDto): Promise<string> {
     const match = loginMessage.match(/Nonce: ([a-fA-F0-9]{32})/);
     const nonce = match ? match[1] : undefined;
-    if (!nonce) throw new Error('No nonce for address');
+    if (!nonce)
+      throw new BadRequestException(
+        'Invalid login message format: Nonce not found or invalid',
+      );
 
     const storedNonce = await this.redis.get(this.nonceKey(address));
-    if (!storedNonce) throw new Error('No stored nonce for address');
-    if (nonce !== storedNonce) throw new Error('Nonce does not match');
+    if (!storedNonce || nonce !== storedNonce)
+      throw new UnauthorizedException('Invalid authentication credentials');
 
     const recovered = ethers.verifyMessage(loginMessage, signature);
     if (recovered.toLowerCase() !== address.toLowerCase())
-      throw new Error('Invalid signature');
+      throw new UnauthorizedException('Invalid authentication credentials');
 
     const payload = { address };
     const token = this.jwtService.sign(payload);

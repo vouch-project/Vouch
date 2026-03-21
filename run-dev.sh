@@ -15,8 +15,10 @@ else
 fi
 
 cleanup() {
-  docker stop vouch-redis > /dev/null 2>&1 || true
+  docker stop vouch-redis
+  npx supabase stop
 }
 trap cleanup EXIT INT
 
+npx supabase start
 turbo run dev
