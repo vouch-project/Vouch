@@ -1,4 +1,4 @@
-import { axiosApi } from './axios';
+import { axiosApi } from './axiosApi';
 
 export type Token = {
   id: string; // UUID

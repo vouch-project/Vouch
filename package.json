@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev",
+    "dev": "./run-dev.sh",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "db:migrate": "supabase db push",

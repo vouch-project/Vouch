@@ -3,7 +3,7 @@ import axios from 'axios';
 import { JWT_STORAGE_KEY } from '../constants';
 
 export const axiosApi = axios.create({
-  baseURL: `${BACKEND_API_URL}/api`,
+  baseURL: BACKEND_API_URL,
   headers: {
     'Content-Type': 'application/json',
   },

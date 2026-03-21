@@ -1,7 +1,7 @@
 import { ethers } from 'ethers';
 import { jwtDecode, type JwtPayload } from 'jwt-decode';
 import { JWT_STORAGE_KEY } from '../constants';
-import { axiosApi } from './axios';
+import { axiosApi } from './axiosApi';
 
 interface DecodedJwt extends JwtPayload {
   address?: string;
