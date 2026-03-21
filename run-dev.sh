@@ -21,4 +21,4 @@ cleanup() {
 trap cleanup EXIT INT
 
 npx supabase start
-turbo run dev
+turbo run dev "$@"
