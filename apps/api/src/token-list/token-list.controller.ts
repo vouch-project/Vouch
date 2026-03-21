@@ -7,8 +7,6 @@ export class TokenListController {
 
   @Get()
   getTokens(@Query('chainId') chainId: string) {
-    return this.tokenListService.tokenList.filter(
-      (token) => token.chainId === Number(chainId),
-    );
+    return this.tokenListService.getTokenList(Number(chainId));
   }
 }
