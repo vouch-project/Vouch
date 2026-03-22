@@ -1,9 +1,9 @@
 import { dev } from '$app/environment';
-import { VOUCH_VAULT_ADDRESS } from '$lib/env';
 import { Contract, ContractTransactionResponse, ethers } from 'ethers';
 import VouchVaultAbiDev from '../../../../../packages/abi/VouchVault.json';
 import VouchVaultAbiProd from '../../../../../packages/abi/prod/VouchVault.json';
-import type { Token } from '../../api/tokenList';
+import type { Token } from '../../api/chain';
+import { chainInfo } from '../stores/tokenListStore.svelte';
 import { SUPPORTED_CHAIN_IDS } from './appkit';
 import { safeResolveAddress } from './safeResolveAddress';
 import { wallet } from './wallet.svelte';
@@ -12,23 +12,24 @@ const VouchVaultAbi = dev ? VouchVaultAbiDev : VouchVaultAbiProd;
 
 export const getVouchVaultContract = async (): Promise<Contract> => {
   if (!window.ethereum) throw new Error('No wallet found');
+  if (!chainInfo.contractAddress) throw new Error('No contract address found for current chain');
+
   const provider = new ethers.BrowserProvider(window.ethereum as unknown as ethers.Eip1193Provider);
   const signer = await provider.getSigner();
   // Always resolve contract address (prevents ENS on unsupported networks)
   const network = await provider.getNetwork();
-  let contractAddress: string = VOUCH_VAULT_ADDRESS;
 
-  if (!ethers.isAddress(contractAddress)) {
+  if (!ethers.isAddress(chainInfo.contractAddress)) {
     if (!SUPPORTED_CHAIN_IDS.includes(network.chainId))
       throw new Error(
         'ENS contract addresses are not supported on this network. Please use a direct Ethereum address.',
       );
 
-    const resolved = await provider.resolveName(contractAddress);
+    const resolved = await provider.resolveName(chainInfo.contractAddress);
     if (!resolved) throw new Error('ENS contract address could not be resolved.');
-    contractAddress = resolved;
+    chainInfo.contractAddress = resolved;
   }
-  return new ethers.Contract(contractAddress, VouchVaultAbi.abi, signer);
+  return new ethers.Contract(chainInfo.contractAddress, VouchVaultAbi.abi, signer);
 };
 
 /**

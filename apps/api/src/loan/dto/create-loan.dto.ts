@@ -11,7 +11,7 @@ export class CreateLoanDto {
   collateralAmount: string;
 
   @IsNumberString()
-  chainId: string;
+  networkId: string;
 
   @IsString()
   collateralTxHash: string;

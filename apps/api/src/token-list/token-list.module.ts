@@ -8,5 +8,6 @@ import { TokenListService } from './token-list.service';
   imports: [HttpModule.register({ timeout: 5000 }), SupabaseModule],
   controllers: [TokenListController],
   providers: [TokenListService],
+  exports: [TokenListService],
 })
 export class TokenListModule {}

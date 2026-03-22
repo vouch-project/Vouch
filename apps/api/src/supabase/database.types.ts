@@ -1,3 +1,4 @@
+import { UUID } from 'crypto';
 import { MergeDeep } from 'type-fest';
 import { Database as DatabaseGenerated } from './database-generated.types';
 
@@ -6,26 +7,42 @@ export type Database = MergeDeep<
   {
     public: {
       Tables: {
-        loans: {
+        chains: {
           Row: {
-            loanId: string;
-            chainId: string;
-            collateralAmount: string;
-            collateralBlockNumber: string;
+            id: UUID;
+            networkId: string;
           };
           Insert: {
+            id?: UUID;
+            networkId: string;
+          };
+        };
+        loans: {
+          Row: {
+            id: UUID;
             loanId: string;
-            chainId: string;
+            chainId: UUID;
             collateralAmount: string;
             collateralBlockNumber: string;
+            collateralTokenId: UUID;
+          };
+          Insert: {
+            id?: UUID;
+            loanId: string;
+            chainId: UUID;
+            collateralAmount: string;
+            collateralBlockNumber: string;
+            collateralTokenId: UUID;
           };
         };
         token_list: {
           Row: {
-            chainId: string;
+            id: UUID;
+            chainId: UUID;
           };
           Insert: {
-            chainId: string;
+            id?: UUID;
+            chainId: UUID;
           };
         };
       };

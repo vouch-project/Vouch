@@ -7,6 +7,6 @@ export class TokenListController {
 
   @Get()
   getTokens(@Query('chainId') chainId: string) {
-    return this.tokenListService.getTokenList(Number(chainId));
+    return this.tokenListService.getTokenList(chainId);
   }
 }

@@ -7,10 +7,10 @@
    * stores and see live, reactive wallet state.
    */
   import Header from '$lib/components/layout/Header.svelte';
-  import { tokenListStore } from '$lib/stores/tokenListStore.svelte';
+  import { chainInfo } from '$lib/stores/tokenListStore.svelte';
   import { initWalletSubscriptions, wallet } from '$lib/wallet/wallet.svelte';
   import { onMount } from 'svelte';
-  import { getTokenList } from '../api/tokenList';
+  import { getChainInfo } from '../api/chain';
   import '../app.css';
 
   const { children } = $props();
@@ -26,13 +26,16 @@
     const fetchTokens = async () => {
       try {
         if (wallet.chainId) {
-          const tokens = await getTokenList(wallet.chainId);
-          tokenListStore.tokens = tokens;
+          const chainData = await getChainInfo(wallet.chainId);
+          chainInfo.contractAddress = chainData.contractAddress;
+          chainInfo.tokens = chainData.tokens;
         } else {
           console.warn('No chain ID found in wallet; skipping token list fetch');
         }
       } catch (e) {
         console.error('Failed to fetch token list', e);
+        chainInfo.contractAddress = undefined;
+        chainInfo.tokens = [];
       }
     };
 

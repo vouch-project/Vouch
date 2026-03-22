@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tokenListStore } from '$lib/stores/tokenListStore.svelte';
+  import { chainInfo } from '$lib/stores/tokenListStore.svelte';
   import { createLoan } from '$lib/wallet/vouchVault';
   import type { Token } from '../../../api/tokenList';
 
@@ -42,7 +42,7 @@
     const includes = [];
     const nameIncludes = [];
 
-    for (const t of tokenListStore.tokens) {
+    for (const t of chainInfo.tokens) {
       const symbol = t.symbol.toLowerCase();
       const name = t.name?.toLowerCase() ?? '';
 
@@ -69,7 +69,7 @@
 
   const handleCreateLoan = async () => {
     status = 'Waiting for wallet confirmation...';
-    const token = tokenListStore.tokens.find((t) => t.symbol === selectedToken);
+    const token = chainInfo.tokens.find((t) => t.symbol === selectedToken);
     if (!token) {
       status = 'Selected token not found';
       return;

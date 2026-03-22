@@ -1,7 +1,8 @@
-import type { Token } from '../../api/tokenList';
+import type { Token } from '../../api/chain';
 
-class TokenListStore {
+class ChainInfo {
+  contractAddress = $state<string>();
   tokens = $state<Token[]>([]);
 }
 
-export const tokenListStore = new TokenListStore();
+export const chainInfo = new ChainInfo();

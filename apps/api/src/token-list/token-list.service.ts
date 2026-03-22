@@ -3,6 +3,7 @@ import { HttpService } from '@nestjs/axios/dist/http.service';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config/dist/config.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { UUID } from 'crypto';
 import type { Redis } from 'ioredis';
 import { SupabaseService } from '../supabase/supabase.service';
 import { tokenListMock } from './token-list.mock';
@@ -36,7 +37,7 @@ export type Token = {
 @Injectable()
 export class TokenListService implements OnModuleInit {
   private readonly logger = new Logger(TokenListService.name);
-  private readonly tokenListUrl = 'https://li.quest/v1/tokens?chains=1';
+  private readonly tokenListUrl = 'https://li.quest/v1/tokens?chains=';
   private readonly redisKeyPrefix = 'token-list:cache:';
 
   constructor(
@@ -58,10 +59,33 @@ export class TokenListService implements OnModuleInit {
         'HARDCODED_MOCK_ERC20_ADDRESS',
       );
 
+      const { data: tokenListData, error: tokenListError } =
+        await this.supabaseService.client
+          .from('chains')
+          .select('id, networkId::text')
+          .eq('networkType', 'evm');
+
+      if (tokenListError) {
+        this.logger.error(
+          'Failed to fetch EVM chains from database',
+          tokenListError,
+        );
+        return;
+      }
+
+      const evmChainIds = tokenListData?.map((chain) => chain.networkId) || [];
+
+      if (evmChainIds.length === 0) {
+        this.logger.warn(
+          'No EVM chains found in database, skipping token list fetch',
+        );
+        return;
+      }
+
       const raw = {
         ...(
           await this.httpService.axiosRef.get<TokenListResponse>(
-            this.tokenListUrl,
+            `${this.tokenListUrl}${evmChainIds.join(',')}`,
           )
         ).data.tokens,
         ...(HARDCODED_MOCK_ERC20_ADDRESS &&
@@ -70,34 +94,50 @@ export class TokenListService implements OnModuleInit {
 
       const tokensArr = Object.values(raw).flat();
 
-      const tokens = tokensArr.map((token) => ({
-        chainId: token.chainId.toString(),
-        address: token.address,
-        symbol: token.symbol,
-        name: token.name,
-        decimals: token.decimals,
-        logoURI: token.logoURI,
-      }));
+      const tokens = tokensArr.map((token) => {
+        const chain = tokenListData?.find(
+          (chain) => chain.networkId === token.chainId.toString(),
+        );
+        return {
+          chainId: chain?.id as UUID,
+          networkId: chain?.networkId,
+          address: token.address,
+          symbol: token.symbol,
+          name: token.name,
+          decimals: token.decimals,
+          logoURI: token.logoURI,
+        };
+      });
 
       const { data, error } = await this.supabaseService.client
         .from('token_list')
-        .upsert(tokens, { onConflict: 'chainId,address' })
-        .select('*');
+        .upsert(
+          tokens.map((token) => {
+            delete token.networkId;
+            return token;
+          }),
+          { onConflict: 'chainId,address' },
+        )
+        .select('*, chainId, address');
 
       if (error) this.logger.error(`Error upserting tokens:`, error);
 
-      // Cache in Redis per chainId
+      // Cache in Redis per networkId
       if (data) {
-        const tokensByChain: Record<string, Token[]> = {};
+        const tokensByNetwork: Record<string, Token[]> = {};
         for (const token of data) {
-          if (!tokensByChain[token.chainId]) tokensByChain[token.chainId] = [];
-          tokensByChain[token.chainId].push(token);
+          // Find the networkId for this chainId
+          const chain = tokenListData?.find((c) => c.id === token.chainId);
+          if (!chain) continue;
+          if (!tokensByNetwork[chain.networkId])
+            tokensByNetwork[chain.networkId] = [];
+          tokensByNetwork[chain.networkId].push(token);
         }
 
         const pipeline = this.redis.pipeline();
-        for (const [chainId, tokens] of Object.entries(tokensByChain)) {
+        for (const [networkId, tokens] of Object.entries(tokensByNetwork)) {
           pipeline.set(
-            `${this.redisKeyPrefix}${chainId}`,
+            `${this.redisKeyPrefix}${networkId}`,
             JSON.stringify(tokens),
             'EX',
             24 * 60 * 60,
@@ -110,16 +150,16 @@ export class TokenListService implements OnModuleInit {
     }
   }
 
-  async getTokenList(chainId: number): Promise<ResponseToken[]> {
+  async getTokenList(chainId: string): Promise<ResponseToken[]> {
     const redisKey = `${this.redisKeyPrefix}${chainId}`;
-    // Try Redis cache first
+    // Try Redis cache first (now by networkId)
     const cached = await this.redis.get(redisKey);
     if (cached) {
       try {
         return JSON.parse(cached) as ResponseToken[];
       } catch {
         this.logger.warn(
-          `Failed to parse token list for chainId ${chainId} from Redis, refetching...`,
+          `Failed to parse token list for networkId ${chainId} from Redis, refetching...`,
         );
       }
     }
