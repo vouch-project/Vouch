@@ -197,7 +197,7 @@ export type Database = {
           logIndex: number
           status: Database["public"]["Enums"]["transactionStatus"]
           toAddress: string | null
-          tokenId: string | null
+          tokenId: string
           txHash: string
           type: Database["public"]["Enums"]["transactionType"]
           updatedAt: string
@@ -214,7 +214,7 @@ export type Database = {
           logIndex: number
           status?: Database["public"]["Enums"]["transactionStatus"]
           toAddress?: string | null
-          tokenId?: string | null
+          tokenId: string
           txHash: string
           type: Database["public"]["Enums"]["transactionType"]
           updatedAt?: string
@@ -231,7 +231,7 @@ export type Database = {
           logIndex?: number
           status?: Database["public"]["Enums"]["transactionStatus"]
           toAddress?: string | null
-          tokenId?: string | null
+          tokenId?: string
           txHash?: string
           type?: Database["public"]["Enums"]["transactionType"]
           updatedAt?: string

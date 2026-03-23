@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     "loanId" uuid NOT NULL REFERENCES loans (id),
     "chainId" uuid NOT NULL REFERENCES chains (id),
-    "tokenId" uuid REFERENCES tokens (id),
+    "tokenId" uuid NOT NULL REFERENCES tokens (id),
     "txHash" text NOT NULL,
     "blockNumber" bigint,
     "blockHash" text,

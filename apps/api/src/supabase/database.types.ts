@@ -17,15 +17,15 @@ export type Database = MergeDeep<
           Insert: { id?: UUID; chainId: UUID };
           Update: { id?: UUID; chainId?: UUID };
         };
-        transactions: {
-          Row: { id: UUID; chainId: UUID; loanId: UUID };
-          Insert: { id?: UUID; chainId: UUID; loanId: UUID };
-          Update: { id?: UUID; chainId?: UUID; loanId?: UUID };
-        };
         loans: {
           Row: { id: UUID; chainId: UUID };
           Insert: { id?: UUID; chainId: UUID };
           Update: { id?: UUID; chainId?: UUID };
+        };
+        transactions: {
+          Row: { id: UUID; chainId: UUID; loanId: UUID; tokenId: UUID };
+          Insert: { id?: UUID; chainId: UUID; loanId: UUID; tokenId: UUID };
+          Update: { id?: UUID; chainId?: UUID; loanId?: UUID; tokenId?: UUID };
         };
       };
     };
