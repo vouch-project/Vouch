@@ -3,7 +3,7 @@ import { Contract, ContractTransactionResponse, ethers } from 'ethers';
 import VouchVaultAbiDev from '../../../../../packages/abi/VouchVault.json';
 import VouchVaultAbiProd from '../../../../../packages/abi/prod/VouchVault.json';
 import type { Token } from '../../api/chain';
-import { chainInfo } from '../stores/tokenListStore.svelte';
+import { chainInfo } from '../stores/chainInfo.svelte';
 import { SUPPORTED_CHAIN_IDS } from './appkit';
 import { safeResolveAddress } from './safeResolveAddress';
 import { wallet } from './wallet.svelte';

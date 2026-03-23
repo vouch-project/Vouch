@@ -195,7 +195,6 @@ export type Database = {
           id: string
           loanId: string
           logIndex: number
-          metadata: Json | null
           status: Database["public"]["Enums"]["transactionStatus"]
           toAddress: string | null
           tokenId: string | null
@@ -213,7 +212,6 @@ export type Database = {
           id?: string
           loanId: string
           logIndex: number
-          metadata?: Json | null
           status?: Database["public"]["Enums"]["transactionStatus"]
           toAddress?: string | null
           tokenId?: string | null
@@ -231,7 +229,6 @@ export type Database = {
           id?: string
           loanId?: string
           logIndex?: number
-          metadata?: Json | null
           status?: Database["public"]["Enums"]["transactionStatus"]
           toAddress?: string | null
           tokenId?: string | null

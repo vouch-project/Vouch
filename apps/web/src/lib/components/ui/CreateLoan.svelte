@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { chainInfo } from '$lib/stores/tokenListStore.svelte';
+  import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { createLoan } from '$lib/wallet/vouchVault';
   import type { Token } from '../../../api/tokenList';
 

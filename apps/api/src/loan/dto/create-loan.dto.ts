@@ -30,4 +30,7 @@ export class CreateLoanDto {
 
   @IsNumber()
   logIndex: number;
+
+  @IsString()
+  contractAddress: string;
 }

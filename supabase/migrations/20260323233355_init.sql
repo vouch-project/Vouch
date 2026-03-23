@@ -119,8 +119,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     amount numeric(78, 0),
     "logIndex" integer NOT NULL,
     "createdAt" timestamptz NOT NULL DEFAULT now(),
-    "updatedAt" timestamptz NOT NULL DEFAULT now(),
-    metadata jsonb
+    "updatedAt" timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS "transactions_chain_tx_log_unique" ON transactions ("chainId", "txHash", "logIndex");

@@ -9,6 +9,7 @@ export class LoanService {
   async create({
     collateralTokenAddress,
     networkId,
+    contractAddress,
     ...createLoanDto
   }: CreateLoanDto) {
     const { data: chain, error: chainError } = await this.supabaseService.client
@@ -39,9 +40,7 @@ export class LoanService {
         .insert({
           onChainLoanId: createLoanDto.loanId,
           borrowerAddress: createLoanDto.borrower,
-          collateralAmount: createLoanDto.collateralAmount
-            ? Number(createLoanDto.collateralAmount)
-            : null,
+          collateralAmount: Number(createLoanDto.collateralAmount),
           collateralTokenId: token.id,
           chainId: chain.id,
           initialTxHash: createLoanDto.collateralTxHash,
@@ -57,21 +56,14 @@ export class LoanService {
       chainId: chain.id,
       tokenId: token.id,
       txHash: createLoanDto.collateralTxHash,
-      blockNumber: createLoanDto.collateralBlockNumber
-        ? Number(createLoanDto.collateralBlockNumber)
-        : null,
+      blockNumber: Number(createLoanDto.collateralBlockNumber),
       blockHash: createLoanDto.collateralBlockHash,
       type: 'collateral_deposit',
       status: 'confirmed',
       fromAddress: createLoanDto.borrower,
-      toAddress: null,
-      amount: createLoanDto.collateralAmount
-        ? Number(createLoanDto.collateralAmount)
-        : null,
+      toAddress: contractAddress,
+      amount: Number(createLoanDto.collateralAmount),
       logIndex: createLoanDto.logIndex,
-      metadata: {
-        lockedAt: createLoanDto.collateralLockedAt,
-      },
     });
   }
 }

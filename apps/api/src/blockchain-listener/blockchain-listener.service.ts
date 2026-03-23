@@ -48,18 +48,21 @@ export class BlockchainListenerService implements OnModuleInit {
           ? new ethers.WebSocketProvider(config.rpcUrl)
           : new ethers.JsonRpcProvider(config.rpcUrl);
         const network = await provider.getNetwork();
+
         this.logger.log(
           `Connected to chain: ${network.chainId} (${network.name}) [${config.rpcUrl}]`,
         );
+
         if (provider instanceof ethers.JsonRpcProvider)
           provider.pollingInterval = 4000;
+
         const contract = new ethers.Contract(
           config.contractAddress,
           VouchVaultAbi.abi,
           provider,
         );
         this.chains.push({ config, provider, contract, network });
-        this.setupEventListener(contract, network);
+        this.setupEventListener(contract, network, config);
       } catch (error) {
         this.logger.error(
           `Failed to connect to RPC at ${config.rpcUrl}: ${(error as Error).message}`,
@@ -71,6 +74,7 @@ export class BlockchainListenerService implements OnModuleInit {
   private setupEventListener(
     contract: ethers.Contract,
     network: ethers.Network,
+    config: ChainConfig,
   ) {
     this.logger.log(
       `Listening for LoanCreated events on chain ${network.chainId} (${network.name})...`,
@@ -93,6 +97,7 @@ export class BlockchainListenerService implements OnModuleInit {
           timestamp,
           eventLog,
           network,
+          config.contractAddress,
         );
       },
     );
@@ -111,6 +116,7 @@ export class BlockchainListenerService implements OnModuleInit {
       index: logIndex,
     }: ethers.EventLog,
     network: ethers.Network,
+    contractAddress: string,
   ) {
     try {
       await this.loanService.create({
@@ -123,6 +129,7 @@ export class BlockchainListenerService implements OnModuleInit {
         collateralBlockHash: blockHash,
         collateralLockedAt: new Date(Number(timestamp) * 1000).toISOString(),
         networkId: network.chainId.toString(),
+        contractAddress,
         logIndex,
       });
     } catch (error) {

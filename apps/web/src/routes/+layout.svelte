@@ -7,7 +7,7 @@
    * stores and see live, reactive wallet state.
    */
   import Header from '$lib/components/layout/Header.svelte';
-  import { chainInfo } from '$lib/stores/tokenListStore.svelte';
+  import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { initWalletSubscriptions, wallet } from '$lib/wallet/wallet.svelte';
   import { onMount } from 'svelte';
   import { getChainInfo } from '../api/chain';
