@@ -1,8 +1,9 @@
+import type { UUID } from '../types';
 import { axiosApi } from './axiosApi';
 
 export type Token = {
-  id: string; // UUID
-  chainId: number;
+  id: UUID;
+  chainId: string;
   address: string;
   symbol: string;
   name: string | null;

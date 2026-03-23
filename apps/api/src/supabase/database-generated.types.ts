@@ -199,6 +199,7 @@ export type Database = {
           toAddress: string | null
           tokenId: string
           txHash: string
+          txTimestamp: string
           type: Database["public"]["Enums"]["transactionType"]
           updatedAt: string
         }
@@ -216,6 +217,7 @@ export type Database = {
           toAddress?: string | null
           tokenId: string
           txHash: string
+          txTimestamp: string
           type: Database["public"]["Enums"]["transactionType"]
           updatedAt?: string
         }
@@ -233,6 +235,7 @@ export type Database = {
           toAddress?: string | null
           tokenId?: string
           txHash?: string
+          txTimestamp?: string
           type?: Database["public"]["Enums"]["transactionType"]
           updatedAt?: string
         }

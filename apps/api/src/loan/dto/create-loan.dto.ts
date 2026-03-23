@@ -1,4 +1,4 @@
-import { IsNumber, IsNumberString, IsString } from 'class-validator';
+import { IsDate, IsNumber, IsNumberString, IsString } from 'class-validator';
 
 export class CreateLoanDto {
   @IsNumberString()
@@ -22,8 +22,8 @@ export class CreateLoanDto {
   @IsString()
   collateralBlockHash: string;
 
-  @IsString()
-  collateralLockedAt: string;
+  @IsDate()
+  collateralLockedAt: Date;
 
   @IsString()
   collateralTokenAddress: string;

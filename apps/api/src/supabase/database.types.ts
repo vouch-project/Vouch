@@ -24,8 +24,20 @@ export type Database = MergeDeep<
         };
         transactions: {
           Row: { id: UUID; chainId: UUID; loanId: UUID; tokenId: UUID };
-          Insert: { id?: UUID; chainId: UUID; loanId: UUID; tokenId: UUID };
-          Update: { id?: UUID; chainId?: UUID; loanId?: UUID; tokenId?: UUID };
+          Insert: {
+            id?: UUID;
+            chainId: UUID;
+            loanId: UUID;
+            tokenId: UUID;
+            txTimestamp: Date;
+          };
+          Update: {
+            id?: UUID;
+            chainId?: UUID;
+            loanId?: UUID;
+            tokenId?: UUID;
+            txTimestamp?: Date;
+          };
         };
       };
     };

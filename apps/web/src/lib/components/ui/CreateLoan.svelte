@@ -1,7 +1,7 @@
 <script lang="ts">
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { createLoan } from '$lib/wallet/vouchVault';
-  import type { Token } from '../../../api/tokenList';
+  import type { Token } from '../../../api/chain';
 
   const optionRefs: HTMLElement[] = $state([]);
   let focusedIndex = $state(-1);

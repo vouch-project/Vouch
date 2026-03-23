@@ -10,7 +10,6 @@
         <h2 class="text-xl font-semibold mb-4 text-gray-700">Create a Loan</h2>
         <CreateLoan />
       </div>
-      <!-- Future dashboard widgets can be added here -->
     </div>
   </div>
 </div>

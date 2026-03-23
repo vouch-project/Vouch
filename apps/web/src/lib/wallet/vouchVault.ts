@@ -38,9 +38,9 @@ export const getVouchVaultContract = async (): Promise<Contract> => {
  * @param token The token object representing the collateral
  */
 export const createLoan = async (collateralAmount: number, token: Token): Promise<ContractTransactionResponse> => {
-  const chainId = wallet.chainId;
+  const networkId = wallet.networkId;
   const borrower = wallet.address;
-  if (!chainId) throw new Error('No chainId in wallet state');
+  if (!networkId) throw new Error('No networkId in wallet state');
   if (!borrower) throw new Error('No borrower address in wallet state');
 
   const contract = await getVouchVaultContract();

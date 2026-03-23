@@ -10,6 +10,7 @@ export class LoanService {
     collateralTokenAddress,
     networkId,
     contractAddress,
+    collateralLockedAt,
     ...createLoanDto
   }: CreateLoanDto) {
     const { data: chain, error: chainError } = await this.supabaseService.client
@@ -64,6 +65,7 @@ export class LoanService {
       toAddress: contractAddress,
       amount: Number(createLoanDto.collateralAmount),
       logIndex: createLoanDto.logIndex,
+      txTimestamp: collateralLockedAt,
     });
   }
 }

@@ -25,12 +25,13 @@
   $effect(() => {
     const fetchTokens = async () => {
       try {
-        if (wallet.chainId) {
-          const chainData = await getChainInfo(wallet.chainId);
+        if (wallet.networkId) {
+          const chainData = await getChainInfo(wallet.networkId);
           chainInfo.contractAddress = chainData.contractAddress;
           chainInfo.tokens = chainData.tokens;
         } else {
-          console.warn('No chain ID found in wallet; skipping token list fetch');
+          chainInfo.contractAddress = undefined;
+          chainInfo.tokens = [];
         }
       } catch (e) {
         console.error('Failed to fetch token list', e);

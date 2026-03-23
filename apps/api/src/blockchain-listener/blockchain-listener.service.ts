@@ -127,7 +127,7 @@ export class BlockchainListenerService implements OnModuleInit {
         collateralTxHash: transactionHash,
         collateralBlockNumber: blockNumber.toString(),
         collateralBlockHash: blockHash,
-        collateralLockedAt: new Date(Number(timestamp) * 1000).toISOString(),
+        collateralLockedAt: new Date(Number(timestamp) * 1000),
         networkId: network.chainId.toString(),
         contractAddress,
         logIndex,

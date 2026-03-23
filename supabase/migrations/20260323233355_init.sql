@@ -118,6 +118,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     "toAddress" text,
     amount numeric(78, 0),
     "logIndex" integer NOT NULL,
+    "txTimestamp" timestamptz NOT NULL,
     "createdAt" timestamptz NOT NULL DEFAULT now(),
     "updatedAt" timestamptz NOT NULL DEFAULT now()
 );
