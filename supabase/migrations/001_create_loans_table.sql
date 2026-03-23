@@ -7,7 +7,7 @@ END$$;
 
 CREATE TABLE IF NOT EXISTS chains (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    "networkId" bigint NOT NULL,
+    "networkId" text NOT NULL,
     "networkType" "addressType" NOT NULL,
     "rpcUrl" text NOT NULL,
     name text,
@@ -32,23 +32,23 @@ CREATE TRIGGER update_chains_updated_at BEFORE
 UPDATE ON chains FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column ();
 
-CREATE TABLE IF NOT EXISTS token_list (
+CREATE TABLE IF NOT EXISTS tokens (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     "chainId" uuid NOT NULL REFERENCES chains (id),
     address text NOT NULL,
     symbol text NOT NULL,
+    decimals smallint NOT NULL,
     name text,
-    decimals integer,
     "logoURI" text
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS token_list_chainId_address_unique ON token_list ("chainId", address);
+CREATE UNIQUE INDEX IF NOT EXISTS tokens_chainId_address_unique ON tokens ("chainId", address);
 
-CREATE INDEX IF NOT EXISTS "token_listChainId_idx" ON token_list ("chainId");
+CREATE INDEX IF NOT EXISTS "tokens_chainId_idx" ON tokens ("chainId");
 
-CREATE INDEX IF NOT EXISTS token_list_address_idx ON token_list (address);
+CREATE INDEX IF NOT EXISTS tokens_address_idx ON tokens (address);
 
-CREATE INDEX IF NOT EXISTS token_list_symbol_idx ON token_list (symbol);
+CREATE INDEX IF NOT EXISTS tokens_symbol_idx ON tokens (symbol);
 
 DO $$
 BEGIN
@@ -59,112 +59,84 @@ END$$;
 
 CREATE TABLE IF NOT EXISTS loans (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    "loanId" numeric NOT NULL,
-    borrower text NOT NULL,
+    "onChainLoanId" text,
     "chainId" uuid NOT NULL REFERENCES chains (id),
+    "borrowerAddress" text NOT NULL,
+    "lenderAddress" text,
+    "initialTxHash" text,
+    "principalTokenId" uuid REFERENCES tokens (id),
+    "collateralTokenId" uuid REFERENCES tokens (id),
+    "principalAmount" numeric(78, 0),
+    "collateralAmount" numeric(78, 0),
+    "interestRate" numeric(78, 0),
+    duration interval,
     status "loanStatus" NOT NULL DEFAULT 'pending',
-    "collateralAmount" numeric NOT NULL,
-    "collateralTxHash" text NOT NULL,
-    "collateralBlockNumber" bigint NOT NULL,
-    "collateralBlockHash" text NOT NULL,
-    "collateralLockedAt" timestamptz NOT NULL,
-    "collateralTokenId" uuid NOT NULL REFERENCES token_list (id),
+    "startAt" timestamptz,
     "createdAt" timestamptz NOT NULL DEFAULT now(),
     "updatedAt" timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS loans_chain_loan_unique ON loans ("chainId", "loanId");
+CREATE UNIQUE INDEX IF NOT EXISTS loans_chain_loan_unique ON loans ("chainId", "onChainLoanId")
+WHERE
+    "onChainLoanId" IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS loans_borrower_idx ON loans (borrower);
+CREATE INDEX IF NOT EXISTS loans_borrower_idx ON loans ("borrowerAddress");
 
-CREATE INDEX IF NOT EXISTS loans_status_idx ON loans (status);
+CREATE INDEX IF NOT EXISTS loans_lender_idx ON loans ("lenderAddress");
 
-CREATE INDEX IF NOT EXISTS "loans_chainId_idx" ON loans ("chainId");
+CREATE INDEX IF NOT EXISTS loans_init_tx_idx ON loans ("initialTxHash");
 
 CREATE TRIGGER update_loans_updated_at BEFORE
 UPDATE ON loans FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column ();
 
-CREATE OR REPLACE FUNCTION normalize_crypto_address () RETURNS TRIGGER AS $$
-DECLARE
-    v_network_type "addressType";
-    v_addr TEXT;
-    v_col_name TEXT;
-    v_chain_id uuid;
+DO $$
 BEGIN
-    -- 1. Identify which column and network type we are dealing with
-    IF TG_TABLE_NAME = 'chains' THEN
-        v_network_type := NEW."networkType";
-        v_col_name := 'contractAddress';
-        v_addr := NEW."contractAddress";
-    ELSE
-        -- For token_list and loans, we look up the network type from the parent chain
-        IF TG_TABLE_NAME = 'loans' THEN 
-            v_col_name := 'borrower';
-            v_addr := NEW.borrower;
-            v_chain_id := NEW."chainId";
-        ELSE 
-            v_col_name := 'address';
-            v_addr := NEW.address; 
-            v_chain_id := NEW."chainId";
-        END IF;
-        SELECT "networkType" INTO v_network_type FROM chains WHERE id = v_chain_id;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'transactionType') THEN
+        CREATE TYPE "transactionType" AS ENUM ('collateral_deposit', 'loan_disbursement', 'repayment', 'liquidation', 'withdrawal');
     END IF;
+END$$;
 
-    -- 2. Validation & Normalization Logic
-    IF v_network_type IS NULL THEN
-        RAISE EXCEPTION 'Invalid chainId: %, networkType not found.', v_chain_id;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'transactionStatus') THEN
+        CREATE TYPE "transactionStatus" AS ENUM ('pending', 'confirmed', 'failed');
     END IF;
+END$$;
 
-    CASE v_network_type
-        WHEN 'evm' THEN
-            IF v_addr !~* '^0x[a-f0-9]{40}$' THEN 
-                RAISE EXCEPTION 'Invalid EVM % format: %', v_col_name, v_addr; 
-            END IF;
-            v_addr := LOWER(v_addr);
+CREATE TABLE IF NOT EXISTS transactions (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "loanId" uuid NOT NULL REFERENCES loans (id),
+    "chainId" uuid NOT NULL REFERENCES chains (id),
+    "tokenId" uuid REFERENCES tokens (id),
+    "txHash" text NOT NULL,
+    "blockNumber" bigint,
+    "blockHash" text,
+    type "transactionType" NOT NULL,
+    status "transactionStatus" NOT NULL DEFAULT 'pending',
+    "fromAddress" text,
+    "toAddress" text,
+    amount numeric(78, 0),
+    "logIndex" integer NOT NULL,
+    "createdAt" timestamptz NOT NULL DEFAULT now(),
+    "updatedAt" timestamptz NOT NULL DEFAULT now(),
+    metadata jsonb
+);
 
-        WHEN 'solana' THEN
-            IF v_addr !~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$' THEN 
-                RAISE EXCEPTION 'Invalid Solana %: %', v_col_name, v_addr; 
-            END IF;
+CREATE UNIQUE INDEX IF NOT EXISTS "transactions_chain_tx_log_unique" ON transactions ("chainId", "txHash", "logIndex");
 
-        WHEN 'bitcoin' THEN
-            IF v_addr !~ '^(1|3|bc1)[a-zA-Z0-9]{25,62}$' THEN 
-                RAISE EXCEPTION 'Invalid BTC %: %', v_col_name, v_addr; 
-            END IF;
-            IF v_addr ILIKE 'bc1%' THEN v_addr := LOWER(v_addr); END IF;
-    END CASE;
+CREATE INDEX IF NOT EXISTS "transactions_loanId_idx" ON transactions ("loanId");
 
-    -- 3. Save the normalized value back to the record
-    IF TG_TABLE_NAME = 'chains' THEN NEW."contractAddress" := v_addr;
-    ELSIF TG_TABLE_NAME = 'loans' THEN NEW.borrower := v_addr;
-    ELSE NEW.address := v_addr; END IF;
+CREATE INDEX IF NOT EXISTS "transactions_chainId_idx" ON transactions ("chainId");
 
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+CREATE INDEX IF NOT EXISTS "transactions_tokenId_idx" ON transactions ("tokenId");
 
-CREATE TRIGGER trigger_normalize_chain_contract_insert BEFORE INSERT ON chains FOR EACH ROW
-EXECUTE FUNCTION normalize_crypto_address ();
+CREATE INDEX IF NOT EXISTS "transactions_txHash_idx" ON transactions ("txHash");
 
-CREATE TRIGGER trigger_normalize_chain_contract_update BEFORE
-UPDATE OF "contractAddress",
-"networkType" ON chains FOR EACH ROW WHEN (
-    OLD."contractAddress" IS DISTINCT FROM NEW."contractAddress"
-    OR OLD."networkType" IS DISTINCT FROM NEW."networkType"
-)
-EXECUTE FUNCTION normalize_crypto_address ();
+CREATE INDEX IF NOT EXISTS transactions_type_idx ON transactions (type);
 
-CREATE TRIGGER trigger_normalize_token_address_insert BEFORE INSERT ON token_list FOR EACH ROW
-EXECUTE FUNCTION normalize_crypto_address ();
+CREATE INDEX IF NOT EXISTS transactions_status_idx ON transactions (status);
 
-CREATE TRIGGER trigger_normalize_token_address_update BEFORE
-UPDATE OF address ON token_list FOR EACH ROW WHEN (OLD.address IS DISTINCT FROM NEW.address)
-EXECUTE FUNCTION normalize_crypto_address ();
-
-CREATE TRIGGER trigger_normalize_loan_borrower_insert BEFORE INSERT ON loans FOR EACH ROW
-EXECUTE FUNCTION normalize_crypto_address ();
-
-CREATE TRIGGER trigger_normalize_loan_borrower_update BEFORE
-UPDATE OF borrower ON loans FOR EACH ROW WHEN (OLD.borrower IS DISTINCT FROM NEW.borrower)
-EXECUTE FUNCTION normalize_crypto_address ();
+CREATE TRIGGER update_transactions_updated_at BEFORE
+UPDATE ON transactions FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column ();

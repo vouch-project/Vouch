@@ -104,7 +104,12 @@ export class BlockchainListenerService implements OnModuleInit {
     collateralTokenAddress: string,
     collateralAmount: bigint,
     timestamp: bigint,
-    { transactionHash, blockNumber, blockHash }: ethers.EventLog,
+    {
+      transactionHash,
+      blockNumber,
+      blockHash,
+      index: logIndex,
+    }: ethers.EventLog,
     network: ethers.Network,
   ) {
     try {
@@ -118,6 +123,7 @@ export class BlockchainListenerService implements OnModuleInit {
         collateralBlockHash: blockHash,
         collateralLockedAt: new Date(Number(timestamp) * 1000).toISOString(),
         networkId: network.chainId.toString(),
+        logIndex,
       });
     } catch (error) {
       this.logger.error('Failed to create loan in DB', error);

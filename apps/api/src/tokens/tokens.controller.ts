@@ -1,7 +1,7 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { TokenListService } from './token-list.service';
+import { TokenListService } from './tokens.service';
 
-@Controller('token-list')
+@Controller('tokens')
 export class TokenListController {
   constructor(private readonly tokenListService: TokenListService) {}
 

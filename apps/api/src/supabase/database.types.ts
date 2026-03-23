@@ -8,42 +8,24 @@ export type Database = MergeDeep<
     public: {
       Tables: {
         chains: {
-          Row: {
-            id: UUID;
-            networkId: string;
-          };
-          Insert: {
-            id?: UUID;
-            networkId: string;
-          };
+          Row: { id: UUID };
+          Insert: { id?: UUID };
+          Update: { id?: UUID };
+        };
+        tokens: {
+          Row: { id: UUID; chainId: UUID };
+          Insert: { id?: UUID; chainId: UUID };
+          Update: { id?: UUID; chainId?: UUID };
+        };
+        transactions: {
+          Row: { id: UUID; chainId: UUID; loanId: UUID };
+          Insert: { id?: UUID; chainId: UUID; loanId: UUID };
+          Update: { id?: UUID; chainId?: UUID; loanId?: UUID };
         };
         loans: {
-          Row: {
-            id: UUID;
-            loanId: string;
-            chainId: UUID;
-            collateralAmount: string;
-            collateralBlockNumber: string;
-            collateralTokenId: UUID;
-          };
-          Insert: {
-            id?: UUID;
-            loanId: string;
-            chainId: UUID;
-            collateralAmount: string;
-            collateralBlockNumber: string;
-            collateralTokenId: UUID;
-          };
-        };
-        token_list: {
-          Row: {
-            id: UUID;
-            chainId: UUID;
-          };
-          Insert: {
-            id?: UUID;
-            chainId: UUID;
-          };
+          Row: { id: UUID; chainId: UUID };
+          Insert: { id?: UUID; chainId: UUID };
+          Update: { id?: UUID; chainId?: UUID };
         };
       };
     };

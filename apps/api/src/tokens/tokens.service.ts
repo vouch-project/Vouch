@@ -6,14 +6,14 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { UUID } from 'crypto';
 import type { Redis } from 'ioredis';
 import { SupabaseService } from '../supabase/supabase.service';
-import { tokenListMock } from './token-list.mock';
+import { tokenListMock } from './tokens.mock';
 
 export type ResponseToken = {
   chainId: number;
   address: string;
   symbol: string;
+  decimals: number;
   name: string | null;
-  decimals: number | null;
   logoURI: string | null;
   priceUSD?: string;
   coinKey?: string;
@@ -29,8 +29,8 @@ export type Token = {
   chainId: string;
   address: string;
   symbol: string;
+  decimals: number;
   name: string | null;
-  decimals: number | null;
   logoURI: string | null;
 };
 
@@ -38,7 +38,7 @@ export type Token = {
 export class TokenListService implements OnModuleInit {
   private readonly logger = new Logger(TokenListService.name);
   private readonly tokenListUrl = 'https://li.quest/v1/tokens?chains=';
-  private readonly redisKeyPrefix = 'token-list:cache:';
+  private readonly redisKeyPrefix = 'tokens:cache:';
 
   constructor(
     private readonly httpService: HttpService,
@@ -100,7 +100,6 @@ export class TokenListService implements OnModuleInit {
         );
         return {
           chainId: chain?.id as UUID,
-          networkId: chain?.networkId,
           address: token.address,
           symbol: token.symbol,
           name: token.name,
@@ -110,14 +109,8 @@ export class TokenListService implements OnModuleInit {
       });
 
       const { data, error } = await this.supabaseService.client
-        .from('token_list')
-        .upsert(
-          tokens.map((token) => {
-            delete token.networkId;
-            return token;
-          }),
-          { onConflict: 'chainId,address' },
-        )
+        .from('tokens')
+        .upsert(tokens, { onConflict: 'chainId,address' })
         .select('*, chainId, address');
 
       if (error) this.logger.error(`Error upserting tokens:`, error);

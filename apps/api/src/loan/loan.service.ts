@@ -22,7 +22,7 @@ export class LoanService {
     const collateralTokenAddressLower = collateralTokenAddress.toLowerCase();
 
     const { data: token, error: tokenError } = await this.supabaseService.client
-      .from('token_list')
+      .from('tokens')
       .select('id')
       .eq('address', collateralTokenAddressLower)
       .eq('chainId', chain.id)
@@ -30,15 +30,48 @@ export class LoanService {
 
     if (tokenError || !token)
       throw new Error(
-        `Collateral token not found in token_list: ${collateralTokenAddress} on chain ${networkId}`,
+        `Collateral token not found in tokens: ${collateralTokenAddress} on chain ${networkId}`,
       );
 
-    const { error } = await this.supabaseService.client.from('loans').insert({
-      ...createLoanDto,
-      collateralTokenId: token.id,
-      chainId: chain.id,
-    });
+    const { data: loanInsertData, error: loanError } =
+      await this.supabaseService.client
+        .from('loans')
+        .insert({
+          onChainLoanId: createLoanDto.loanId,
+          borrowerAddress: createLoanDto.borrower,
+          collateralAmount: createLoanDto.collateralAmount
+            ? Number(createLoanDto.collateralAmount)
+            : null,
+          collateralTokenId: token.id,
+          chainId: chain.id,
+          initialTxHash: createLoanDto.collateralTxHash,
+        })
+        .select('id')
+        .single();
 
-    if (error) throw error;
+    if (loanError) throw loanError;
+
+    // Insert transaction for collateral deposit
+    await this.supabaseService.client.from('transactions').insert({
+      loanId: loanInsertData.id,
+      chainId: chain.id,
+      tokenId: token.id,
+      txHash: createLoanDto.collateralTxHash,
+      blockNumber: createLoanDto.collateralBlockNumber
+        ? Number(createLoanDto.collateralBlockNumber)
+        : null,
+      blockHash: createLoanDto.collateralBlockHash,
+      type: 'collateral_deposit',
+      status: 'confirmed',
+      fromAddress: createLoanDto.borrower,
+      toAddress: null,
+      amount: createLoanDto.collateralAmount
+        ? Number(createLoanDto.collateralAmount)
+        : null,
+      logIndex: createLoanDto.logIndex,
+      metadata: {
+        lockedAt: createLoanDto.collateralLockedAt,
+      },
+    });
   }
 }

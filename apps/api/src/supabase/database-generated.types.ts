@@ -40,7 +40,7 @@ export type Database = {
           createdAt: string
           id: string
           name: string | null
-          networkId: number
+          networkId: string
           networkType: Database["public"]["Enums"]["addressType"]
           rpcUrl: string
           updatedAt: string
@@ -50,7 +50,7 @@ export type Database = {
           createdAt?: string
           id?: string
           name?: string | null
-          networkId: number
+          networkId: string
           networkType: Database["public"]["Enums"]["addressType"]
           rpcUrl: string
           updatedAt?: string
@@ -60,7 +60,7 @@ export type Database = {
           createdAt?: string
           id?: string
           name?: string | null
-          networkId?: number
+          networkId?: string
           networkType?: Database["public"]["Enums"]["addressType"]
           rpcUrl?: string
           updatedAt?: string
@@ -69,47 +69,56 @@ export type Database = {
       }
       loans: {
         Row: {
-          borrower: string
+          borrowerAddress: string
           chainId: string
-          collateralAmount: number
-          collateralBlockHash: string
-          collateralBlockNumber: number
-          collateralLockedAt: string
-          collateralTokenId: string
-          collateralTxHash: string
+          collateralAmount: number | null
+          collateralTokenId: string | null
           createdAt: string
+          duration: string | null
           id: string
-          loanId: number
+          initialTxHash: string | null
+          interestRate: number | null
+          lenderAddress: string | null
+          onChainLoanId: string | null
+          principalAmount: number | null
+          principalTokenId: string | null
+          startAt: string | null
           status: Database["public"]["Enums"]["loanStatus"]
           updatedAt: string
         }
         Insert: {
-          borrower: string
+          borrowerAddress: string
           chainId: string
-          collateralAmount: number
-          collateralBlockHash: string
-          collateralBlockNumber: number
-          collateralLockedAt: string
-          collateralTokenId: string
-          collateralTxHash: string
+          collateralAmount?: number | null
+          collateralTokenId?: string | null
           createdAt?: string
+          duration?: string | null
           id?: string
-          loanId: number
+          initialTxHash?: string | null
+          interestRate?: number | null
+          lenderAddress?: string | null
+          onChainLoanId?: string | null
+          principalAmount?: number | null
+          principalTokenId?: string | null
+          startAt?: string | null
           status?: Database["public"]["Enums"]["loanStatus"]
           updatedAt?: string
         }
         Update: {
-          borrower?: string
+          borrowerAddress?: string
           chainId?: string
-          collateralAmount?: number
-          collateralBlockHash?: string
-          collateralBlockNumber?: number
-          collateralLockedAt?: string
-          collateralTokenId?: string
-          collateralTxHash?: string
+          collateralAmount?: number | null
+          collateralTokenId?: string | null
           createdAt?: string
+          duration?: string | null
           id?: string
-          loanId?: number
+          initialTxHash?: string | null
+          interestRate?: number | null
+          lenderAddress?: string | null
+          onChainLoanId?: string | null
+          principalAmount?: number | null
+          principalTokenId?: string | null
+          startAt?: string | null
           status?: Database["public"]["Enums"]["loanStatus"]
           updatedAt?: string
         }
@@ -125,16 +134,23 @@ export type Database = {
             foreignKeyName: "loans_collateralTokenId_fkey"
             columns: ["collateralTokenId"]
             isOneToOne: false
-            referencedRelation: "token_list"
+            referencedRelation: "tokens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loans_principalTokenId_fkey"
+            columns: ["principalTokenId"]
+            isOneToOne: false
+            referencedRelation: "tokens"
             referencedColumns: ["id"]
           },
         ]
       }
-      token_list: {
+      tokens: {
         Row: {
           address: string
           chainId: string
-          decimals: number | null
+          decimals: number
           id: string
           logoURI: string | null
           name: string | null
@@ -143,7 +159,7 @@ export type Database = {
         Insert: {
           address: string
           chainId: string
-          decimals?: number | null
+          decimals: number
           id?: string
           logoURI?: string | null
           name?: string | null
@@ -152,7 +168,7 @@ export type Database = {
         Update: {
           address?: string
           chainId?: string
-          decimals?: number | null
+          decimals?: number
           id?: string
           logoURI?: string | null
           name?: string | null
@@ -160,10 +176,89 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "token_list_chainId_fkey"
+            foreignKeyName: "tokens_chainId_fkey"
             columns: ["chainId"]
             isOneToOne: false
             referencedRelation: "chains"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      transactions: {
+        Row: {
+          amount: number | null
+          blockHash: string | null
+          blockNumber: number | null
+          chainId: string
+          createdAt: string
+          fromAddress: string | null
+          id: string
+          loanId: string
+          logIndex: number
+          metadata: Json | null
+          status: Database["public"]["Enums"]["transactionStatus"]
+          toAddress: string | null
+          tokenId: string | null
+          txHash: string
+          type: Database["public"]["Enums"]["transactionType"]
+          updatedAt: string
+        }
+        Insert: {
+          amount?: number | null
+          blockHash?: string | null
+          blockNumber?: number | null
+          chainId: string
+          createdAt?: string
+          fromAddress?: string | null
+          id?: string
+          loanId: string
+          logIndex: number
+          metadata?: Json | null
+          status?: Database["public"]["Enums"]["transactionStatus"]
+          toAddress?: string | null
+          tokenId?: string | null
+          txHash: string
+          type: Database["public"]["Enums"]["transactionType"]
+          updatedAt?: string
+        }
+        Update: {
+          amount?: number | null
+          blockHash?: string | null
+          blockNumber?: number | null
+          chainId?: string
+          createdAt?: string
+          fromAddress?: string | null
+          id?: string
+          loanId?: string
+          logIndex?: number
+          metadata?: Json | null
+          status?: Database["public"]["Enums"]["transactionStatus"]
+          toAddress?: string | null
+          tokenId?: string | null
+          txHash?: string
+          type?: Database["public"]["Enums"]["transactionType"]
+          updatedAt?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_chainId_fkey"
+            columns: ["chainId"]
+            isOneToOne: false
+            referencedRelation: "chains"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_loanId_fkey"
+            columns: ["loanId"]
+            isOneToOne: false
+            referencedRelation: "loans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_tokenId_fkey"
+            columns: ["tokenId"]
+            isOneToOne: false
+            referencedRelation: "tokens"
             referencedColumns: ["id"]
           },
         ]
@@ -178,6 +273,13 @@ export type Database = {
     Enums: {
       addressType: "evm" | "solana" | "bitcoin"
       loanStatus: "pending" | "active" | "repaid" | "defaulted" | "cancelled"
+      transactionStatus: "pending" | "confirmed" | "failed"
+      transactionType:
+        | "collateral_deposit"
+        | "loan_disbursement"
+        | "repayment"
+        | "liquidation"
+        | "withdrawal"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -310,6 +412,14 @@ export const Constants = {
     Enums: {
       addressType: ["evm", "solana", "bitcoin"],
       loanStatus: ["pending", "active", "repaid", "defaulted", "cancelled"],
+      transactionStatus: ["pending", "confirmed", "failed"],
+      transactionType: [
+        "collateral_deposit",
+        "loan_disbursement",
+        "repayment",
+        "liquidation",
+        "withdrawal",
+      ],
     },
   },
 } as const

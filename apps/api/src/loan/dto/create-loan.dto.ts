@@ -1,4 +1,4 @@
-import { IsNumberString, IsString } from 'class-validator';
+import { IsNumber, IsNumberString, IsString } from 'class-validator';
 
 export class CreateLoanDto {
   @IsNumberString()
@@ -27,4 +27,7 @@ export class CreateLoanDto {
 
   @IsString()
   collateralTokenAddress: string;
+
+  @IsNumber()
+  logIndex: number;
 }

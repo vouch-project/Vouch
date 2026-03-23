@@ -9,7 +9,7 @@ import { BlockchainListenerModule } from './blockchain-listener/blockchain-liste
 import { ChainModule } from './chain/chain.module';
 import { LoanModule } from './loan/loan.module';
 import { SupabaseModule } from './supabase/supabase.module';
-import { TokenListModule } from './token-list/token-list.module';
+import { TokenListModule } from './tokens/tokens.module';
 
 @Module({
   imports: [

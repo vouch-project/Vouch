@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
-import { TokenListService } from '../token-list/token-list.service';
+import { TokenListService } from '../tokens/tokens.service';
 
 @Injectable()
 export class ChainService {
