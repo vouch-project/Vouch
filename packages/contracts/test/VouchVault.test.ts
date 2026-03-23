@@ -21,11 +21,14 @@ describe('VouchVault', function () {
       const sentCollateral = ethers.parseEther('1.0');
 
       const tx = await vault.createLoan({ value: sentCollateral });
-      await expect(tx).to.emit(vault, 'LoanCreated').withArgs(0, owner.address, sentCollateral);
+      await expect(tx)
+        .to.emit(vault, 'LoanCreated')
+        .withArgs(0, owner.address, ethers.ZeroAddress, sentCollateral, (timestamp: bigint) => timestamp > 0n);
       const loan = await vault.getLoan(0);
       expect(loan[0]).to.equal(owner.address);
-      expect(loan[1]).to.equal(sentCollateral);
-      expect(loan[3]).to.equal(true); // active
+      expect(loan[1]).to.equal(ethers.ZeroAddress);
+      expect(loan[2]).to.equal(sentCollateral);
+      expect(loan[4]).to.equal(true); // active
       expect(await vault.balanceOf(owner.address)).to.equal(sentCollateral);
     });
 
