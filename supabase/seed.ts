@@ -12,14 +12,17 @@ async function seed() {
   const contractAddress = process.env.PUBLIC_VOUCH_VAULT_ADDRESS;
   if (!contractAddress) throw new Error('PUBLIC_VOUCH_VAULT_ADDRESS environment variable is not set');
 
-  await client.query(
-    `
+  const infuraProjectId = process.env.INFURA_PROJECT_ID;
+  if (infuraProjectId) {
+    await client.query(
+      `
   INSERT INTO chains ("networkId", "contractAddress", "rpcUrl", "networkType", name)
-  VALUES (1, $1, 'https://mainnet.infura.io/v3/YOUR_INFURA_PROJECT_ID', 'evm', 'Mainnet')
+  VALUES (1, $1, 'https://mainnet.infura.io/v3/' || $2, 'evm', 'Mainnet')
   ON CONFLICT DO NOTHING;
   `,
-    [contractAddress],
-  );
+      [contractAddress, infuraProjectId],
+    );
+  }
 
   // Insert local hardhat only if NODE_ENV is not 'production'
   if (process.env.NODE_ENV !== 'production') {
