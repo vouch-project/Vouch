@@ -1,4 +1,4 @@
-import { HttpModule } from '@nestjs/axios/dist/http.module';
+import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { SupabaseModule } from '../supabase/supabase.module';
 import { TokenListController } from './tokens.controller';

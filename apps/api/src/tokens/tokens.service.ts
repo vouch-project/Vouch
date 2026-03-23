@@ -1,7 +1,7 @@
 import { InjectRedis } from '@nestjs-modules/ioredis';
-import { HttpService } from '@nestjs/axios/dist/http.service';
+import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config/dist/config.service';
+import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { UUID } from 'crypto';
 import type { Redis } from 'ioredis';
