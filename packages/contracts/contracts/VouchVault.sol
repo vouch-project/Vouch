@@ -23,6 +23,11 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     mapping(address => uint256) public deposits;
     mapping(uint256 => Loan) public loans;
     uint256 public nextLoanId;
+    mapping(address => uint256) public lockedEthCollateral;
+    mapping(uint256 => uint256) public lockedEthCollateralByLoan;
+    mapping(uint256 => uint256) public lockedCollateralAmountByLoan;
+    mapping(uint256 => address) public lockedCollateralTokenByLoan;
+    mapping(uint256 => bool) public loanCollateralLocked;
 
     // --- Events ---
     event Deposited(address indexed user, uint256 amount);
@@ -67,8 +72,12 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     function createLoan() external payable {
         require(msg.value > 0, "Collateral must be > 0");
 
-        // Track collateral as a deposit
-        deposits[msg.sender] += msg.value;
+        // Collateral is tracked separately from withdrawable deposits.
+        lockedEthCollateral[msg.sender] += msg.value;
+        lockedEthCollateralByLoan[nextLoanId] = msg.value;
+        lockedCollateralAmountByLoan[nextLoanId] = msg.value;
+        lockedCollateralTokenByLoan[nextLoanId] = address(0);
+        loanCollateralLocked[nextLoanId] = true;
 
         // Create and store the loan
         loans[nextLoanId] = Loan({
@@ -100,6 +109,10 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             active: true
         });
 
+        lockedCollateralAmountByLoan[nextLoanId] = amount;
+        lockedCollateralTokenByLoan[nextLoanId] = token;
+        loanCollateralLocked[nextLoanId] = true;
+
         emit LoanCreated(nextLoanId, msg.sender, token, amount, block.timestamp);
         nextLoanId++;
     }
@@ -116,10 +129,34 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         emit Withdrawn(msg.sender, amount);
     }
 
+    function releaseLoanCollateral(uint256 /*loanId*/) external pure {
+        revert("Collateral release disabled");
+    }
+
     // --- View Functions ---
 
     function balanceOf(address user) external view returns (uint256) {
         return deposits[user];
+    }
+
+    function lockedBalanceOf(address user) external view returns (uint256) {
+        return lockedEthCollateral[user];
+    }
+
+    function loanLockedBalanceOf(uint256 loanId) external view returns (uint256) {
+        return lockedEthCollateralByLoan[loanId];
+    }
+
+    function getLoanLockedCollateral(uint256 loanId) external view returns (
+        address collateralToken,
+        uint256 collateralAmount,
+        bool locked
+    ) {
+        return (
+            lockedCollateralTokenByLoan[loanId],
+            lockedCollateralAmountByLoan[loanId],
+            loanCollateralLocked[loanId]
+        );
     }
 
     function getLoan(uint256 loanId) external view returns (

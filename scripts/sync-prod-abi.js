@@ -4,8 +4,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const devAbiPath = path.resolve(__dirname, '../apps/web/src/abi/VouchVault.json');
-const prodAbiPath = path.resolve(__dirname, '../apps/web/src/abi/prod/VouchVault.json');
+const devAbiPath = path.resolve(__dirname, '../packages/abi/VouchVault.json');
+const prodAbiPath = path.resolve(__dirname, '../packages/abi/prod/VouchVault.json');
 
 if (!fs.existsSync(devAbiPath)) {
   console.error('Dev ABI not found:', devAbiPath);

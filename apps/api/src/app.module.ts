@@ -1,15 +1,15 @@
+import { RedisModule } from '@nestjs-modules/ioredis';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
-
-import { RedisModule } from '@nestjs-modules/ioredis';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { BlockchainListenerModule } from './blockchain-listener/blockchain-listener.module';
+import { ChainModule } from './chain/chain.module';
 import { LoanModule } from './loan/loan.module';
 import { SupabaseModule } from './supabase/supabase.module';
-import { TokenListModule } from './token-list/token-list.module';
+import { TokenListModule } from './tokens/tokens.module';
 
 @Module({
   imports: [
@@ -35,6 +35,7 @@ import { TokenListModule } from './token-list/token-list.module';
     }),
     AuthModule,
     BlockchainListenerModule,
+    ChainModule,
     LoanModule,
     SupabaseModule,
     TokenListModule,

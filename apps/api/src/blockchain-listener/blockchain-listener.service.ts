@@ -1,9 +1,10 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { LoanService } from '../loan/loan.service';
+import { Database } from '../supabase/database.types';
+import { SupabaseService } from '../supabase/supabase.service';
 
 const abiPath =
   process.env.NODE_ENV === 'production'
@@ -14,56 +15,71 @@ const VouchVaultAbi = JSON.parse(readFileSync(abiPath, 'utf-8')) as {
   abi: ethers.InterfaceAbi;
 };
 
+type ChainConfig = Database['public']['Tables']['chains']['Row'];
+
 @Injectable()
 export class BlockchainListenerService implements OnModuleInit {
   private readonly logger = new Logger(BlockchainListenerService.name);
-  private provider: ethers.JsonRpcProvider | ethers.WebSocketProvider;
-  private contract: ethers.Contract;
-  private contractAddress: string;
-  private network: ethers.Network;
+  private chains: {
+    config: ChainConfig;
+    provider: ethers.JsonRpcProvider | ethers.WebSocketProvider;
+    contract: ethers.Contract;
+    network: ethers.Network;
+  }[] = [];
 
   constructor(
-    private readonly configService: ConfigService,
+    private readonly supabaseService: SupabaseService,
     private readonly loanService: LoanService,
   ) {}
 
   async onModuleInit() {
-    const rpcUrl =
-      this.configService.get<string>('RPC_URL') ?? 'ws://localhost:8545';
-    this.provider = rpcUrl.startsWith('ws')
-      ? new ethers.WebSocketProvider(rpcUrl)
-      : new ethers.JsonRpcProvider(rpcUrl);
+    const { data: chainConfigs, error } = await this.supabaseService.client
+      .from('chains')
+      .select('*');
 
-    this.contractAddress =
-      this.configService.get<string>('PUBLIC_VOUCH_VAULT_ADDRESS') ?? '';
+    if (error) {
+      this.logger.error('Failed to fetch chain configs from database', error);
+      process.exit(1);
+    }
 
-    try {
-      this.network = await this.provider.getNetwork();
-      this.logger.log(
-        `Connected to chain: ${this.network.chainId} (${this.network.name})`,
-      );
+    for (const config of chainConfigs) {
+      try {
+        const provider = config.rpcUrl.startsWith('ws')
+          ? new ethers.WebSocketProvider(config.rpcUrl)
+          : new ethers.JsonRpcProvider(config.rpcUrl);
+        const network = await provider.getNetwork();
 
-      if (this.provider instanceof ethers.JsonRpcProvider)
-        this.provider.pollingInterval = 500;
+        this.logger.log(
+          `Connected to chain: ${network.chainId} (${network.name}) [${config.rpcUrl}]`,
+        );
 
-      this.setupEventListener();
-    } catch (error) {
-      this.logger.error(
-        `Failed to connect to RPC at ${rpcUrl}: ${(error as Error).message}`,
-      );
+        if (provider instanceof ethers.JsonRpcProvider)
+          provider.pollingInterval = 4000;
+
+        const contract = new ethers.Contract(
+          config.contractAddress,
+          VouchVaultAbi.abi,
+          provider,
+        );
+        this.chains.push({ config, provider, contract, network });
+        this.setupEventListener(contract, network, config);
+      } catch (error) {
+        this.logger.error(
+          `Failed to connect to RPC at ${config.rpcUrl}: ${(error as Error).message}`,
+        );
+      }
     }
   }
 
-  private setupEventListener() {
-    this.contract = new ethers.Contract(
-      this.contractAddress,
-      VouchVaultAbi.abi,
-      this.provider,
+  private setupEventListener(
+    contract: ethers.Contract,
+    network: ethers.Network,
+    config: ChainConfig,
+  ) {
+    this.logger.log(
+      `Listening for LoanCreated events on chain ${network.chainId} (${network.name})...`,
     );
-
-    this.logger.log('Listening for LoanCreated events...');
-
-    void this.contract.on(
+    void contract.on(
       'LoanCreated',
       (
         loanId: bigint,
@@ -80,6 +96,8 @@ export class BlockchainListenerService implements OnModuleInit {
           collateralAmount,
           timestamp,
           eventLog,
+          network,
+          config.contractAddress,
         );
       },
     );
@@ -91,7 +109,14 @@ export class BlockchainListenerService implements OnModuleInit {
     collateralTokenAddress: string,
     collateralAmount: bigint,
     timestamp: bigint,
-    eventLog: ethers.EventLog,
+    {
+      transactionHash,
+      blockNumber,
+      blockHash,
+      index: logIndex,
+    }: ethers.EventLog,
+    network: ethers.Network,
+    contractAddress: string,
   ) {
     try {
       await this.loanService.create({
@@ -99,11 +124,13 @@ export class BlockchainListenerService implements OnModuleInit {
         borrower,
         collateralAmount: collateralAmount.toString(),
         collateralTokenAddress,
-        collateralTxHash: eventLog.transactionHash,
-        collateralBlockNumber: eventLog.blockNumber.toString(),
-        collateralBlockHash: eventLog.blockHash,
-        collateralLockedAt: new Date(Number(timestamp) * 1000).toISOString(),
-        chainId: this.network.chainId.toString(),
+        collateralTxHash: transactionHash,
+        collateralBlockNumber: blockNumber.toString(),
+        collateralBlockHash: blockHash,
+        collateralLockedAt: new Date(Number(timestamp) * 1000),
+        networkId: network.chainId.toString(),
+        contractAddress,
+        logIndex,
       });
     } catch (error) {
       this.logger.error('Failed to create loan in DB', error);

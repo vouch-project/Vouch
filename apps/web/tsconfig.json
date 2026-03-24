@@ -12,6 +12,7 @@
     "moduleResolution": "bundler"
   },
   "include": [
+    "vite.config.ts",
     "src/**/*.ts",
     "src/**/*.js",
     "src/**/*.svelte",

@@ -8,10 +8,10 @@
    */
   import Header from '$lib/components/layout/Header.svelte';
   import { navigating } from '$app/stores';
-  import { tokenListStore } from '$lib/stores/tokenListStore.svelte';
+  import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { initWalletSubscriptions, wallet } from '$lib/wallet/wallet.svelte';
   import { onMount } from 'svelte';
-  import { getTokenList } from '../api/tokenList';
+  import { getChainInfo } from '../api/chain';
   import '../app.css';
 
   const { children } = $props();
@@ -42,14 +42,18 @@
   $effect(() => {
     const fetchTokens = async () => {
       try {
-        if (wallet.chainId) {
-          const tokens = await getTokenList(wallet.chainId);
-          tokenListStore.tokens = tokens;
+        if (wallet.networkId) {
+          const chainData = await getChainInfo(wallet.networkId);
+          chainInfo.contractAddress = chainData.contractAddress;
+          chainInfo.tokens = chainData.tokens;
         } else {
-          console.warn('No chain ID found in wallet; skipping token list fetch');
+          chainInfo.contractAddress = undefined;
+          chainInfo.tokens = [];
         }
       } catch (e) {
         console.error('Failed to fetch token list', e);
+        chainInfo.contractAddress = undefined;
+        chainInfo.tokens = [];
       }
     };
 
