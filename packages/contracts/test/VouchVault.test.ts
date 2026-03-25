@@ -1,12 +1,12 @@
 import { expect } from 'chai';
-import { ethers } from 'hardhat';
+import { ethers, upgrades } from 'hardhat';
 
 describe('VouchVault', function () {
   it('Should accept deposits', async function () {
-    const VouchVault = await ethers.getContractFactory('VouchVault');
-    const vault = await VouchVault.deploy();
-
     const [owner] = await ethers.getSigners();
+    const VouchVault = await ethers.getContractFactory('VouchVault');
+    const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+
     const depositAmount = ethers.parseEther('1.0');
 
     await vault.deposit({ value: depositAmount });
@@ -15,9 +15,9 @@ describe('VouchVault', function () {
 
   describe('createLoan', function () {
     it('Should create a loan with collateral', async function () {
-      const VouchVault = await ethers.getContractFactory('VouchVault');
-      const vault = await VouchVault.deploy();
       const [owner] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
       const sentCollateral = ethers.parseEther('1.0');
 
       const tx = await vault.createLoan({ value: sentCollateral });
@@ -40,15 +40,17 @@ describe('VouchVault', function () {
     });
 
     it('Should fail if collateral is zero', async function () {
+      const [owner] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
-      const vault = await VouchVault.deploy();
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
 
       await expect(vault.createLoan({ value: 0 })).to.be.revertedWith('Collateral must be > 0');
     });
 
     it('Should not allow withdrawing active ETH loan collateral', async function () {
+      const [owner] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
-      const vault = await VouchVault.deploy();
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
       const collateral = ethers.parseEther('1.0');
 
       await vault.createLoan({ value: collateral });
@@ -57,8 +59,9 @@ describe('VouchVault', function () {
     });
 
     it('Should not allow releasing locked ETH loan collateral', async function () {
+      const [owner] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
-      const vault = await VouchVault.deploy();
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
       const collateral = ethers.parseEther('1.0');
 
       await vault.createLoan({ value: collateral });
@@ -67,11 +70,11 @@ describe('VouchVault', function () {
     });
 
     it('Should lock ERC20 collateral per loan', async function () {
+      const [owner] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const MockERC20 = await ethers.getContractFactory('MockERC20');
 
-      const vault = await VouchVault.deploy();
-      const [owner] = await ethers.getSigners();
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
 
       const totalSupply = ethers.parseUnits('1000', 18);
       const collateral = ethers.parseUnits('50', 18);
@@ -96,14 +99,14 @@ describe('VouchVault', function () {
   });
 
   it('Should allow withdrawals', async function () {
+    const [owner] = await ethers.getSigners();
     const VouchVault = await ethers.getContractFactory('VouchVault');
-    const vault = await VouchVault.deploy();
+    const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
 
     const depositAmount = ethers.parseEther('1.0');
     await vault.deposit({ value: depositAmount });
 
     await vault.withdraw(depositAmount);
-    const [owner] = await ethers.getSigners();
     expect(await vault.balanceOf(owner.address)).to.equal(0);
   });
 });
