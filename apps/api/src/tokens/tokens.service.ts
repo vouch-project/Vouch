@@ -6,7 +6,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import type { Redis } from 'ioredis';
 import { Address, validAddress } from '../supabase/address';
 import { SupabaseService } from '../supabase/supabase.service';
-import { tokenListMock } from './tokens.mock';
+import { tokensMock } from './tokens.mock';
 
 export type ResponseToken = {
   chainId: number;
@@ -42,8 +42,8 @@ type EvmChain = {
 };
 
 @Injectable()
-export class TokenListService implements OnModuleInit {
-  private readonly logger = new Logger(TokenListService.name);
+export class TokensService implements OnModuleInit {
+  private readonly logger = new Logger(TokensService.name);
   private readonly tokenListUrl = 'https://li.quest/v1/tokens?chains=';
   private readonly redisKeyPrefix = 'tokens:cache:';
 
@@ -126,7 +126,7 @@ export class TokenListService implements OnModuleInit {
 
     const rawTokensByChain = {
       ...liFiTokens,
-      ...(mockErc20Address && tokenListMock(mockErc20Address)),
+      ...(mockErc20Address && tokensMock(mockErc20Address)),
     };
 
     return Object.values(rawTokensByChain).flat();

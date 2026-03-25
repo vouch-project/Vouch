@@ -7,7 +7,8 @@
   let status = $state('');
   let selectedToken = $state('ETH');
 
-  const handleCreateLoan = async () => {
+  const handleCreateLoan = async (e: SubmitEvent) => {
+    e.preventDefault();
     status = 'Waiting for wallet confirmation...';
     const token = chainInfo.tokens.find((t) => t.symbol === selectedToken);
     if (!token) {

@@ -1,9 +1,9 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { ChainService } from './chain.service';
+import { ChainsService } from './chains.service';
 
 @Controller('chains')
-export class ChainController {
-  constructor(private readonly chainService: ChainService) {}
+export class ChainsController {
+  constructor(private readonly chainService: ChainsService) {}
 
   @Get()
   getChains(@Query('networkId') networkId: string) {

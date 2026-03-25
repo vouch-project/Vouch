@@ -1,12 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
-import { TokenListService } from '../tokens/tokens.service';
+import { TokensService } from '../tokens/tokens.service';
 
 @Injectable()
-export class ChainService {
+export class ChainsService {
   constructor(
     private readonly supabaseService: SupabaseService,
-    private readonly tokenListService: TokenListService,
+    private readonly tokenListService: TokensService,
   ) {}
 
   async getChainByNetworkId(networkId: string) {

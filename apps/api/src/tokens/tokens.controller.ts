@@ -1,9 +1,9 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { TokenListService } from './tokens.service';
+import { TokensService } from './tokens.service';
 
 @Controller('tokens')
-export class TokenListController {
-  constructor(private readonly tokenListService: TokenListService) {}
+export class TokensController {
+  constructor(private readonly tokenListService: TokensService) {}
 
   @Get()
   getTokens(@Query('chainId') chainId: string) {

@@ -1,14 +1,14 @@
 import { IsDate, IsNumber, IsNumberString, IsString } from 'class-validator';
 
 export class CreateLoanDto {
-  @IsNumberString()
-  loanId: string;
+  @IsNumber()
+  loanId: bigint;
 
   @IsString()
   borrower: string;
 
-  @IsNumberString()
-  collateralAmount: string;
+  @IsNumber()
+  collateralAmount: bigint;
 
   @IsNumberString()
   networkId: string;
@@ -16,8 +16,8 @@ export class CreateLoanDto {
   @IsString()
   collateralTxHash: string;
 
-  @IsNumberString()
-  collateralBlockNumber: string;
+  @IsNumber()
+  collateralBlockNumber: number;
 
   @IsString()
   collateralBlockHash: string;

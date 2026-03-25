@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ethers } from 'ethers';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { LoanService } from '../loan/loan.service';
+import { LoansService } from '../loans/loans.service';
 import { Database } from '../supabase/database.types';
 import { SupabaseService } from '../supabase/supabase.service';
 
@@ -29,7 +29,7 @@ export class BlockchainListenerService implements OnModuleInit {
 
   constructor(
     private readonly supabaseService: SupabaseService,
-    private readonly loanService: LoanService,
+    private readonly loanService: LoansService,
   ) {}
 
   async onModuleInit() {
@@ -120,12 +120,12 @@ export class BlockchainListenerService implements OnModuleInit {
   ) {
     try {
       await this.loanService.create({
-        loanId: loanId.toString(),
+        loanId: loanId,
         borrower,
-        collateralAmount: collateralAmount.toString(),
+        collateralAmount: collateralAmount,
         collateralTokenAddress,
         collateralTxHash: transactionHash,
-        collateralBlockNumber: blockNumber.toString(),
+        collateralBlockNumber: blockNumber,
         collateralBlockHash: blockHash,
         collateralLockedAt: new Date(Number(timestamp) * 1000),
         networkId: network.chainId.toString(),

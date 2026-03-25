@@ -1,6 +1,6 @@
 import { TokenListResponse } from './tokens.service';
 
-export const tokenListMock = (
+export const tokensMock = (
   HARDCODED_MOCK_ERC20_ADDRESS: string,
 ): TokenListResponse['tokens'] => ({
   '1337': [

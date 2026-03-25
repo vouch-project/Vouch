@@ -7,10 +7,10 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { BlockchainListenerModule } from './blockchain-listener/blockchain-listener.module';
-import { ChainModule } from './chain/chain.module';
-import { LoanModule } from './loan/loan.module';
+import { ChainsModule } from './chains/chains.module';
+import { LoansModule } from './loans/loans.module';
 import { SupabaseModule } from './supabase/supabase.module';
-import { TokenListModule } from './tokens/tokens.module';
+import { TokensModule } from './tokens/tokens.module';
 
 @Module({
   imports: [
@@ -37,10 +37,10 @@ import { TokenListModule } from './tokens/tokens.module';
     ScheduleModule.forRoot(),
     AuthModule,
     BlockchainListenerModule,
-    ChainModule,
-    LoanModule,
+    ChainsModule,
+    LoansModule,
     SupabaseModule,
-    TokenListModule,
+    TokensModule,
   ],
   controllers: [AppController],
   providers: [AppService],

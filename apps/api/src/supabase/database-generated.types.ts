@@ -78,7 +78,7 @@ export type Database = {
           id: string;
           interestRate: number | null;
           lenderAddress: string | null;
-          onChainLoanId: string | null;
+          onChainLoanId: number | null;
           principalAmount: number | null;
           principalTokenId: string | null;
           startAt: string | null;
@@ -95,7 +95,7 @@ export type Database = {
           id?: string;
           interestRate?: number | null;
           lenderAddress?: string | null;
-          onChainLoanId?: string | null;
+          onChainLoanId?: number | null;
           principalAmount?: number | null;
           principalTokenId?: string | null;
           startAt?: string | null;
@@ -112,7 +112,7 @@ export type Database = {
           id?: string;
           interestRate?: number | null;
           lenderAddress?: string | null;
-          onChainLoanId?: string | null;
+          onChainLoanId?: number | null;
           principalAmount?: number | null;
           principalTokenId?: string | null;
           startAt?: string | null;
@@ -267,17 +267,17 @@ export type Database = {
     Functions: {
       create_loan_with_transaction: {
         Args: {
-          p_borrower_address: string;
-          p_collateral_amount: number;
+          p_borrower_address: unknown;
+          p_collateral_amount: unknown;
           p_collateral_block_hash: string;
-          p_collateral_block_number: number;
+          p_collateral_block_number: unknown;
           p_collateral_locked_at: string;
-          p_collateral_token_address: string;
+          p_collateral_token_address: unknown;
           p_collateral_tx_hash: string;
-          p_contract_address: string;
-          p_log_index: number;
+          p_contract_address: unknown;
+          p_log_index: unknown;
           p_network_id: string;
-          p_on_chain_loan_id: string;
+          p_on_chain_loan_id: unknown;
         };
         Returns: string;
       };

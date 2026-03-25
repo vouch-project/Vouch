@@ -2,8 +2,8 @@ import { RedisModule } from '@nestjs-modules/ioredis';
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { SupabaseModule } from '../supabase/supabase.module';
-import { TokenListController } from './tokens.controller';
-import { TokenListService } from './tokens.service';
+import { TokensController } from './tokens.controller';
+import { TokensService } from './tokens.service';
 
 @Module({
   imports: [
@@ -11,8 +11,8 @@ import { TokenListService } from './tokens.service';
     SupabaseModule,
     RedisModule,
   ],
-  controllers: [TokenListController],
-  providers: [TokenListService],
-  exports: [TokenListService],
+  controllers: [TokensController],
+  providers: [TokensService],
+  exports: [TokensService],
 })
-export class TokenListModule {}
+export class TokensModule {}
