@@ -17,7 +17,7 @@ DECLARE
     v_loan_id uuid;
 BEGIN
     SELECT id INTO v_chain_id
-    FROM chains WHERE "networkId" = p_network_id;
+    FROM chains WHERE "networkId" = p_network_id AND "contractAddress" = p_contract_address;
 
     IF v_chain_id IS NULL THEN
         RAISE EXCEPTION 'Chain not found: %', p_network_id;
