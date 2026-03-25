@@ -3,7 +3,6 @@
 
 # 1. Define paths
 ABI_DEST="../../packages/abi"
-ARTIFACTS="./artifacts/contracts"
 
 # 2. Run the deployment
 echo "🚀 Starting deployment..."
@@ -16,8 +15,8 @@ if [ $? -eq 0 ]; then
     # Ensure directory exists
     mkdir -p "$ABI_DEST"
 
-    # Find and copy ABIs (excluding debug files and mock files)
-    find "$ARTIFACTS" -name "*.json" ! -name "*.dbg.json" ! -name "*Mock*.json" -exec cp {} "$ABI_DEST" \;
+    # Extract ABI-only JSON (strips bytecode/metadata from Hardhat artifacts)
+    node scripts/extract-abi.mjs
 
     echo "📂 ABIs synced to web app."
 

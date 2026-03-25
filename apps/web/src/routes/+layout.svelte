@@ -6,12 +6,12 @@
    * any SSR issues.  All child routes can then import `$lib/wallet/store`
    * stores and see live, reactive wallet state.
    */
-  import Header from '$lib/components/layout/Header.svelte';
   import { navigating } from '$app/stores';
+  import Header from '$lib/components/layout/Header.svelte';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { initWalletSubscriptions, wallet } from '$lib/wallet/wallet.svelte';
-  import { onMount } from 'svelte';
   import { ModeWatcher } from 'mode-watcher';
+  import { onMount } from 'svelte';
   import { getChainInfo } from '../api/chain';
   import '../app.css';
 
@@ -41,10 +41,12 @@
   });
 
   $effect(() => {
+    const controller = new AbortController();
+
     const fetchTokens = async () => {
       try {
         if (wallet.networkId) {
-          const chainData = await getChainInfo(wallet.networkId);
+          const chainData = await getChainInfo(wallet.networkId, controller.signal);
           chainInfo.contractAddress = chainData.contractAddress;
           chainInfo.tokens = chainData.tokens;
         } else {
@@ -52,13 +54,16 @@
           chainInfo.tokens = [];
         }
       } catch (e) {
+        if (controller.signal.aborted) return;
         console.error('Failed to fetch token list', e);
         chainInfo.contractAddress = undefined;
         chainInfo.tokens = [];
       }
     };
 
-    void fetchTokens();
+    fetchTokens();
+
+    return () => controller.abort();
   });
 </script>
 

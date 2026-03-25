@@ -8,7 +8,7 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "db:migrate": "supabase db push",
-    "db:generate": "supabase db diff --file supabase/migrations/$(date +%Y%m%d%H%M%S)_migration.sql",
+    "db:generate": "f() { supabase db diff --file ${1:_migration}; }; f",
     "db:reset": "supabase db reset",
     "db:generate:types": "supabase gen types typescript --local > apps/api/src/supabase/database-generated.types.ts"
   },

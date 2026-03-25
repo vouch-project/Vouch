@@ -1,14 +1,16 @@
+import { Type } from 'class-transformer';
 import { IsDate, IsNumber, IsNumberString, IsString } from 'class-validator';
+import { IsBigInt } from '../../decorators/is-bigint.decorator';
 
 export class CreateLoanDto {
-  @IsNumberString()
-  loanId: string;
+  @IsBigInt()
+  loanId: bigint;
 
   @IsString()
   borrower: string;
 
-  @IsNumberString()
-  collateralAmount: string;
+  @IsBigInt()
+  collateralAmount: bigint;
 
   @IsNumberString()
   networkId: string;
@@ -16,13 +18,14 @@ export class CreateLoanDto {
   @IsString()
   collateralTxHash: string;
 
-  @IsNumberString()
-  collateralBlockNumber: string;
+  @IsNumber()
+  collateralBlockNumber: number;
 
   @IsString()
   collateralBlockHash: string;
 
   @IsDate()
+  @Type(() => Date)
   collateralLockedAt: Date;
 
   @IsString()

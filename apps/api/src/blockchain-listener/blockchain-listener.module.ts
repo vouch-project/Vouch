@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
-import { LoanModule } from '../loan/loan.module';
+import { LoansModule } from '../loans/loans.module';
 import { SupabaseModule } from '../supabase/supabase.module';
 import { BlockchainListenerService } from './blockchain-listener.service';
 
 @Module({
-  imports: [SupabaseModule, LoanModule],
+  imports: [SupabaseModule, LoansModule],
   providers: [BlockchainListenerService],
 })
 export class BlockchainListenerModule {}

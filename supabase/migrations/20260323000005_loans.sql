@@ -7,11 +7,10 @@ END$$;
 
 CREATE TABLE IF NOT EXISTS loans (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    "onChainLoanId" text,
+    "onChainLoanId" uint256,
     "chainId" uuid NOT NULL REFERENCES chains (id),
     "borrowerAddress" address NOT NULL,
     "lenderAddress" address,
-    "initialTxHash" text,
     "principalTokenId" uuid REFERENCES tokens (id),
     "collateralTokenId" uuid REFERENCES tokens (id),
     "principalAmount" uint256,
@@ -32,8 +31,8 @@ CREATE INDEX IF NOT EXISTS loans_borrower_idx ON loans ("borrowerAddress");
 
 CREATE INDEX IF NOT EXISTS loans_lender_idx ON loans ("lenderAddress");
 
-CREATE INDEX IF NOT EXISTS loans_init_tx_idx ON loans ("initialTxHash");
-
 CREATE TRIGGER update_loans_updated_at BEFORE
 UPDATE ON loans FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column ();
+
+ALTER TABLE loans ENABLE ROW LEVEL SECURITY;

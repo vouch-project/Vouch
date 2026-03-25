@@ -3,10 +3,12 @@ import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { ethers } from 'ethers';
+import type { UUID } from 'crypto';
 import type { Redis } from 'ioredis';
+import { validAddress } from '../supabase/address';
+import { Database } from '../supabase/database.types';
 import { SupabaseService } from '../supabase/supabase.service';
-import { tokenListMock } from './tokens.mock';
+import { tokensMock } from './tokens.mock';
 
 export type ResponseToken = {
   chainId: number;
@@ -25,25 +27,16 @@ export type TokenListResponse = {
   };
 };
 
-export type Token = {
-  chainId: Uuid;
-  address: string;
-  symbol: string;
-  decimals: number;
-  name: string | null;
-  logoURI: string | null;
-};
-
-type Uuid = `${string}-${string}-${string}-${string}-${string}`;
+export type Token = Database['public']['Tables']['tokens']['Row'];
 
 type EvmChain = {
-  id: Uuid;
+  id: UUID;
   networkId: string;
 };
 
 @Injectable()
-export class TokenListService implements OnModuleInit {
-  private readonly logger = new Logger(TokenListService.name);
+export class TokensService implements OnModuleInit {
+  private readonly logger = new Logger(TokensService.name);
   private readonly tokenListUrl = 'https://li.quest/v1/tokens?chains=';
   private readonly redisKeyPrefix = 'tokens:cache:';
 
@@ -60,7 +53,7 @@ export class TokenListService implements OnModuleInit {
 
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
   private async fetchTokenList() {
-    this.logger.log('Fetching token list from Coingecko...');
+    this.logger.log('Fetching token list from Li.Fi (li.quest)...');
     try {
       const mockErc20Address = this.getMockErc20Address();
       const evmChains = await this.fetchEvmChains();
@@ -103,7 +96,7 @@ export class TokenListService implements OnModuleInit {
   private async fetchEvmChains(): Promise<EvmChain[] | null> {
     const { data, error } = await this.supabaseService.client
       .from('chains')
-      .select('id, networkId::text')
+      .select('id, networkId')
       .eq('networkType', 'evm');
 
     if (error) {
@@ -126,7 +119,7 @@ export class TokenListService implements OnModuleInit {
 
     const rawTokensByChain = {
       ...liFiTokens,
-      ...(mockErc20Address && tokenListMock(mockErc20Address)),
+      ...(mockErc20Address && tokensMock(mockErc20Address)),
     };
 
     return Object.values(rawTokensByChain).flat();
@@ -136,17 +129,20 @@ export class TokenListService implements OnModuleInit {
     rawTokens: ResponseToken[],
     evmChains: EvmChain[],
   ): Token[] {
+    const chainByNetworkId = new Map(evmChains.map((c) => [c.networkId, c]));
+
     return rawTokens
       .map((token) => {
-        const chain = evmChains.find(
-          (evmChain) => evmChain.networkId === token.chainId.toString(),
-        );
+        const chain = chainByNetworkId.get(token.chainId.toString());
 
         if (!chain) return null;
 
+        const addr = validAddress(token.address);
+        if (!addr) return null;
+
         return {
           chainId: chain.id,
-          address: ethers.getAddress(token.address),
+          address: addr,
           symbol: token.symbol,
           decimals: token.decimals,
           name: token.name,
@@ -174,16 +170,16 @@ export class TokenListService implements OnModuleInit {
     tokens: Token[],
     evmChains: EvmChain[],
   ): Record<string, Token[]> {
+    const networkIdById = new Map(evmChains.map((c) => [c.id, c.networkId]));
     const tokensByNetwork: Record<string, Token[]> = {};
 
     for (const token of tokens) {
-      const chain = evmChains.find((evmChain) => evmChain.id === token.chainId);
-      if (!chain) continue;
+      const networkId = networkIdById.get(token.chainId);
+      if (!networkId) continue;
 
-      if (!tokensByNetwork[chain.networkId])
-        tokensByNetwork[chain.networkId] = [];
+      if (!tokensByNetwork[networkId]) tokensByNetwork[networkId] = [];
 
-      tokensByNetwork[chain.networkId].push(token);
+      tokensByNetwork[networkId].push(token);
     }
 
     return tokensByNetwork;
@@ -206,10 +202,7 @@ export class TokenListService implements OnModuleInit {
     await pipeline.exec();
   }
 
-  private parseTokenList(
-    cached: string,
-    chainId: string,
-  ): ResponseToken[] | null {
+  private parseTokens(cached: string, chainId: string): ResponseToken[] | null {
     try {
       return JSON.parse(cached) as ResponseToken[];
     } catch {
@@ -220,11 +213,11 @@ export class TokenListService implements OnModuleInit {
     }
   }
 
-  async getTokenList(chainId: string): Promise<ResponseToken[]> {
-    const redisKey = `${this.redisKeyPrefix}${chainId}`;
+  async getTokens(networkId: string): Promise<ResponseToken[]> {
+    const redisKey = `${this.redisKeyPrefix}${networkId}`;
     const cached = await this.redis.get(redisKey);
     if (cached) {
-      const parsed = this.parseTokenList(cached, chainId);
+      const parsed = this.parseTokens(cached, networkId);
       if (parsed) return parsed;
     }
 
@@ -232,6 +225,6 @@ export class TokenListService implements OnModuleInit {
     const refreshed = await this.redis.get(redisKey);
     if (!refreshed) return [];
 
-    return this.parseTokenList(refreshed, chainId) ?? [];
+    return this.parseTokens(refreshed, networkId) ?? [];
   }
 }

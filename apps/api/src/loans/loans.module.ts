@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
 import { SupabaseModule } from '../supabase/supabase.module';
-import { LoanService } from './loan.service';
+import { LoansService } from './loans.service';
 
 @Module({
   imports: [SupabaseModule],
-  providers: [LoanService],
-  exports: [LoanService],
+  providers: [LoansService],
+  exports: [LoansService],
 })
-export class LoanModule {}
+export class LoansModule {}

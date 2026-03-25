@@ -1,19 +1,11 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { LoanService } from '../loan/loan.service';
+import { LoansService } from '../loans/loans.service';
 import { Database } from '../supabase/database.types';
 import { SupabaseService } from '../supabase/supabase.service';
-
-const abiPath =
-  process.env.NODE_ENV === 'production'
-    ? join(__dirname, '../../../../packages/abi/prod/VouchVault.json')
-    : join(__dirname, '../../../../packages/abi/VouchVault.json');
-
-const VouchVaultAbi = JSON.parse(readFileSync(abiPath, 'utf-8')) as {
-  abi: ethers.InterfaceAbi;
-};
 
 type ChainConfig = Database['public']['Tables']['chains']['Row'];
 
@@ -28,11 +20,21 @@ export class BlockchainListenerService implements OnModuleInit {
   }[] = [];
 
   constructor(
+    private readonly configService: ConfigService,
     private readonly supabaseService: SupabaseService,
-    private readonly loanService: LoanService,
+    private readonly loanService: LoansService,
   ) {}
 
   async onModuleInit() {
+    const abiPath =
+      this.configService.get('NODE_ENV') === 'production'
+        ? join(__dirname, '../../../../packages/abi/prod/VouchVault.json')
+        : join(__dirname, '../../../../packages/abi/VouchVault.json');
+
+    const VouchVaultAbi = JSON.parse(
+      readFileSync(abiPath, 'utf-8'),
+    ) as ethers.InterfaceAbi;
+
     const { data: chainConfigs, error } = await this.supabaseService.client
       .from('chains')
       .select('*');
@@ -58,7 +60,7 @@ export class BlockchainListenerService implements OnModuleInit {
 
         const contract = new ethers.Contract(
           config.contractAddress,
-          VouchVaultAbi.abi,
+          VouchVaultAbi,
           provider,
         );
         this.chains.push({ config, provider, contract, network });
@@ -120,12 +122,12 @@ export class BlockchainListenerService implements OnModuleInit {
   ) {
     try {
       await this.loanService.create({
-        loanId: loanId.toString(),
+        loanId: loanId,
         borrower,
-        collateralAmount: collateralAmount.toString(),
+        collateralAmount: collateralAmount,
         collateralTokenAddress,
         collateralTxHash: transactionHash,
-        collateralBlockNumber: blockNumber.toString(),
+        collateralBlockNumber: blockNumber,
         collateralBlockHash: blockHash,
         collateralLockedAt: new Date(Number(timestamp) * 1000),
         networkId: network.chainId.toString(),

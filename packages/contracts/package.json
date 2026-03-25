@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"hardhat node\" \"sleep 10s && bash ./dev-setup.sh\"",
-    "build": "hardhat compile",
+    "build": "hardhat compile && node scripts/extract-abi.mjs",
     "test": "hardhat test",
     "clean": "hardhat clean"
   },
@@ -13,6 +13,7 @@
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@openzeppelin/hardhat-upgrades": "^3.9.1",
     "concurrently": "^8.2.2",
+    "ethers": "^6.14.0",
     "hardhat": "^2.22.0"
   },
   "dependencies": {

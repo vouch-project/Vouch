@@ -18,14 +18,14 @@ CREATE TABLE IF NOT EXISTS transactions (
     "tokenId" uuid NOT NULL REFERENCES tokens (id),
     "loanId" uuid NOT NULL REFERENCES loans (id),
     "txHash" text NOT NULL,
-    "blockNumber" bigint,
+    "blockNumber" uint256,
     "blockHash" text,
     type "transactionType" NOT NULL,
     status "transactionStatus" NOT NULL DEFAULT 'pending',
-    "fromAddress" address,
-    "toAddress" address,
+    "fromAddress" address NOT NULL,
+    "toAddress" address NOT NULL,
     amount uint256,
-    "logIndex" integer NOT NULL,
+    "logIndex" uint256 NOT NULL,
     "txTimestamp" timestamptz NOT NULL,
     "createdAt" timestamptz NOT NULL DEFAULT now(),
     "updatedAt" timestamptz NOT NULL DEFAULT now()
@@ -48,3 +48,5 @@ CREATE INDEX IF NOT EXISTS transactions_status_idx ON transactions (status);
 CREATE TRIGGER update_transactions_updated_at BEFORE
 UPDATE ON transactions FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column ();
+
+ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;

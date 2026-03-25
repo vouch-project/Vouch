@@ -4,30 +4,29 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "./IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title VouchVault (Upgradeable)
 /// @notice Lending vault contract for the Vouch protocol supporting collateralized loans
 contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
+    using SafeERC20 for IERC20;
     
     struct Loan {
         address borrower;
-        address collateralToken;
+        address collateralToken;  // address(0) = native ETH
         uint256 collateralAmount;
         uint256 createdAt;
         bool active;
+        bool collateralLocked;
     }
 
     // --- State Variables ---
     // IMPORTANT: Never reorder these in future versions (V2, V3)
     mapping(address => uint256) public deposits;
-    mapping(uint256 => Loan) public loans;
+    mapping(uint256 => Loan) public loans;         // single source of truth for all loan/collateral data
     uint256 public nextLoanId;
-    mapping(address => uint256) public lockedEthCollateral;
-    mapping(uint256 => uint256) public lockedEthCollateralByLoan;
-    mapping(uint256 => uint256) public lockedCollateralAmountByLoan;
-    mapping(uint256 => address) public lockedCollateralTokenByLoan;
-    mapping(uint256 => bool) public loanCollateralLocked;
+    mapping(address => uint256) public lockedEthCollateral; // per-borrower ETH aggregate
 
     // --- Events ---
     event Deposited(address indexed user, uint256 amount);
@@ -74,18 +73,14 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         // Collateral is tracked separately from withdrawable deposits.
         lockedEthCollateral[msg.sender] += msg.value;
-        lockedEthCollateralByLoan[nextLoanId] = msg.value;
-        lockedCollateralAmountByLoan[nextLoanId] = msg.value;
-        lockedCollateralTokenByLoan[nextLoanId] = address(0);
-        loanCollateralLocked[nextLoanId] = true;
 
-        // Create and store the loan
         loans[nextLoanId] = Loan({
             borrower: msg.sender,
-            collateralToken: address(0), // address(0) represents Native ETH
+            collateralToken: address(0),
             collateralAmount: msg.value,
             createdAt: block.timestamp,
-            active: true
+            active: true,
+            collateralLocked: true
         });
 
         emit LoanCreated(nextLoanId, msg.sender, address(0), msg.value, block.timestamp);
@@ -97,21 +92,17 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(amount > 0, "Collateral must be > 0");
         require(token != address(0), "Invalid token address");
 
-        // Transfer tokens from user to this vault
-        bool success = IERC20(token).transferFrom(msg.sender, address(this), amount);
-        require(success, "Token transfer failed");
+        // Transfer tokens from user to this vault (SafeERC20 handles non-compliant tokens)
+        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
 
         loans[nextLoanId] = Loan({
             borrower: msg.sender,
             collateralToken: token,
             collateralAmount: amount,
             createdAt: block.timestamp,
-            active: true
+            active: true,
+            collateralLocked: true
         });
-
-        lockedCollateralAmountByLoan[nextLoanId] = amount;
-        lockedCollateralTokenByLoan[nextLoanId] = token;
-        loanCollateralLocked[nextLoanId] = true;
 
         emit LoanCreated(nextLoanId, msg.sender, token, amount, block.timestamp);
         nextLoanId++;
@@ -144,7 +135,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     function loanLockedBalanceOf(uint256 loanId) external view returns (uint256) {
-        return lockedEthCollateralByLoan[loanId];
+        Loan memory loan = loans[loanId];
+        // ETH-only; ERC20 collateral has no common unit — use getLoanLockedCollateral instead
+        return loan.collateralToken == address(0) ? loan.collateralAmount : 0;
     }
 
     function getLoanLockedCollateral(uint256 loanId) external view returns (
@@ -152,11 +145,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 collateralAmount,
         bool locked
     ) {
-        return (
-            lockedCollateralTokenByLoan[loanId],
-            lockedCollateralAmountByLoan[loanId],
-            loanCollateralLocked[loanId]
-        );
+        Loan memory loan = loans[loanId];
+        return (loan.collateralToken, loan.collateralAmount, loan.collateralLocked);
     }
 
     function getLoan(uint256 loanId) external view returns (

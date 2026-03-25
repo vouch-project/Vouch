@@ -59,6 +59,9 @@ importers:
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
+      rxjs:
+        specifier: ^7.8.2
+        version: 7.8.2
       type-fest:
         specifier: ^5.5.0
         version: 5.5.0
@@ -156,9 +159,6 @@ importers:
       jwt-decode:
         specifier: ^4.0.0
         version: 4.0.0
-      mode-watcher:
-        specifier: ^1.1.0
-        version: 1.1.0(svelte@5.54.0)
     devDependencies:
       '@eslint/js':
         specifier: ^9.18.0
@@ -199,6 +199,9 @@ importers:
       globals:
         specifier: ^16.0.0
         version: 16.5.0
+      mode-watcher:
+        specifier: ^1.1.0
+        version: 1.1.0(svelte@5.54.0)
       svelte:
         specifier: ^5.0.0
         version: 5.54.0
@@ -272,6 +275,9 @@ importers:
       concurrently:
         specifier: ^8.2.2
         version: 8.2.2
+      ethers:
+        specifier: ^6.14.0
+        version: 6.16.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       hardhat:
         specifier: ^2.22.0
         version: 2.28.6(bufferutil@4.1.0)(ts-node@10.9.2(@types/node@22.19.15)(typescript@5.9.3))(typescript@5.9.3)
@@ -284,16 +290,6 @@ importers:
       pg:
         specifier: ^8.11.3
         version: 8.20.0
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.7
-        version: 22.19.15
-      '@types/pg':
-        specifier: ^8.20.0
-        version: 8.20.0
-      typescript:
-        specifier: ^5.3.3
-        version: 5.9.3
 
 packages:
 
@@ -2890,9 +2886,6 @@ packages:
 
   '@types/pbkdf2@3.1.2':
     resolution: {integrity: sha512-uRwJqmiXmh9++aSu1VNEn3iIxWOhd8AHXNSdlaLfdAAdSTY9jYVeGWnzejM3dvrkbqE3/hyQkQQ29IFATEGlew==}
-
-  '@types/pg@8.20.0':
-    resolution: {integrity: sha512-bEPFOaMAHTEP1EzpvHTbmwR8UsFyHSKsRisLIHVMXnpNefSbGA1bD6CVy+qKjGSqmZqNqBDV2azOBo8TgkcVow==}
 
   '@types/phoenix@1.6.7':
     resolution: {integrity: sha512-oN9ive//QSBkf19rfDv45M7eZPi0eEXylht2OLEXicu5b4KoQ1OzXIw+xDSGWxSxe1JmepRR/ZH283vsu518/Q==}
@@ -11161,12 +11154,6 @@ snapshots:
   '@types/pbkdf2@3.1.2':
     dependencies:
       '@types/node': 22.19.15
-
-  '@types/pg@8.20.0':
-    dependencies:
-      '@types/node': 22.19.15
-      pg-protocol: 1.13.0
-      pg-types: 2.2.0
 
   '@types/phoenix@1.6.7': {}
 

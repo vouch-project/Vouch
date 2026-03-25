@@ -1,14 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SupabaseService } from '../supabase/supabase.service';
-import { LoanService } from './loan.service';
+import { LoansService } from './loans.service';
 
-describe('LoanService', () => {
-  let service: LoanService;
+describe('LoansService', () => {
+  let service: LoansService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        LoanService,
+        LoansService,
         {
           provide: SupabaseService,
           useValue: { client: {} },
@@ -16,7 +16,7 @@ describe('LoanService', () => {
       ],
     }).compile();
 
-    service = module.get<LoanService>(LoanService);
+    service = module.get<LoansService>(LoansService);
   });
 
   it('should be defined', () => {

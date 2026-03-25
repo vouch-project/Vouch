@@ -15,3 +15,5 @@ CREATE INDEX IF NOT EXISTS "tokens_chainId_idx" ON tokens ("chainId");
 CREATE INDEX IF NOT EXISTS tokens_address_idx ON tokens (address);
 
 CREATE INDEX IF NOT EXISTS tokens_symbol_idx ON tokens (symbol);
+
+ALTER TABLE tokens ENABLE ROW LEVEL SECURITY;
