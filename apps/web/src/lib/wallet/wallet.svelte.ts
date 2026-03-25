@@ -16,7 +16,7 @@ import { JWT_STORAGE_KEY } from '../../constants';
 
 class WalletState {
   address = $state<string | undefined>(undefined);
-  chainId = $state<number | undefined>(undefined);
+  networkId = $state<number | undefined>(undefined);
   isConnected = $state(false);
   isLoading = $state(false);
   isModalOpen = $state(false);
@@ -40,8 +40,8 @@ class WalletState {
       1337: 'Localhost',
     };
 
-    if (!this.chainId) return '';
-    return NAMES[this.chainId] ?? `Chain ${this.chainId}`;
+    if (!this.networkId) return '';
+    return NAMES[this.networkId] ?? `Chain ${this.networkId}`;
   }
 }
 
@@ -83,7 +83,7 @@ export const initWalletSubscriptions = (modal: AppKit): (() => void) => {
     // Only trigger modal navigation if the network actually changes (not on initial load)
     if (prevChainId !== undefined && prevChainId !== newChainId) modal.open({ view: 'Account' });
 
-    wallet.chainId = newChainId;
+    wallet.networkId = newChainId;
     prevChainId = newChainId;
   });
 

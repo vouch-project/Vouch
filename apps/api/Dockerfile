@@ -11,6 +11,7 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* turbo.json ./
 # Copy the API package + shared configs
 COPY apps/api/ apps/api/
 COPY packages/config/ packages/config/
+COPY packages/abi/ packages/abi/
 
 RUN pnpm install --frozen-lockfile
 RUN pnpm turbo run build --filter=@vouch/api

@@ -7,19 +7,45 @@
    * stores and see live, reactive wallet state.
    */
   import Header from '$lib/components/layout/Header.svelte';
-  import { initWalletSubscriptions } from '$lib/wallet/wallet.svelte';
+  import { chainInfo } from '$lib/stores/chainInfo.svelte';
+  import { initWalletSubscriptions, wallet } from '$lib/wallet/wallet.svelte';
   import { onMount } from 'svelte';
+  import { getChainInfo } from '../api/chain';
   import '../app.css';
 
-  let { children } = $props();
+  const { children } = $props();
 
   onMount(async () => {
     // Dynamic import keeps AppKit (and its browser-only polyfills) out of SSR.
     const { getAppKit } = await import('$lib/wallet/appkit');
     const modal = getAppKit();
-    if (modal) {
-      initWalletSubscriptions(modal);
-    }
+    if (modal) initWalletSubscriptions(modal);
+  });
+
+  $effect(() => {
+    const controller = new AbortController();
+
+    const fetchTokens = async () => {
+      try {
+        if (wallet.networkId) {
+          const chainData = await getChainInfo(wallet.networkId, controller.signal);
+          chainInfo.contractAddress = chainData.contractAddress;
+          chainInfo.tokens = chainData.tokens;
+        } else {
+          chainInfo.contractAddress = undefined;
+          chainInfo.tokens = [];
+        }
+      } catch (e) {
+        if (controller.signal.aborted) return;
+        console.error('Failed to fetch token list', e);
+        chainInfo.contractAddress = undefined;
+        chainInfo.tokens = [];
+      }
+    };
+
+    void fetchTokens();
+
+    return () => controller.abort();
   });
 </script>
 

@@ -1,0 +1,14 @@
+{
+  "name": "supabase",
+  "version": "1.0.0",
+  "description": "Seed scripts for Supabase database.",
+  "main": "seed.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node seed.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "pg": "^8.11.3"
+  }
+}
