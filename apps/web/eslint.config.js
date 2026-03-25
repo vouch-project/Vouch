@@ -139,6 +139,14 @@ export default [
       'svelte/valid-prop-names-in-kit-pages': 'error',
     },
   },
+  // Disable certain rules for shadcn-svelte library code to avoid modifying it
+  {
+    files: ['src/lib/components/ui/**/*.svelte', 'src/lib/components/ui/**/*.ts', 'src/lib/utils.ts'],
+    rules: {
+      'svelte/no-navigation-without-resolve': 'off',
+      'func-style': 'off',
+    },
+  },
   {
     languageOptions: {
       globals: {

@@ -3,11 +3,17 @@
   import { onMount, onDestroy } from 'svelte';
   import { ethers } from 'ethers';
   import type { RealtimeChannel } from '@supabase/supabase-js';
+  import * as Table from '$lib/components/ui/table';
+  import * as Tabs from '$lib/components/ui/tabs';
+  import { Badge } from '$lib/components/ui/badge';
+  import { Button } from '$lib/components/ui/button';
+  import * as Card from '$lib/components/ui/card';
+  import { RefreshCw, Zap, TrendingUp, ShieldCheck, Wallet, Info } from '@lucide/svelte';
+  import { cn } from '$lib/utils';
 
-  // TODO: share types with backend (tRPC?)
   interface Token {
     address: string;
-    chainId: number;
+    chainId: string;
     decimals: number | null;
     id: string;
     logoURI: string | null;
@@ -18,14 +24,17 @@
 
   interface Loan {
     id: string;
-    loanId: number;
-    borrower: string;
-    chainId: number;
-    collateralAmount: number;
-    collateralTokenId: string;
+    borrowerAddress: string;
+    chainId: string;
+    collateralAmount: number | null;
+    collateralTokenId: string | null;
+    principalAmount: number | null;
+    principalTokenId: string | null;
+    interestRate: number | null;
     status: 'pending' | 'active' | 'repaid' | 'defaulted' | 'cancelled';
     createdAt: string;
-    token_list?: Token | null;
+    collateralToken?: Token | null;
+    principalToken?: Token | null;
   }
 
   let { data } = $props();
@@ -36,6 +45,24 @@
   let errorMsg: string | null = $state(null);
   let realtimeActive: boolean = $state(false);
   let channel: RealtimeChannel | null = $state(null);
+  let activeTab: string = $state('borrow');
+
+  // Mock data generators for missing fields
+  const getMockCreditScore = (seed: string) => {
+    const charSum = seed.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return 650 + (charSum % 200);
+  };
+
+  const getMockLTV = (seed: string) => {
+    const charSum = seed.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return 60 + (charSum % 25);
+  };
+
+  const getRiskLevel = (score: number) => {
+    if (score > 800) return { label: 'Low', color: 'bg-green-100 text-green-700 border-green-200' };
+    if (score > 720) return { label: 'Medium', color: 'bg-blue-100 text-blue-700 border-blue-200' };
+    return { label: 'High', color: 'bg-orange-100 text-orange-700 border-orange-200' };
+  };
 
   $effect(() => {
     const fetchStreamed = async () => {
@@ -55,14 +82,19 @@
   const fetchLoans = async () => {
     try {
       errorMsg = null;
-      const { data, error } = await supabase
+      const { data: loansData, error } = await supabase
         .from('loans')
-        .select(`*, token_list (*)`)
+        .select(
+          `
+          *,
+          collateralToken:tokens!loans_collateralTokenId_fkey(*),
+          principalToken:tokens!loans_principalTokenId_fkey(*)
+        `,
+        )
         .order('createdAt', { ascending: false });
 
       if (error) throw error;
-
-      loans = data || [];
+      loans = loansData || [];
     } catch (e) {
       console.error('Fetch error:', e);
       errorMsg = (e instanceof Error && e.message) || 'Failed to fetch loans.';
@@ -77,14 +109,12 @@
 
   const toggleRealtime = () => {
     if (realtimeActive) {
-      // Tear down
       if (channel) {
         void supabase.removeChannel(channel);
         channel = null;
       }
       realtimeActive = false;
     } else {
-      // Set up
       channel = supabase
         .channel('public:loans')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'loans' }, async () => {
@@ -114,7 +144,8 @@
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
   };
 
-  const formatCollateral = (amount: number, decimals: number | null | undefined) => {
+  const formatAmount = (amount: number | null, decimals: number | null | undefined) => {
+    if (amount === null) return '0';
     try {
       return Number(ethers.formatUnits(amount.toString(), decimals || 18)).toLocaleString(undefined, {
         maximumFractionDigits: 4,
@@ -123,196 +154,217 @@
       return '0';
     }
   };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active':
-        return 'bg-green-100 text-green-800 border-green-200';
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'repaid':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'defaulted':
-        return 'bg-red-100 text-red-800 border-red-200';
-      case 'cancelled':
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
 </script>
 
 <svelte:head>
-  <title>Marketplace - Vouch</title>
+  <title>Marketplace | Vouch</title>
 </svelte:head>
 
-<div class="space-y-6 animate-in fade-in duration-500">
-  <!-- Header row: title + controls -->
-  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-    <div>
-      <h1 class="text-3xl font-bold tracking-tight text-gray-900">Marketplace</h1>
-      <p class="text-gray-500 text-lg">Browse and fund active loan requests.</p>
+<div class="container mx-auto py-8 space-y-8 animate-in fade-in duration-700">
+  <!-- Header Section -->
+  <div class="flex flex-col md:flex-row md:items-end justify-between gap-6">
+    <div class="space-y-2">
+      <h1
+        class="text-4xl font-extrabold tracking-tight lg:text-5xl bg-linear-to-r from-gray-900 via-gray-700 to-gray-500 bg-clip-text text-transparent"
+      >
+        Marketplace
+      </h1>
+      <p class="text-xl text-muted-foreground font-medium">
+        Secure peer-to-peer lending with collateralized protection.
+      </p>
     </div>
 
-    <div class="flex items-center gap-2">
-      <!-- Refresh button -->
-      <button
-        class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-colors duration-150
-          {realtimeActive
-          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-          : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50 hover:border-gray-300'}"
+    <div class="flex items-center gap-3">
+      <Button
+        class="bg-white/50 backdrop-blur-sm"
         disabled={realtimeActive || refreshing}
         onclick={handleRefresh}
-        title={realtimeActive ? 'Disable realtime to refresh manually' : 'Refresh loans'}
-        type="button"
+        size="sm"
+        variant="outline"
       >
-        <svg class="w-4 h-4" class:animate-spin={refreshing} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-          />
-        </svg>
+        <RefreshCw class={cn('mr-2 h-4 w-4', refreshing && 'animate-spin')} />
         Refresh
-      </button>
+      </Button>
 
-      <!-- Realtime toggle button -->
-      <button
-        class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-colors duration-150
-          {realtimeActive
-          ? 'bg-green-50 text-green-700 border-green-300 hover:bg-green-100'
-          : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50 hover:border-gray-300'}"
+      <Button
+        class={cn(
+          'backdrop-blur-sm',
+          realtimeActive && 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100',
+        )}
         onclick={toggleRealtime}
-        type="button"
+        size="sm"
+        variant={realtimeActive ? 'secondary' : 'outline'}
       >
-        <!-- Live dot indicator -->
-        <span class="relative flex h-2 w-2">
+        <div class="mr-2 flex h-2 w-2 items-center justify-center">
           {#if realtimeActive}
-            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+            <span class="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-green-400 opacity-75"></span>
           {/if}
-          <span
-            class="relative inline-flex rounded-full h-2 w-2"
-            class:bg-gray-400={!realtimeActive}
-            class:bg-green-500={realtimeActive}
-          ></span>
-        </span>
-        {realtimeActive ? 'Live' : 'Realtime'}
-      </button>
+          <span class={cn('relative inline-flex h-2 w-2 rounded-full', realtimeActive ? 'bg-green-500' : 'bg-gray-400')}></span>
+        </div>
+        {realtimeActive ? 'Live Updates' : 'Realtime Off'}
+      </Button>
     </div>
   </div>
 
   {#if errorMsg}
-    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-3">
-      <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path
-          d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-        />
-      </svg>
-      {errorMsg}
+    <div class="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-destructive flex items-center gap-3">
+      <Info class="h-5 w-5" />
+      <p class="font-medium">{errorMsg}</p>
     </div>
   {/if}
 
-  <!-- Table -->
-  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-    {#if loading}
-      <!-- Skeleton rows -->
-      <table class="w-full">
-        <thead>
-          <tr class="border-b border-gray-100 bg-gray-50/60">
-            <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Borrower</th>
-            <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Collateral</th>
-            <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</th>
-            <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Date</th>
-            <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each Array(5) as _, i (i)}
-            <tr class="border-b border-gray-50 animate-pulse">
-              <td class="px-5 py-3"><div class="h-4 bg-gray-200 rounded w-28"></div></td>
-              <td class="px-5 py-3"><div class="h-4 bg-gray-200 rounded w-24"></div></td>
-              <td class="px-5 py-3"><div class="h-5 bg-gray-200 rounded-full w-16"></div></td>
-              <td class="px-5 py-3"><div class="h-4 bg-gray-200 rounded w-20"></div></td>
-              <td class="px-5 py-3 text-right"><div class="h-8 bg-gray-200 rounded-lg w-20 ml-auto"></div></td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    {:else if loans.length === 0}
-      <div class="px-5 py-16 text-center flex flex-col items-center">
-        <div class="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mb-3 text-gray-400">
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path d="M20 12H4M8 16l-4-4 4-4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" />
-          </svg>
+  <!-- Main Content Tabs -->
+  <Tabs.Root class="w-full" bind:value={activeTab}>
+    <div class="flex items-center justify-between mb-6">
+      <Tabs.List class="bg-muted/50 p-1">
+        <Tabs.Trigger class="px-8 font-semibold" value="borrow">Borrow Requests</Tabs.Trigger>
+        <Tabs.Trigger class="px-8 font-semibold" value="lend">Lend Offers</Tabs.Trigger>
+      </Tabs.List>
+
+      <div class="hidden sm:flex items-center gap-4 text-sm text-muted-foreground italic">
+        <ShieldCheck class="h-4 w-4 text-green-500" />
+        All loans are collateralized
+      </div>
+    </div>
+
+    <Tabs.Content value="borrow">
+      <Card.Root class="border-border/50 shadow-xl shadow-gray-200/50 overflow-hidden bg-white/80 backdrop-blur-md">
+        <Table.Root>
+          <Table.Header class="bg-muted/30">
+            <Table.Row>
+              <Table.Head class="w-[150px]">Borrower</Table.Head>
+              <Table.Head>Credit Score</Table.Head>
+              <Table.Head>Amount Requested</Table.Head>
+              <Table.Head>Collateral</Table.Head>
+              <Table.Head>LTV Health</Table.Head>
+              <Table.Head>APY</Table.Head>
+              <Table.Head>Risk Level</Table.Head>
+              <Table.Head class="text-right">Action</Table.Head>
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
+            {#if loading}
+              {#each Array(5) as _, i (i)}
+                <Table.Row>
+                  {#each Array(8) as _, j (j)}
+                    <Table.Cell><div class="h-5 w-20 bg-muted animate-pulse rounded"></div></Table.Cell>
+                  {/each}
+                </Table.Row>
+              {/each}
+            {:else if loans.length === 0}
+              <Table.Row>
+                <Table.Cell class="h-64 text-center" colspan={8}>
+                  <div class="flex flex-col items-center justify-center space-y-3">
+                    <Zap class="h-10 w-10 text-muted-foreground/30" />
+                    <p class="text-lg font-medium text-muted-foreground">No active borrow requests</p>
+                    <Button size="sm" variant="outline">Create Request</Button>
+                  </div>
+                </Table.Cell>
+              </Table.Row>
+            {:else}
+              {#each loans as loan (loan.id)}
+                {@const score = getMockCreditScore(loan.borrowerAddress)}
+                {@const ltv = getMockLTV(loan.borrowerAddress)}
+                {@const risk = getRiskLevel(score)}
+                <Table.Row class="hover:bg-muted/20 transition-colors group">
+                  <Table.Cell class="font-mono text-xs font-medium">
+                    <div class="flex items-center gap-2">
+                      <div
+                        class="h-8 w-8 rounded-full bg-linear-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-[10px]"
+                      >
+                        {loan.borrowerAddress.slice(2, 4).toUpperCase()}
+                      </div>
+                      {truncateAddress(loan.borrowerAddress)}
+                    </div>
+                  </Table.Cell>
+                  <Table.Cell>
+                    <div class="flex items-center gap-1.5 font-bold text-gray-700">
+                      <TrendingUp class="h-3.5 w-3.5 text-blue-500" />
+                      {score}
+                    </div>
+                  </Table.Cell>
+                  <Table.Cell>
+                    <div class="font-bold text-gray-900">
+                      {formatAmount(loan.principalAmount, loan.principalToken?.decimals)}
+                      <span class="text-xs font-semibold text-muted-foreground uppercase">
+                        {loan.principalToken?.symbol || 'USDT'}
+                      </span>
+                    </div>
+                  </Table.Cell>
+                  <Table.Cell>
+                    <div class="flex items-center gap-2 font-medium">
+                      {#if loan.collateralToken?.logoURI}
+                        <img class="h-5 w-5 rounded-full" alt="" src={loan.collateralToken.logoURI} />
+                      {/if}
+                      <span>
+                        {formatAmount(loan.collateralAmount, loan.collateralToken?.decimals)}
+                        {loan.collateralToken?.symbol || 'ETH'}
+                      </span>
+                    </div>
+                  </Table.Cell>
+                  <Table.Cell>
+                    <div class="flex items-center gap-2">
+                      <div class="w-16 h-2 bg-muted rounded-full overflow-hidden hidden sm:block">
+                        <div style:width="{ltv}%" class="h-full bg-green-500 transition-all"></div>
+                      </div>
+                      <span class="text-xs font-bold text-green-600">{ltv}%</span>
+                    </div>
+                  </Table.Cell>
+                  <Table.Cell class="font-bold text-indigo-600">
+                    {loan.interestRate ? `${loan.interestRate}%` : '8.5%'}
+                  </Table.Cell>
+                  <Table.Cell>
+                    <Badge class={cn('font-bold px-2.5 py-0.5', risk.color)} variant="outline">
+                      {risk.label}
+                    </Badge>
+                  </Table.Cell>
+                  <Table.Cell class="text-right">
+                    <Button
+                      class="bg-gray-900 hover:bg-gray-800 text-white font-bold transition-transform group-hover:scale-105"
+                      size="sm"
+                    >
+                      Fund
+                    </Button>
+                  </Table.Cell>
+                </Table.Row>
+              {/each}
+            {/if}
+          </Table.Body>
+        </Table.Root>
+      </Card.Root>
+    </Tabs.Content>
+
+    <Tabs.Content value="lend">
+      <Card.Root class="border-border/50 shadow-xl shadow-gray-200/50 overflow-hidden bg-white/80 backdrop-blur-md">
+        <div class="h-64 flex flex-col items-center justify-center space-y-4 text-center p-8">
+          <div class="h-16 w-16 bg-muted rounded-full flex items-center justify-center">
+            <Wallet class="h-8 w-8 text-muted-foreground/50" />
+          </div>
+          <div>
+            <h3 class="text-xl font-bold">Lend Offers Coming Soon</h3>
+            <p class="text-muted-foreground max-w-sm">
+              We're currently scaling our liquidity pools. Stay tuned to view and fulfill yield-bearing lend offers
+              directly in the marketplace.
+            </p>
+          </div>
+          <Button variant="secondary">Notify Me</Button>
         </div>
-        <h3 class="text-base font-medium text-gray-900 mb-0.5">No active loan requests</h3>
-        <p class="text-sm text-gray-500">Check back later or create a request yourself.</p>
-      </div>
-    {:else}
-      <table class="w-full">
-        <thead>
-          <tr class="border-b border-gray-100 bg-gray-50/60">
-            <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Borrower</th>
-            <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Collateral</th>
-            <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</th>
-            <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Date</th>
-            <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each loans as loan (loan.id)}
-            <tr class="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/50 transition-colors duration-100">
-              <td class="px-5 py-3">
-                <span class="font-mono text-sm text-gray-900" title={loan.borrower}>
-                  {truncateAddress(loan.borrower)}
-                </span>
-              </td>
-              <td class="px-5 py-3">
-                <span class="text-sm text-gray-900 flex items-center gap-1.5">
-                  {#if loan.token_list?.logoURI}
-                    <img class="w-4 h-4 rounded-full" alt="Token" src={loan.token_list.logoURI} />
-                  {/if}
-                  {formatCollateral(loan.collateralAmount, loan.token_list?.decimals)}
-                  <span class="text-gray-500">{loan.token_list?.symbol || 'Unknown'}</span>
-                </span>
-              </td>
-              <td class="px-5 py-3">
-                <span
-                  class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold border capitalize {getStatusColor(
-                    loan.status,
-                  )}"
-                >
-                  {loan.status}
-                </span>
-              </td>
-              <td class="px-5 py-3">
-                <span class="text-sm text-gray-500">
-                  {new Date(loan.createdAt).toLocaleDateString(undefined, {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}
-                </span>
-              </td>
-              <td class="px-5 py-3 text-right">
-                <button
-                  class="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 text-gray-700 bg-white hover:bg-gray-900 hover:text-white hover:border-gray-900 transition-colors duration-150"
-                  type="button"
-                >
-                  View
-                </button>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-      <div class="px-5 py-3 border-t border-gray-100 bg-gray-50/40 text-xs text-gray-500">
-        Showing {loans.length} request{loans.length !== 1 ? 's' : ''}
-      </div>
-    {/if}
+      </Card.Root>
+    </Tabs.Content>
+  </Tabs.Root>
+
+  <!-- Ecosystem Stats Footer (Aesthetic) -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-8">
+    {#each [{ label: 'Total Value Locked', value: '$1.2M', icon: ShieldCheck, color: 'text-green-500' }, { label: 'Avg. Market APY', value: '12.4%', icon: TrendingUp, color: 'text-blue-500' }, { label: 'Loans Protected', value: '142', icon: Zap, color: 'text-amber-500' }] as stat (stat.label)}
+      <Card.Root class="bg-muted/10 border-none shadow-none p-4 flex items-center gap-4">
+        <div class="h-10 w-10 rounded-xl bg-white flex items-center justify-center shadow-sm border border-border/20">
+          <stat.icon class={cn('h-5 w-5', stat.color)} />
+        </div>
+        <div>
+          <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">{stat.label}</p>
+          <p class="text-lg font-black text-gray-900">{stat.value}</p>
+        </div>
+      </Card.Root>
+    {/each}
   </div>
 </div>

@@ -6,7 +6,11 @@ export const load: PageLoad = () => {
     streamed: {
       loansPromise: supabase
         .from('loans')
-        .select(`*, token_list (*)`)
+        .select(`
+          *,
+          principalToken:tokens!loans_principalTokenId_fkey(*),
+          collateralToken:tokens!loans_collateralTokenId_fkey(*)
+        `)
         .order('createdAt', { ascending: false })
         .then(({ data, error }) => {
           if (error) throw error;
