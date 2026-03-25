@@ -5,7 +5,8 @@ import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { UUID } from 'crypto';
 import type { Redis } from 'ioredis';
-import { Address, validAddress } from '../supabase/address';
+import { validAddress } from '../supabase/address';
+import { Database } from '../supabase/database.types';
 import { SupabaseService } from '../supabase/supabase.service';
 import { tokensMock } from './tokens.mock';
 
@@ -26,14 +27,7 @@ export type TokenListResponse = {
   };
 };
 
-export type Token = {
-  chainId: UUID;
-  address: Address;
-  symbol: string;
-  decimals: number;
-  name: string | null;
-  logoURI: string | null;
-};
+export type Token = Database['public']['Tables']['tokens']['Row'];
 
 type EvmChain = {
   id: UUID;
