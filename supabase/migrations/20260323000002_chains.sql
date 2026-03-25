@@ -19,3 +19,5 @@ CREATE TABLE IF NOT EXISTS chains (
 CREATE TRIGGER update_chains_updated_at BEFORE
 UPDATE ON chains FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column ();
+
+ALTER TABLE chains ENABLE ROW LEVEL SECURITY;

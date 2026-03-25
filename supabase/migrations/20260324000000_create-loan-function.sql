@@ -10,14 +10,17 @@ CREATE OR REPLACE FUNCTION create_loan_with_transaction (
     p_collateral_block_hash text,
     p_log_index uint256,
     p_collateral_locked_at timestamptz
-) RETURNS uuid LANGUAGE plpgsql AS $$
+) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER
+SET
+    search_path = '' AS $$
 DECLARE
     v_chain_id uuid;
     v_token_id uuid;
     v_loan_id uuid;
 BEGIN
     SELECT id INTO v_chain_id
-    FROM chains WHERE "networkId" = p_network_id AND "contractAddress" = p_contract_address;
+    FROM chains
+    WHERE "networkId" = p_network_id AND "contractAddress" = p_contract_address;
 
     IF v_chain_id IS NULL THEN
         RAISE EXCEPTION 'Chain not found: %', p_network_id;

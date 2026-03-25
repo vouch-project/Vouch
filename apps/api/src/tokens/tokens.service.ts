@@ -3,6 +3,7 @@ import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { UUID } from 'crypto';
 import type { Redis } from 'ioredis';
 import { Address, validAddress } from '../supabase/address';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -26,7 +27,7 @@ export type TokenListResponse = {
 };
 
 export type Token = {
-  chainId: Uuid;
+  chainId: UUID;
   address: Address;
   symbol: string;
   decimals: number;
@@ -34,10 +35,8 @@ export type Token = {
   logoURI: string | null;
 };
 
-type Uuid = `${string}-${string}-${string}-${string}-${string}`;
-
 type EvmChain = {
-  id: Uuid;
+  id: UUID;
   networkId: string;
 };
 

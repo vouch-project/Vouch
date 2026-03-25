@@ -34,3 +34,5 @@ CREATE INDEX IF NOT EXISTS loans_lender_idx ON loans ("lenderAddress");
 CREATE TRIGGER update_loans_updated_at BEFORE
 UPDATE ON loans FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column ();
+
+ALTER TABLE loans ENABLE ROW LEVEL SECURITY;

@@ -48,3 +48,5 @@ CREATE INDEX IF NOT EXISTS transactions_status_idx ON transactions (status);
 CREATE TRIGGER update_transactions_updated_at BEFORE
 UPDATE ON transactions FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column ();
+
+ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
