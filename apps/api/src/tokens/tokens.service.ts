@@ -103,7 +103,7 @@ export class TokenListService implements OnModuleInit {
   private async fetchEvmChains(): Promise<EvmChain[] | null> {
     const { data, error } = await this.supabaseService.client
       .from('chains')
-      .select('id, networkId::text')
+      .select('id, networkId')
       .eq('networkType', 'evm');
 
     if (error) {
