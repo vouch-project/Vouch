@@ -8,34 +8,37 @@ const client = new Client({
 });
 
 async function seed() {
-  await client.connect();
-  const contractAddress = process.env.PUBLIC_VOUCH_VAULT_ADDRESS;
-  if (!contractAddress) throw new Error('PUBLIC_VOUCH_VAULT_ADDRESS environment variable is not set');
+  try {
+    await client.connect();
+    const contractAddress = process.env.PUBLIC_VOUCH_VAULT_ADDRESS;
+    if (!contractAddress) throw new Error('PUBLIC_VOUCH_VAULT_ADDRESS environment variable is not set');
 
-  const infuraProjectId = process.env.INFURA_PROJECT_ID;
-  if (infuraProjectId) {
-    await client.query(
-      `
-  INSERT INTO chains ("networkId", "contractAddress", "rpcUrl", "networkType", name)
-  VALUES (1, $1, 'https://mainnet.infura.io/v3/' || $2, 'evm', 'Mainnet')
-  ON CONFLICT DO NOTHING;
-  `,
-      [contractAddress, infuraProjectId],
-    );
-  }
+    const infuraProjectId = process.env.INFURA_PROJECT_ID;
+    if (infuraProjectId) {
+      await client.query(
+        `
+        INSERT INTO chains ("networkId", "contractAddress", "rpcUrl", "networkType", name)
+        VALUES ('1', $1, 'https://mainnet.infura.io/v3/' || $2, 'evm', 'Mainnet')
+        ON CONFLICT DO NOTHING;
+        `,
+        [contractAddress, infuraProjectId],
+      );
+    }
 
-  // Insert local hardhat only if NODE_ENV is not 'production'
-  if (process.env.NODE_ENV !== 'production') {
-    await client.query(
-      `
-      INSERT INTO chains ("networkId", "contractAddress", "rpcUrl", "networkType", name)
-      VALUES (1337, $1, 'ws://localhost:8545', 'evm', 'Local Hardhat')
-      ON CONFLICT DO NOTHING;
-      `,
-      [contractAddress],
-    );
+    // Insert local hardhat only if NODE_ENV is not 'production'
+    if (process.env.NODE_ENV !== 'production') {
+      await client.query(
+        `
+        INSERT INTO chains ("networkId", "contractAddress", "rpcUrl", "networkType", name)
+        VALUES ('1337', $1, 'ws://localhost:8545', 'evm', 'Local Hardhat')
+        ON CONFLICT DO NOTHING;
+        `,
+        [contractAddress],
+      );
+    }
+  } finally {
+    await client.end();
   }
-  await client.end();
 }
 
 seed()

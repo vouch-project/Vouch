@@ -60,7 +60,7 @@ export class TokenListService implements OnModuleInit {
 
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
   private async fetchTokenList() {
-    this.logger.log('Fetching token list from Coingecko...');
+    this.logger.log('Fetching token list from Li.Fi (li.quest)...');
     try {
       const mockErc20Address = this.getMockErc20Address();
       const evmChains = await this.fetchEvmChains();
