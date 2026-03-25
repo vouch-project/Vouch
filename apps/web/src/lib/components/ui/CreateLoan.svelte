@@ -3,7 +3,7 @@
   import { createLoan } from '$lib/wallet/vouchVault';
   import TokenAutocomplete from './TokenAutocomplete.svelte';
 
-  let collateralAmount = $state(1.0);
+  let collateralAmount = $state('1.0');
   let status = $state('');
   let selectedToken = $state('ETH');
 
@@ -33,9 +33,8 @@
     <span>Collateral to Deposit ({selectedToken}):</span>
     <input
       class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
-      min="0"
-      step="0.01"
-      type="number"
+      inputmode="decimal"
+      type="text"
       bind:value={collateralAmount}
     />
   </label>
