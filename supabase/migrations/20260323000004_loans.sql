@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS loans (
     "chainId" uuid NOT NULL REFERENCES chains (id),
     "borrowerAddress" address NOT NULL,
     "lenderAddress" address,
-    "initialTxHash" text,
     "principalTokenId" uuid REFERENCES tokens (id),
     "collateralTokenId" uuid REFERENCES tokens (id),
     "principalAmount" uint256,
@@ -31,8 +30,6 @@ WHERE
 CREATE INDEX IF NOT EXISTS loans_borrower_idx ON loans ("borrowerAddress");
 
 CREATE INDEX IF NOT EXISTS loans_lender_idx ON loans ("lenderAddress");
-
-CREATE INDEX IF NOT EXISTS loans_init_tx_idx ON loans ("initialTxHash");
 
 CREATE TRIGGER update_loans_updated_at BEFORE
 UPDATE ON loans FOR EACH ROW

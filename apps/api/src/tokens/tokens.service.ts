@@ -3,8 +3,8 @@ import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { ethers } from 'ethers';
 import type { Redis } from 'ioredis';
+import { Address, validAddress } from '../supabase/address';
 import { SupabaseService } from '../supabase/supabase.service';
 import { tokenListMock } from './tokens.mock';
 
@@ -27,7 +27,7 @@ export type TokenListResponse = {
 
 export type Token = {
   chainId: Uuid;
-  address: string;
+  address: Address;
   symbol: string;
   decimals: number;
   name: string | null;
@@ -144,9 +144,12 @@ export class TokenListService implements OnModuleInit {
 
         if (!chain) return null;
 
+        const addr = validAddress(token.address);
+        if (!addr) return null;
+
         return {
           chainId: chain.id,
-          address: ethers.getAddress(token.address),
+          address: addr,
           symbol: token.symbol,
           decimals: token.decimals,
           name: token.name,
