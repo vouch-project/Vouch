@@ -37,7 +37,13 @@ BEGIN
     ) VALUES (
         p_on_chain_loan_id, p_borrower_address, p_collateral_amount,
         v_token_id, v_chain_id
-    ) RETURNING id INTO v_loan_id;
+    )
+    ON CONFLICT ("chainId", "onChainLoanId") WHERE "onChainLoanId" IS NOT NULL
+    DO UPDATE SET
+        "borrowerAddress"   = EXCLUDED."borrowerAddress",
+        "collateralAmount"  = EXCLUDED."collateralAmount",
+        "collateralTokenId" = EXCLUDED."collateralTokenId"
+    RETURNING id INTO v_loan_id;
 
     INSERT INTO transactions (
         "loanId", "chainId", "tokenId", "txHash", "blockNumber", "blockHash",
@@ -46,7 +52,8 @@ BEGIN
         v_loan_id, v_chain_id, v_token_id, p_collateral_tx_hash, p_collateral_block_number,
         p_collateral_block_hash, 'collateral_deposit', 'confirmed', p_borrower_address,
         p_contract_address, p_collateral_amount, p_log_index, p_collateral_locked_at
-    );
+    )
+    ON CONFLICT ("chainId", "txHash", "logIndex") DO NOTHING;
 
     RETURN v_loan_id;
 END;

@@ -23,10 +23,12 @@
   });
 
   $effect(() => {
+    const controller = new AbortController();
+
     const fetchTokens = async () => {
       try {
         if (wallet.networkId) {
-          const chainData = await getChainInfo(wallet.networkId);
+          const chainData = await getChainInfo(wallet.networkId, controller.signal);
           chainInfo.contractAddress = chainData.contractAddress;
           chainInfo.tokens = chainData.tokens;
         } else {
@@ -34,6 +36,7 @@
           chainInfo.tokens = [];
         }
       } catch (e) {
+        if (controller.signal.aborted) return;
         console.error('Failed to fetch token list', e);
         chainInfo.contractAddress = undefined;
         chainInfo.tokens = [];
@@ -41,6 +44,8 @@
     };
 
     void fetchTokens();
+
+    return () => controller.abort();
   });
 </script>
 

@@ -21,5 +21,5 @@ export type ChainInfo = {
  * @param networkId The ID of the blockchain network
  * @returns An array of tokens with their details
  */
-export const getChainInfo = async (networkId: number) =>
-  (await axiosApi.get<ChainInfo>('/chains', { params: { networkId } })).data;
+export const getChainInfo = async (networkId: number, signal?: AbortSignal) =>
+  (await axiosApi.get<ChainInfo>('/chains', { params: { networkId }, signal })).data;

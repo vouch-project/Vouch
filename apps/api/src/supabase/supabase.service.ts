@@ -31,8 +31,10 @@ export class SupabaseService {
     this.logger.log('Checking Supabase DB connectivity...');
 
     const { error } = await this.client.from('loans').select('*').limit(1);
-    if (error)
+    if (error) {
       this.logger.error(`Supabase DB health check failed: ${error.message}`);
+      return;
+    }
 
     this.logger.log('Supabase DB is active and reachable');
   }
