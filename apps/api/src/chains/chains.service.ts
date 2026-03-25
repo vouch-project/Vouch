@@ -6,7 +6,7 @@ import { TokensService } from '../tokens/tokens.service';
 export class ChainsService {
   constructor(
     private readonly supabaseService: SupabaseService,
-    private readonly tokenListService: TokensService,
+    private readonly tokensService: TokensService,
   ) {}
 
   async getChainByNetworkId(networkId: string) {
@@ -21,7 +21,7 @@ export class ChainsService {
         `Chain not found for networkId: ${networkId}`,
       );
 
-    const tokens = await this.tokenListService.getTokenList(networkId);
+    const tokens = await this.tokensService.getTokens(networkId);
 
     return { contractAddress: data.contractAddress, tokens };
   }

@@ -209,10 +209,7 @@ export class TokensService implements OnModuleInit {
     await pipeline.exec();
   }
 
-  private parseTokenList(
-    cached: string,
-    chainId: string,
-  ): ResponseToken[] | null {
+  private parseTokens(cached: string, chainId: string): ResponseToken[] | null {
     try {
       return JSON.parse(cached) as ResponseToken[];
     } catch {
@@ -223,11 +220,11 @@ export class TokensService implements OnModuleInit {
     }
   }
 
-  async getTokenList(chainId: string): Promise<ResponseToken[]> {
+  async getTokens(chainId: string): Promise<ResponseToken[]> {
     const redisKey = `${this.redisKeyPrefix}${chainId}`;
     const cached = await this.redis.get(redisKey);
     if (cached) {
-      const parsed = this.parseTokenList(cached, chainId);
+      const parsed = this.parseTokens(cached, chainId);
       if (parsed) return parsed;
     }
 
@@ -235,6 +232,6 @@ export class TokensService implements OnModuleInit {
     const refreshed = await this.redis.get(redisKey);
     if (!refreshed) return [];
 
-    return this.parseTokenList(refreshed, chainId) ?? [];
+    return this.parseTokens(refreshed, chainId) ?? [];
   }
 }
