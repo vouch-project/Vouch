@@ -126,29 +126,16 @@ struct Loan {
 ## Usage Guidelines
 
 - Always check event logs for confirmation of deposits, withdrawals, and loan creation.
-  <<<<<<< HEAD
-- Collateral is tracked as part of the user's deposit balance.
-- Only the borrower can withdraw their deposit.
-- # Loans are uniquely identified by an incrementing loanId.
 - ETH collateral (via `createLoan`) is locked separately from the withdrawable `deposits` balance — it cannot be withdrawn via `withdraw()`. The aggregate is accessible via `lockedBalanceOf`.
 - ERC20 collateral (via `createLoanWithERC20`) is **not** tracked in `lockedBalanceOf` or `loanLockedBalanceOf`. Query collateral details per loan using `getLoanLockedCollateral(loanId)`.
 - ERC20 collateral requires a prior `approve()` call on the token contract. The vault uses `SafeERC20.safeTransferFrom`, so non-compliant tokens (e.g. those that don't return a boolean) are handled correctly.
 - Only the owner can authorize contract upgrades.
 - Loans are uniquely identified by an auto-incrementing `loanId` starting at 0.
 - `address(0)` as `collateralToken` means the collateral is native ETH.
-  > > > > > > > 2f436cdca730e35f3617883d15b2f72af9d54aa2
 
 ## Testing
 
 - The contract is tested for typical and edge cases, including:
-  <<<<<<< HEAD
-  - Successful loan creation
-  - Insufficient collateral
-  - Zero collateral
-
-## Integration
-
-- # Interact with the contract using ethers.js, web3.js, or similar tools.
   - Successful ETH loan creation
   - Successful ERC20 loan creation
   - Zero collateral rejection
@@ -158,5 +145,4 @@ struct Loan {
 
 - Interact with the contract using ethers.js, viem, or similar tools.
 - The contract is deployed behind a UUPS proxy — interact with the proxy address, not the implementation.
-  > > > > > > > 2f436cdca730e35f3617883d15b2f72af9d54aa2
 - See the test file for usage examples.
