@@ -4,11 +4,13 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "./IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title VouchVault (Upgradeable)
 /// @notice Lending vault contract for the Vouch protocol supporting collateralized loans
 contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
+    using SafeERC20 for IERC20;
     
     struct Loan {
         address borrower;
@@ -97,9 +99,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(amount > 0, "Collateral must be > 0");
         require(token != address(0), "Invalid token address");
 
-        // Transfer tokens from user to this vault
-        bool success = IERC20(token).transferFrom(msg.sender, address(this), amount);
-        require(success, "Token transfer failed");
+        // Transfer tokens from user to this vault (SafeERC20 handles non-compliant tokens)
+        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
 
         loans[nextLoanId] = Loan({
             borrower: msg.sender,

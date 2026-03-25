@@ -6,8 +6,8 @@ export type Token = {
   chainId: string;
   address: string;
   symbol: string;
+  decimals: number;
   name: string | null;
-  decimals: number | null;
   logoURI: string | null;
 };
 

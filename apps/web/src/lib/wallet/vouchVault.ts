@@ -1,6 +1,5 @@
 import { dev } from '$app/environment';
 import { Contract, ContractTransactionResponse, ethers } from 'ethers';
-import IERC20Abi from '../../../../../packages/abi/IERC20.json';
 import VouchVaultAbiDev from '../../../../../packages/abi/VouchVault.json';
 import VouchVaultAbiProd from '../../../../../packages/abi/prod/VouchVault.json';
 import type { Token } from '../../api/chain';
@@ -27,12 +26,22 @@ const createEthLoan = async (contract: Contract, collateralAmount: number) => {
   return tx.wait();
 };
 
+const ERC20_ABI = [
+  'function approve(address spender, uint256 amount) returns (bool)',
+  'function allowance(address owner, address spender) view returns (uint256)',
+];
+
 const createErc20Loan = async (contract: Contract, token: Token, collateralAmount: number) => {
   const amount = ethers.parseUnits(collateralAmount.toString(), token.decimals ?? 18);
 
-  const erc20 = new ethers.Contract(token.address, IERC20Abi.abi, contract.runner);
-  const approveTx = await erc20.approve(contract.target, amount);
-  await approveTx.wait();
+  const erc20 = new ethers.Contract(token.address, ERC20_ABI, contract.runner);
+  const signer = await (contract.runner as ethers.JsonRpcSigner).getAddress();
+  const allowance: bigint = await erc20.allowance(signer, contract.target);
+
+  if (allowance < amount) {
+    const approveTx = await erc20.approve(contract.target, amount);
+    await approveTx.wait();
+  }
 
   const tx = await contract.createLoanWithERC20(token.address, amount);
   return tx.wait();
