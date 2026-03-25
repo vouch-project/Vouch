@@ -46,7 +46,7 @@ export default [
       parser: svelteParser,
       parserOptions: {
         parser: tseslint.parser,
-        project: './tsconfig.json',
+        projectService: true,
         extraFileExtensions: ['.svelte'],
         tsconfigRootDir: __dirname,
       },
