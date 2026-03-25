@@ -1,5 +1,5 @@
 import { dev } from '$app/environment';
-import { Contract, ContractTransactionResponse, ethers } from 'ethers';
+import { ethers } from 'ethers';
 import VouchVaultAbiDev from '../../../../../packages/abi/VouchVault.json';
 import VouchVaultAbiProd from '../../../../../packages/abi/prod/VouchVault.json';
 import type { Token } from '../../api/chain';
@@ -7,7 +7,7 @@ import { chainInfo } from '../stores/chainInfo.svelte';
 
 const VouchVaultAbi = dev ? VouchVaultAbiDev : VouchVaultAbiProd;
 
-export const getVouchVaultContract = async (): Promise<Contract> => {
+export const getVouchVaultContract = async (): Promise<ethers.Contract> => {
   if (!window.ethereum) throw new Error('No wallet found');
   if (!chainInfo.contractAddress) throw new Error('No contract address found for current chain');
   if (!ethers.isAddress(chainInfo.contractAddress)) throw new Error('Invalid contract address');
@@ -20,7 +20,10 @@ export const getVouchVaultContract = async (): Promise<Contract> => {
 
 const isNativeToken = (token: Token): boolean => !token.address || token.address === ethers.ZeroAddress;
 
-const createEthLoan = async (contract: Contract, collateralAmount: number) => {
+const createEthLoan = async (
+  contract: ethers.Contract,
+  collateralAmount: number,
+): Promise<ethers.TransactionReceipt> => {
   const value = ethers.parseEther(collateralAmount.toString());
   const tx = await contract.createLoan({ value });
   return tx.wait();
@@ -31,7 +34,11 @@ const ERC20_ABI = [
   'function allowance(address owner, address spender) view returns (uint256)',
 ];
 
-const createErc20Loan = async (contract: Contract, token: Token, collateralAmount: number) => {
+const createErc20Loan = async (
+  contract: ethers.Contract,
+  token: Token,
+  collateralAmount: number,
+): Promise<ethers.TransactionReceipt> => {
   const amount = ethers.parseUnits(collateralAmount.toString(), token.decimals ?? 18);
 
   const erc20 = new ethers.Contract(token.address, ERC20_ABI, contract.runner);
@@ -47,7 +54,7 @@ const createErc20Loan = async (contract: Contract, token: Token, collateralAmoun
   return tx.wait();
 };
 
-export const createLoan = async (collateralAmount: number, token: Token): Promise<ContractTransactionResponse> => {
+export const createLoan = async (collateralAmount: number, token: Token): Promise<ethers.TransactionReceipt> => {
   const contract = await getVouchVaultContract();
 
   const receipt = isNativeToken(token)
