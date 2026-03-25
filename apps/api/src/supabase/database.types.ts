@@ -23,19 +23,19 @@ export type Database = MergeDeep<
             id: UUID;
             chainId: UUID;
             borrowerAddress: Address;
-            lenderAddress: Address;
+            lenderAddress: Address | null;
           };
           Insert: {
             id?: UUID;
             chainId: UUID;
             borrowerAddress: Address;
-            lenderAddress?: Address;
+            lenderAddress?: Address | null;
           };
           Update: {
             id?: UUID;
             chainId?: UUID;
             borrowerAddress?: Address;
-            lenderAddress?: Address;
+            lenderAddress?: Address | null;
           };
         };
         transactions: {
