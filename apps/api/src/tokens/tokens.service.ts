@@ -3,7 +3,7 @@ import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { UUID } from 'crypto';
+import type { UUID } from 'crypto';
 import type { Redis } from 'ioredis';
 import { validAddress } from '../supabase/address';
 import { Database } from '../supabase/database.types';
