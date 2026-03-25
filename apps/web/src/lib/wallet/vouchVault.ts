@@ -23,10 +23,9 @@ const isNativeToken = (token: Token): boolean => !token.address || token.address
 const createEthLoan = async (
   contract: ethers.Contract,
   collateralAmount: number,
-): Promise<ethers.TransactionReceipt> => {
+): Promise<ethers.TransactionResponse> => {
   const value = ethers.parseEther(collateralAmount.toString());
-  const tx = await contract.createLoan({ value });
-  return tx.wait();
+  return contract.createLoan({ value });
 };
 
 const ERC20_ABI = [
@@ -38,7 +37,7 @@ const createErc20Loan = async (
   contract: ethers.Contract,
   token: Token,
   collateralAmount: number,
-): Promise<ethers.TransactionReceipt> => {
+): Promise<ethers.TransactionResponse> => {
   const amount = ethers.parseUnits(collateralAmount.toString(), token.decimals ?? 18);
 
   const erc20 = new ethers.Contract(token.address, ERC20_ABI, contract.runner);
@@ -50,17 +49,17 @@ const createErc20Loan = async (
     await approveTx.wait();
   }
 
-  const tx = await contract.createLoanWithERC20(token.address, amount);
-  return tx.wait();
+  return contract.createLoanWithERC20(token.address, amount);
 };
 
 export const createLoan = async (collateralAmount: number, token: Token): Promise<ethers.TransactionReceipt> => {
   const contract = await getVouchVaultContract();
 
-  const receipt = isNativeToken(token)
-    ? await createEthLoan(contract, collateralAmount)
-    : await createErc20Loan(contract, token, collateralAmount);
+  const tx = await (isNativeToken(token)
+    ? createEthLoan(contract, collateralAmount)
+    : createErc20Loan(contract, token, collateralAmount));
 
+  const receipt = await tx.wait();
   if (!receipt) throw new Error('Transaction failed');
   return receipt;
 };
