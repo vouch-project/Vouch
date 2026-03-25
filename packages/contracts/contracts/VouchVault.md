@@ -10,16 +10,12 @@ Inherits: `Initializable`, `OwnableUpgradeable`, `UUPSUpgradeable`
 
 ### State Variables
 
-| Variable                       | Type                          | Description                                            |
-| ------------------------------ | ----------------------------- | ------------------------------------------------------ |
-| `deposits`                     | `mapping(address => uint256)` | Withdrawable ETH deposit balance per user              |
-| `loans`                        | `mapping(uint256 => Loan)`    | Loan data by loan ID                                   |
-| `nextLoanId`                   | `uint256`                     | Auto-incrementing ID assigned to new loans             |
-| `lockedEthCollateral`          | `mapping(address => uint256)` | Total ETH collateral locked per borrower               |
-| `lockedEthCollateralByLoan`    | `mapping(uint256 => uint256)` | ETH collateral locked per loan                         |
-| `lockedCollateralAmountByLoan` | `mapping(uint256 => uint256)` | Collateral amount (ETH or ERC20) per loan              |
-| `lockedCollateralTokenByLoan`  | `mapping(uint256 => address)` | Collateral token address per loan (`address(0)` = ETH) |
-| `loanCollateralLocked`         | `mapping(uint256 => bool)`    | Whether a loan's collateral is still locked            |
+| Variable              | Type                          | Description                                |
+| --------------------- | ----------------------------- | ------------------------------------------ |
+| `deposits`            | `mapping(address => uint256)` | Withdrawable ETH deposit balance per user  |
+| `loans`               | `mapping(uint256 => Loan)`    | Single source of truth for all loan data   |
+| `nextLoanId`          | `uint256`                     | Auto-incrementing ID assigned to new loans |
+| `lockedEthCollateral` | `mapping(address => uint256)` | Total ETH collateral locked per borrower   |
 
 ### Loan Struct
 
@@ -30,6 +26,7 @@ struct Loan {
     uint256 collateralAmount;
     uint256 createdAt;
     bool active;
+    bool collateralLocked;
 }
 ```
 

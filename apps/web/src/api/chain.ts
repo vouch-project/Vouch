@@ -17,9 +17,9 @@ export type ChainInfo = {
 };
 
 /**
- * Fetches the token list from the backend API for a specific network ID.
+ * Fetches the contract address and token list from the backend API for a specific network ID.
  * @param networkId The ID of the blockchain network
- * @returns An array of tokens with their details
+ * @returns A ChainInfo object containing the contract address and token list
  */
 export const getChainInfo = async (networkId: number, signal?: AbortSignal) =>
   (await axiosApi.get<ChainInfo>('/chains', { params: { networkId }, signal })).data;
