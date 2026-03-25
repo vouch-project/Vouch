@@ -7,7 +7,7 @@ END$$;
 
 CREATE TABLE IF NOT EXISTS loans (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    "onChainLoanId" text,
+    "onChainLoanId" uint256,
     "chainId" uuid NOT NULL REFERENCES chains (id),
     "borrowerAddress" address NOT NULL,
     "lenderAddress" address,

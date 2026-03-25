@@ -66,12 +66,14 @@ contract MockERC20 is IERC20 {
         require(_balances[sender] >= amount, "ERC20: transfer amount exceeds balance");
         _balances[sender] -= amount;
         _balances[recipient] += amount;
+        emit Transfer(sender, recipient, amount);
     }
 
     function _mint(address account, uint256 amount) internal {
         require(account != address(0), "ERC20: mint to the zero address");
         _totalSupply += amount;
         _balances[account] += amount;
+        emit Transfer(address(0), account, amount);
     }
 
     function mint(address account, uint256 amount) public {
@@ -82,5 +84,6 @@ contract MockERC20 is IERC20 {
         require(owner != address(0), "ERC20: approve from the zero address");
         require(spender != address(0), "ERC20: approve to the zero address");
         _allowances[owner][spender] = amount;
+        emit Approval(owner, spender, amount);
     }
 }

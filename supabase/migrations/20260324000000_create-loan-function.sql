@@ -1,14 +1,14 @@
 CREATE OR REPLACE FUNCTION create_loan_with_transaction (
     p_network_id text,
-    p_collateral_token_address text,
-    p_contract_address text,
-    p_on_chain_loan_id text,
-    p_borrower_address text,
-    p_collateral_amount numeric,
+    p_collateral_token_address address,
+    p_contract_address address,
+    p_on_chain_loan_id uint256,
+    p_borrower_address address,
+    p_collateral_amount uint256,
     p_collateral_tx_hash text,
-    p_collateral_block_number bigint,
+    p_collateral_block_number uint256,
     p_collateral_block_hash text,
-    p_log_index integer,
+    p_log_index uint256,
     p_collateral_locked_at timestamptz
 ) RETURNS uuid LANGUAGE plpgsql AS $$
 DECLARE
