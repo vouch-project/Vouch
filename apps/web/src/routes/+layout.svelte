@@ -61,7 +61,7 @@
       }
     };
 
-    fetchTokens();
+    void fetchTokens();
 
     return () => controller.abort();
   });
