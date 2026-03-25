@@ -30,7 +30,7 @@ async function seed() {
       await client.query(
         `
         INSERT INTO chains ("networkId", "contractAddress", "rpcUrl", "networkType", name)
-        VALUES ('1337', $1, 'ws://localhost:8545', 'evm', 'Local Hardhat')
+        VALUES ('1337', $1, 'http://localhost:8545', 'evm', 'Local Hardhat')
         ON CONFLICT ("networkId")
         DO UPDATE SET "contractAddress" = EXCLUDED."contractAddress", "rpcUrl" = EXCLUDED."rpcUrl", "networkType" = EXCLUDED."networkType", name = EXCLUDED.name;
         `,

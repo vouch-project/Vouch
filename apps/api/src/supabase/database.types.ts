@@ -24,18 +24,31 @@ export type Database = MergeDeep<
             chainId: UUID;
             borrowerAddress: Address;
             lenderAddress: Address | null;
+            // uint256 columns — PostgREST serialises numeric as string
+            onChainLoanId: string | null;
+            collateralAmount: string | null;
+            principalAmount: string | null;
+            interestRate: string | null;
           };
           Insert: {
             id?: UUID;
             chainId: UUID;
             borrowerAddress: Address;
             lenderAddress?: Address | null;
+            onChainLoanId?: string | null;
+            collateralAmount?: string | null;
+            principalAmount?: string | null;
+            interestRate?: string | null;
           };
           Update: {
             id?: UUID;
             chainId?: UUID;
             borrowerAddress?: Address;
             lenderAddress?: Address | null;
+            onChainLoanId?: string | null;
+            collateralAmount?: string | null;
+            principalAmount?: string | null;
+            interestRate?: string | null;
           };
         };
         transactions: {
@@ -46,6 +59,10 @@ export type Database = MergeDeep<
             tokenId: UUID;
             fromAddress: Address;
             toAddress: Address;
+            // uint256 columns — PostgREST serialises numeric as string
+            amount: string | null;
+            blockNumber: string | null;
+            logIndex: string;
           };
           Insert: {
             id?: UUID;
@@ -55,6 +72,9 @@ export type Database = MergeDeep<
             txTimestamp: Date;
             fromAddress: Address;
             toAddress: Address;
+            amount?: string | null;
+            blockNumber?: string | null;
+            logIndex: string;
           };
           Update: {
             id?: UUID;
@@ -64,6 +84,9 @@ export type Database = MergeDeep<
             txTimestamp?: Date;
             fromAddress?: Address;
             toAddress?: Address;
+            amount?: string | null;
+            blockNumber?: string | null;
+            logIndex?: string;
           };
         };
       };
