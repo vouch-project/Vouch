@@ -19,7 +19,8 @@ async function seed() {
         `
         INSERT INTO chains ("networkId", "contractAddress", "rpcUrl", "networkType", name)
         VALUES ('1', $1, 'https://mainnet.infura.io/v3/' || $2, 'evm', 'Mainnet')
-        ON CONFLICT DO NOTHING;
+        ON CONFLICT ("networkId")
+        DO UPDATE SET "contractAddress" = EXCLUDED."contractAddress", "rpcUrl" = EXCLUDED."rpcUrl", "networkType" = EXCLUDED."networkType", name = EXCLUDED.name;
         `,
         [contractAddress, infuraProjectId],
       );
@@ -31,7 +32,8 @@ async function seed() {
         `
         INSERT INTO chains ("networkId", "contractAddress", "rpcUrl", "networkType", name)
         VALUES ('1337', $1, 'ws://localhost:8545', 'evm', 'Local Hardhat')
-        ON CONFLICT DO NOTHING;
+        ON CONFLICT ("networkId")
+        DO UPDATE SET "contractAddress" = EXCLUDED."contractAddress", "rpcUrl" = EXCLUDED."rpcUrl", "networkType" = EXCLUDED."networkType", name = EXCLUDED.name;
         `,
         [contractAddress],
       );
