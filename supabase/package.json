@@ -4,7 +4,7 @@
   "description": "Seed scripts for Supabase database.",
   "main": "seed.ts",
   "scripts": {
-    "dev": "supabase db reset && tsc seed.ts --outDir dist && node dist/seed.js"
+    "setup": "supabase db reset && tsc seed.ts --outDir dist && node dist/seed.js"
   },
   "dependencies": {
     "dotenv": "^17.3.1",

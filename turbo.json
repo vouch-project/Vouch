@@ -9,11 +9,24 @@
       "cache": false,
       "persistent": true
     },
+    "@vouch/api#dev": {
+      "dependsOn": ["supabase#setup"],
+      "persistent": true,
+      "cache": false
+    },
+    "@vouch/web#dev": {
+      "dependsOn": ["supabase#setup"],
+      "persistent": true,
+      "cache": false
+    },
     "lint": {
       "dependsOn": ["^build"]
     },
     "test": {
       "dependsOn": ["build"]
+    },
+    "setup": {
+      "cache": false
     }
   }
 }
