@@ -2,6 +2,7 @@ import { RedisModule } from '@nestjs-modules/ioredis';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
@@ -13,14 +14,6 @@ import { TokenListModule } from './tokens/tokens.module';
 
 @Module({
   imports: [
-    RedisModule.forRoot({
-      type: 'single',
-      options: {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: process.env.REDIS_PORT ? Number(process.env.REDIS_PORT) : 6379,
-        password: process.env.REDIS_PASSWORD,
-      },
-    }),
     ConfigModule.forRoot({
       isGlobal: true,
     }),
@@ -33,6 +26,15 @@ import { TokenListModule } from './tokens/tokens.module';
       }),
       inject: [ConfigService],
     }),
+    RedisModule.forRoot({
+      type: 'single',
+      options: {
+        host: process.env.REDIS_HOST || 'localhost',
+        port: process.env.REDIS_PORT ? Number(process.env.REDIS_PORT) : 6379,
+        password: process.env.REDIS_PASSWORD,
+      },
+    }),
+    ScheduleModule.forRoot(),
     AuthModule,
     BlockchainListenerModule,
     ChainModule,
