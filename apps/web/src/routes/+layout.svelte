@@ -11,6 +11,7 @@
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { initWalletSubscriptions, wallet } from '$lib/wallet/wallet.svelte';
   import { onMount } from 'svelte';
+  import { ModeWatcher } from 'mode-watcher';
   import { getChainInfo } from '../api/chain';
   import '../app.css';
 
@@ -61,6 +62,7 @@
   });
 </script>
 
+<ModeWatcher />
 {#if isLoading}
   <div
     class="fixed top-0 left-0 z-100 h-[3px] bg-blue-600 drop-shadow-sm transition-all duration-300 ease-out pointer-events-none"
@@ -73,6 +75,6 @@
 
 <Header />
 
-<main class="min-h-[calc(100vh-57px)] p-8 max-w-[1200px] mx-auto">
+<main class="min-h-[calc(100vh-65px)] px-8 py-4 max-w-[1200px] mx-auto">
   {@render children()}
 </main>
