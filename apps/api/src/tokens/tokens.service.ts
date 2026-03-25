@@ -213,11 +213,11 @@ export class TokensService implements OnModuleInit {
     }
   }
 
-  async getTokens(chainId: string): Promise<ResponseToken[]> {
-    const redisKey = `${this.redisKeyPrefix}${chainId}`;
+  async getTokens(networkId: string): Promise<ResponseToken[]> {
+    const redisKey = `${this.redisKeyPrefix}${networkId}`;
     const cached = await this.redis.get(redisKey);
     if (cached) {
-      const parsed = this.parseTokens(cached, chainId);
+      const parsed = this.parseTokens(cached, networkId);
       if (parsed) return parsed;
     }
 
@@ -225,6 +225,6 @@ export class TokensService implements OnModuleInit {
     const refreshed = await this.redis.get(redisKey);
     if (!refreshed) return [];
 
-    return this.parseTokens(refreshed, chainId) ?? [];
+    return this.parseTokens(refreshed, networkId) ?? [];
   }
 }
