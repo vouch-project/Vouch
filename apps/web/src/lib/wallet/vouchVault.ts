@@ -15,7 +15,7 @@ export const getVouchVaultContract = async (): Promise<ethers.Contract> => {
   const provider = new ethers.BrowserProvider(window.ethereum as unknown as ethers.Eip1193Provider);
   const signer = await provider.getSigner();
 
-  return new ethers.Contract(chainInfo.contractAddress, VouchVaultAbi.abi, signer);
+  return new ethers.Contract(chainInfo.contractAddress, VouchVaultAbi, signer);
 };
 
 const isNativeToken = (token: Token): boolean => !token.address || token.address === ethers.ZeroAddress;

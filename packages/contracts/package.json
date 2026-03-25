@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"hardhat node\" \"sleep 10s && bash ./dev-setup.sh\"",
-    "build": "hardhat compile",
+    "build": "hardhat compile && node scripts/extract-abi.mjs",
     "test": "hardhat test",
     "clean": "hardhat clean"
   },

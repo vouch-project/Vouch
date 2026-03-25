@@ -100,11 +100,13 @@ struct Loan {
 
 #### lockedBalanceOf(address user) → uint256
 
-- Returns the total ETH collateral locked across all loans for `user`.
+- Returns the total **ETH** collateral locked across all ETH-collateral loans for `user`.
+- **ERC20 collateral is not reflected here.** For ERC20-collateral loans, query each loan individually with `getLoanLockedCollateral`.
 
 #### loanLockedBalanceOf(uint256 loanId) → uint256
 
-- Returns the ETH collateral locked for a specific loan.
+- Returns the **ETH** collateral locked for a specific ETH-collateral loan.
+- Returns `0` for ERC20-collateral loans — use `getLoanLockedCollateral` instead.
 
 #### getLoanLockedCollateral(uint256 loanId) → (address collateralToken, uint256 collateralAmount, bool locked)
 
@@ -127,7 +129,8 @@ struct Loan {
 ## Usage Guidelines
 
 - Always check event logs for confirmation of deposits, withdrawals, and loan creation.
-- ETH collateral (via `createLoan`) is locked separately from the withdrawable `deposits` balance — it cannot be withdrawn via `withdraw()`.
+- ETH collateral (via `createLoan`) is locked separately from the withdrawable `deposits` balance — it cannot be withdrawn via `withdraw()`. The aggregate is accessible via `lockedBalanceOf`.
+- ERC20 collateral (via `createLoanWithERC20`) is **not** tracked in `lockedBalanceOf` or `loanLockedBalanceOf`. Query collateral details per loan using `getLoanLockedCollateral(loanId)`.
 - ERC20 collateral requires a prior `approve()` call on the token contract. The vault uses `SafeERC20.safeTransferFrom`, so non-compliant tokens (e.g. those that don't return a boolean) are handled correctly.
 - Only the owner can authorize contract upgrades.
 - Loans are uniquely identified by an auto-incrementing `loanId` starting at 0.

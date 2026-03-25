@@ -136,11 +136,11 @@ export class TokensService implements OnModuleInit {
     rawTokens: ResponseToken[],
     evmChains: EvmChain[],
   ): Token[] {
+    const chainByNetworkId = new Map(evmChains.map((c) => [c.networkId, c]));
+
     return rawTokens
       .map((token) => {
-        const chain = evmChains.find(
-          (evmChain) => evmChain.networkId === token.chainId.toString(),
-        );
+        const chain = chainByNetworkId.get(token.chainId.toString());
 
         if (!chain) return null;
 
@@ -177,16 +177,16 @@ export class TokensService implements OnModuleInit {
     tokens: Token[],
     evmChains: EvmChain[],
   ): Record<string, Token[]> {
+    const networkIdById = new Map(evmChains.map((c) => [c.id, c.networkId]));
     const tokensByNetwork: Record<string, Token[]> = {};
 
     for (const token of tokens) {
-      const chain = evmChains.find((evmChain) => evmChain.id === token.chainId);
-      if (!chain) continue;
+      const networkId = networkIdById.get(token.chainId);
+      if (!networkId) continue;
 
-      if (!tokensByNetwork[chain.networkId])
-        tokensByNetwork[chain.networkId] = [];
+      if (!tokensByNetwork[networkId]) tokensByNetwork[networkId] = [];
 
-      tokensByNetwork[chain.networkId].push(token);
+      tokensByNetwork[networkId].push(token);
     }
 
     return tokensByNetwork;

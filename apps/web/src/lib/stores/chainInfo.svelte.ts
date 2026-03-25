@@ -1,7 +1,7 @@
 import type { Token } from '../../api/chain';
 
 class ChainInfo {
-  contractAddress = $state<string>();
+  contractAddress = $state<string | undefined>();
   tokens = $state<Token[]>([]);
 }
 

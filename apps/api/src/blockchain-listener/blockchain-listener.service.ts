@@ -11,9 +11,9 @@ const abiPath =
     ? join(__dirname, '../../../../packages/abi/prod/VouchVault.json')
     : join(__dirname, '../../../../packages/abi/VouchVault.json');
 
-const VouchVaultAbi = JSON.parse(readFileSync(abiPath, 'utf-8')) as {
-  abi: ethers.InterfaceAbi;
-};
+const VouchVaultAbi = JSON.parse(
+  readFileSync(abiPath, 'utf-8'),
+) as ethers.InterfaceAbi;
 
 type ChainConfig = Database['public']['Tables']['chains']['Row'];
 
@@ -58,7 +58,7 @@ export class BlockchainListenerService implements OnModuleInit {
 
         const contract = new ethers.Contract(
           config.contractAddress,
-          VouchVaultAbi.abi,
+          VouchVaultAbi,
           provider,
         );
         this.chains.push({ config, provider, contract, network });
