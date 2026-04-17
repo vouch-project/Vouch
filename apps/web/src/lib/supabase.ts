@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { JWT_STORAGE_KEY } from '../constants';
 
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-  throw new Error('Missing PUBLIC_SUPABASE_URL or PUBLIC_SUPABASE_PUBLISHABLE_KEY env vars');
+  throw new Error('Missing SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY env vars');
 }
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {

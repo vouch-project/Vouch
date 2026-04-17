@@ -203,8 +203,7 @@
           {/if}
           <span
             class={cn('relative inline-flex h-2 w-2 rounded-full', realtimeActive ? 'bg-green-500' : 'bg-gray-400')}
-          >
-          </span>
+          ></span>
         </div>
         {realtimeActive ? 'Live Updates' : 'Realtime Off'}
       </Button>
@@ -238,31 +237,32 @@
           <Table.Root>
             <Table.Header class="bg-muted/30">
               <Table.Row>
-                <Table.Head class="pl-4 sm:pl-8 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold"
-                  >Borrower</Table.Head
-                >
-                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold"
-                  >Score</Table.Head
-                >
-                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold"
-                  >Amount</Table.Head
-                >
-                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold"
-                  >Collateral</Table.Head
-                >
-                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold"
-                  >LTV</Table.Head
-                >
-                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold"
-                  >APY</Table.Head
-                >
-                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold"
-                  >Risk</Table.Head
-                >
+                <Table.Head class="pl-4 sm:pl-8 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                  Borrower
+                </Table.Head>
+                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                  Score
+                </Table.Head>
+                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                  Amount
+                </Table.Head>
+                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                  Collateral
+                </Table.Head>
+                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                  LTV
+                </Table.Head>
+                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                  APY
+                </Table.Head>
+                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                  Risk
+                </Table.Head>
                 <Table.Head
                   class="pr-4 sm:pr-10 py-3 text-right text-[10px] sm:text-xs uppercase tracking-wider font-bold"
-                  >Action</Table.Head
                 >
+                  Action
+                </Table.Head>
               </Table.Row>
             </Table.Header>
             <Table.Body>
