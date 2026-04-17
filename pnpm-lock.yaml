@@ -44,6 +44,9 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.98.0
         version: 2.99.3(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      '@vouch/database-types':
+        specifier: workspace:*
+        version: link:../../packages/database-types
       class-transformer:
         specifier: ^0.5.1
         version: 0.5.1
@@ -150,6 +153,9 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.98.0
         version: 2.99.3(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      '@vouch/database-types':
+        specifier: workspace:*
+        version: link:../../packages/database-types
       axios:
         specifier: ^1.13.6
         version: 1.13.6(debug@4.4.3)
@@ -291,6 +297,9 @@ importers:
         specifier: ^5.5.0
         version: 5.5.0
     devDependencies:
+      '@vouch/config':
+        specifier: workspace:*
+        version: link:../config
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
