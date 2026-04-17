@@ -10,7 +10,7 @@
     "db:migrate": "supabase db push",
     "db:generate": "f() { supabase db diff --file ${1:_migration}; }; f",
     "db:reset": "supabase db reset",
-    "db:generate:types": "supabase gen types typescript --local > apps/api/src/supabase/database-generated.types.ts"
+    "db:generate:types": "supabase gen types typescript --local > packages/database-types/src/generated.ts && cd packages/database-types && pnpm build"
   },
   "devDependencies": {
     "supabase": "^2.81.2",
