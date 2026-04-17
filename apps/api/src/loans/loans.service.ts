@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { asAddress } from '../supabase/address';
+import { asAddress } from '@vouch/database-types';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
 

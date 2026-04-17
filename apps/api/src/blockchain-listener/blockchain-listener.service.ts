@@ -4,7 +4,7 @@ import { ethers } from 'ethers';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { LoansService } from '../loans/loans.service';
-import { Database } from '../supabase/database.types';
+import { Database } from '@vouch/database-types';
 import { SupabaseService } from '../supabase/supabase.service';
 
 type ChainConfig = Database['public']['Tables']['chains']['Row'];
