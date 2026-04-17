@@ -1,4 +1,4 @@
-import type { UUID } from '../types';
+import type { UUID } from '$lib/types';
 import { axiosApi } from './axiosApi';
 
 export type Token = {

@@ -5,6 +5,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { ethers } from 'ethers';
   import type { RealtimeChannel } from '@supabase/supabase-js';
+  import type { LoanWithTokens } from '$lib/types';
   import * as Table from '$lib/components/ui/table';
   import * as Tabs from '$lib/components/ui/tabs';
   import { Badge } from '$lib/components/ui/badge';
@@ -13,35 +14,9 @@
   import { RefreshCw, Zap, TrendingUp, ShieldCheck, Wallet, Info } from '@lucide/svelte';
   import { cn } from '$lib/utils';
 
-  interface Token {
-    address: string;
-    chainId: string;
-    decimals: number | null;
-    id: string;
-    logoURI: string | null;
-    name: string | null;
-    symbol: string;
-    updatedAt: string;
-  }
-
-  interface Loan {
-    id: string;
-    borrowerAddress: string;
-    chainId: string;
-    collateralAmount: number | null;
-    collateralTokenId: string | null;
-    principalAmount: number | null;
-    principalTokenId: string | null;
-    interestRate: number | null;
-    status: 'pending' | 'active' | 'repaid' | 'defaulted' | 'cancelled';
-    createdAt: string;
-    collateralToken?: Token | null;
-    principalToken?: Token | null;
-  }
-
   let { data } = $props();
 
-  let loans: Loan[] = $state([]);
+  let loans: LoanWithTokens[] = $state([]);
   let loading: boolean = $state(true);
   let refreshing: boolean = $state(false);
   let errorMsg: string | null = $state(null);
@@ -146,10 +121,11 @@
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
   };
 
-  const formatAmount = (amount: number | null, decimals: number | null | undefined) => {
-    if (amount === null) return '0';
+  const formatAmount = (amount: string | null, decimals: number | null | undefined) => {
+    if (amount === null || amount === '') return '0';
     try {
-      return Number(ethers.formatUnits(amount.toString(), decimals || 18)).toLocaleString(undefined, {
+      // Use ethers.formatUnits directly - amount is already a string (uint256 from Postgres)
+      return Number(ethers.formatUnits(amount, decimals || 18)).toLocaleString(undefined, {
         maximumFractionDigits: 4,
       });
     } catch {
