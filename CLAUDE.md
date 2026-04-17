@@ -104,6 +104,26 @@ python main.py
 - Svelte 5 with runes (modern reactivity)
 - Environment variables prefixed with `PUBLIC_` are exposed to browser
 
+#### Frontend Design & Styling
+- **Component library**: `shadcn-svelte` - import from `$lib/components/ui/`
+  - Common components: `Button`, `Badge`, `Card`, `Table`, `Tabs`, etc.
+  - Namespace imports for multi-part components: `* as Table from '$lib/components/ui/table'`
+  - Install new components: `npx shadcn-svelte@latest add <component-name>` (see https://www.shadcn-svelte.com/docs/components)
+- **Theme system**: CSS custom properties defined in `app.css` using OKLCH color space
+  - **IMPORTANT**: Always use theme colors (`bg-background`, `text-foreground`, `bg-card`, `text-muted-foreground`, `border-border`, etc.) instead of hardcoded Tailwind colors for accurate theming
+  - Both light and dark modes supported via `.dark` class
+  - Theme tokens: `background`, `foreground`, `card`, `muted`, `accent`, `primary`, `secondary`, `destructive`, `border`, `ring`
+- **Icons**: `lucide-svelte` icons
+- **Utilities**: 
+  - `cn()` from `$lib/utils` for conditional classnames
+  - Tailwind for spacing, layout, and utilities (but use theme colors for actual colors)
+- **Common patterns**:
+  - Backdrop blur effects: `backdrop-blur-sm`, `backdrop-blur-md` for glassmorphism
+  - Responsive breakpoints: `sm:`, `md:`, `lg:` prefixes
+  - State-based styling with data attributes (e.g., `data-open`, `data-active`)
+  - Skeleton loaders: `bg-muted animate-pulse`
+  - Hover effects: `hover:bg-muted/10 transition-colors`
+
 ### Smart Contracts (Hardhat)
 - **Main contract**: `VouchVault.sol` - handles lending/borrowing
 - **Test helpers**: `MockERC20.sol` for testing
