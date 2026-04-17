@@ -37,8 +37,6 @@ Create a shared package that both apps consume, following production patterns fr
 packages/database-types/
 ├── package.json
 ├── tsconfig.json
-├── scripts/
-│   └── generate.js          # Automated type generation + uint256 fixes
 ├── src/
 │   ├── index.ts             # Main exports
 │   ├── generated.ts         # Raw Supabase generated types (git-committed)
@@ -52,16 +50,17 @@ packages/database-types/
 
 **Problem:** Supabase generator types uint256 (Postgres `numeric`) columns as `number`, but they're returned as `string` by PostgREST.
 
-**Solution:** Two-layer approach:
-1. **Automated script** (`scripts/generate.js`) post-processes generated types, replacing `number` with `string` for known uint256 fields
-2. **MergeDeep overrides** (`src/database.ts`) for custom branded types (UUID, Address)
+**Solution:** Manual MergeDeep overrides in `src/database.ts`
+- Override uint256 fields from `number` to `string` 
+- Override custom branded types (UUID, Address)
+- **CRITICAL:** When adding new uint256 columns to the database schema, developers MUST manually add them to the MergeDeep overrides in `database.ts`. This is intentional - it's explicit, type-safe, and prevents incorrect automated transformations.
 
 ### Key Design Decisions
 
 1. **Build step required**: Package compiles to `dist/` for proper module boundaries and performance
 2. **Commit generated types**: `src/generated.ts` is committed to git for CI/CD and developer onboarding
 3. **Re-use Supabase helpers**: Export generated `Tables<T>`, `TablesInsert<T>`, `TablesUpdate<T>`, `Enums<T>` types
-4. **Automated uint256 fixes**: Script regex-replaces numeric field types to eliminate manual maintenance
+4. **Manual uint256 overrides**: Developers must explicitly add new uint256 fields to MergeDeep overrides - this is intentional for type safety
 
 ## Implementation Details
 
@@ -115,15 +114,122 @@ packages/database-types/
 }
 ```
 
-### Type Generation Script
+### Type Overrides Implementation
 
-**`packages/database-types/scripts/generate.js`:**
-- Runs `supabase gen types typescript --local`
-- Post-processes output to fix uint256 fields (`number` → `string`)
-- Writes to `src/generated.ts`
-- Field pattern: `/(onChainLoanId|collateralAmount|principalAmount|interestRate|amount|blockNumber|logIndex)(\??:\s*)number(\s*\|\s*null)?/g`
+**`packages/database-types/src/database.ts`:**
+```typescript
+import type { UUID } from 'crypto';
+import { MergeDeep } from 'type-fest';
+import { Address } from './address';
+import { Database as DatabaseGenerated } from './generated';
 
-**Note:** Regex must be updated when adding new uint256 columns.
+export type Database = MergeDeep<
+  DatabaseGenerated,
+  {
+    public: {
+      Tables: {
+        chains: {
+          Row: { id: UUID; contractAddress: Address };
+          Insert: { id?: UUID; contractAddress: Address };
+          Update: { id?: UUID; contractAddress?: Address };
+        };
+        tokens: {
+          Row: { id: UUID; chainId: UUID; address: Address };
+          Insert: { id?: UUID; chainId: UUID; address: Address };
+          Update: { id?: UUID; chainId?: UUID; address?: Address };
+        };
+        loans: {
+          Row: {
+            id: UUID;
+            chainId: UUID;
+            borrowerAddress: Address;
+            lenderAddress: Address | null;
+            // uint256 fields - PostgREST returns as string
+            onChainLoanId: string | null;
+            collateralAmount: string | null;
+            principalAmount: string | null;
+            interestRate: string | null;
+          };
+          Insert: {
+            id?: UUID;
+            chainId: UUID;
+            borrowerAddress: Address;
+            lenderAddress?: Address | null;
+            onChainLoanId?: string | null;
+            collateralAmount?: string | null;
+            principalAmount?: string | null;
+            interestRate?: string | null;
+          };
+          Update: {
+            id?: UUID;
+            chainId?: UUID;
+            borrowerAddress?: Address;
+            lenderAddress?: Address | null;
+            onChainLoanId?: string | null;
+            collateralAmount?: string | null;
+            principalAmount?: string | null;
+            interestRate?: string | null;
+          };
+        };
+        transactions: {
+          Row: {
+            id: UUID;
+            chainId: UUID;
+            loanId: UUID;
+            tokenId: UUID;
+            fromAddress: Address;
+            toAddress: Address;
+            // uint256 fields - PostgREST returns as string
+            amount: string | null;
+            blockNumber: string | null;
+            logIndex: string;
+          };
+          Insert: {
+            id?: UUID;
+            chainId: UUID;
+            loanId: UUID;
+            tokenId: UUID;
+            txTimestamp: Date;
+            fromAddress: Address;
+            toAddress: Address;
+            amount?: string | null;
+            blockNumber?: string | null;
+            logIndex: string;
+          };
+          Update: {
+            id?: UUID;
+            chainId?: UUID;
+            loanId?: UUID;
+            tokenId?: UUID;
+            txTimestamp?: Date;
+            fromAddress?: Address;
+            toAddress?: Address;
+            amount?: string | null;
+            blockNumber?: string | null;
+            logIndex?: string;
+          };
+        };
+      };
+      Functions: {
+        create_loan_with_transaction: {
+          Args: {
+            p_borrower_address: Address;
+            p_collateral_amount: string;
+            p_collateral_block_number: string;
+            p_collateral_token_address: Address;
+            p_contract_address: Address;
+            p_log_index: number;
+            p_on_chain_loan_id: string;
+          };
+          Returns: string;
+        };
+      };
+    };
+  }
+>;
+```
+
+**IMPORTANT:** When adding new tables or uint256 columns, developers must update this file to add the appropriate overrides.
 
 ### Exports
 
@@ -157,7 +263,7 @@ export type LoanWithTokens = Tables<'loans'> & {
 
 **From `apps/api/src/supabase/`:**
 - `address.ts` → `packages/database-types/src/address.ts` (no changes)
-- `database-generated.types.ts` → `packages/database-types/src/generated.ts` (via script)
+- `database-generated.types.ts` → `packages/database-types/src/generated.ts` (initial copy, then regenerated)
 - `database.types.ts` → `packages/database-types/src/database.ts` (update imports)
 
 #### Backend Files to Update (5 files)
@@ -227,7 +333,7 @@ export type LoanWithTokens = Tables<'loans'> & {
 ```json
 {
   "scripts": {
-    "db:generate:types": "node packages/database-types/scripts/generate.js && cd packages/database-types && pnpm build"
+    "db:generate:types": "supabase gen types typescript --local > packages/database-types/src/generated.ts && cd packages/database-types && pnpm build"
   }
 }
 ```
@@ -238,10 +344,20 @@ export type LoanWithTokens = Tables<'loans'> & {
   "tasks": {
     "@vouch/database-types#build": {
       "outputs": ["dist/**"]
+    },
+    "@vouch/api#build": {
+      "dependsOn": ["@vouch/database-types#build"],
+      "outputs": ["dist/**"]
+    },
+    "@vouch/web#build": {
+      "dependsOn": ["@vouch/database-types#build"],
+      "outputs": [".svelte-kit/**"]
     }
   }
 }
 ```
+
+**Rationale:** Both `apps/api` and `apps/web` depend on the database-types package, so they must build after it. This ensures type definitions are compiled before consuming applications try to import them.
 
 ## Workflow
 
@@ -254,9 +370,8 @@ pnpm db:generate:types
 
 This command:
 1. Runs Supabase type generator
-2. Post-processes to fix uint256 fields
-3. Writes to `packages/database-types/src/generated.ts`
-4. Builds the package (compiles to `dist/`)
+2. Writes raw types to `packages/database-types/src/generated.ts`
+3. Builds the package (compiles to `dist/`)
 
 **Note:** Both apps will pick up new types on next build/dev.
 
@@ -265,8 +380,13 @@ This command:
 **When schema changes:**
 1. Apply migration: `pnpm db:reset` or specific migration
 2. Regenerate types: `pnpm db:generate:types`
-3. Commit changes: `git add packages/database-types/src/generated.ts`
-4. Apps automatically get new types
+3. **CRITICAL:** If you added new uint256 columns, manually update `packages/database-types/src/database.ts` to override them from `number` to `string`
+4. Commit changes: 
+   ```bash
+   git add packages/database-types/src/generated.ts
+   git add packages/database-types/src/database.ts  # if modified
+   ```
+5. Apps automatically get new types
 
 **No Supabase running:**
 - Committed types in git allow CI/CD to work
@@ -288,9 +408,10 @@ This command:
    - TypeScript catches issues at compile time in both apps
    - Desired behavior - forces addressing breaking changes
 
-4. **New uint256 fields not in regex:**
-   - Script regex must be updated when adding new numeric columns
-   - Alternative: Could parse migration files (more complex)
+4. **Forgetting to override new uint256 fields:**
+   - TypeScript will compile successfully but runtime values will be strings
+   - Can cause bugs if code expects numbers
+   - **Mitigation:** Code review checklist, runtime assertions with ethers.js
 
 5. **Package dependency resolution:**
    - pnpm workspace protocol handles automatically
@@ -327,6 +448,6 @@ cd ../.. && pnpm dev
 
 ## Future Considerations
 
-- If uint256 pattern becomes unwieldy, consider parsing migration files to auto-detect numeric columns
-- Could add more helper types in `helpers.ts` as patterns emerge
-- Consider adding runtime validation utilities alongside types
+- Add more helper types in `helpers.ts` as patterns emerge (e.g., `ChainRow`, `TransactionRow`)
+- Consider adding runtime validation utilities using ethers.js to catch uint256 type mismatches
+- Add code review checklist item: "If migration adds uint256 columns, update database.ts overrides"
