@@ -1,0 +1,11 @@
+{
+  "extends": "@vouch/config/typescript",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "declaration": true,
+    "declarationMap": true,
+    "composite": true
+  },
+  "include": ["src/**/*"]
+}
