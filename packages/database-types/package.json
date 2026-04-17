@@ -15,15 +15,17 @@
       "default": "./dist/helpers.js"
     }
   },
+  "files": ["dist", "src"],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch"
   },
-  "dependencies": {
-    "type-fest": "^5.5.0",
-    "ethers": "^6.16.0"
+  "peerDependencies": {
+    "ethers": "^6.16.0",
+    "type-fest": "^5.5.0"
   },
   "devDependencies": {
+    "@vouch/config": "workspace:*",
     "typescript": "^5.7.0"
   }
 }
