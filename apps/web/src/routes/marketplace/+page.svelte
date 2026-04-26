@@ -119,10 +119,12 @@
   };
 
   const formatAmount = (amount: string | null, decimals: number | null | undefined) => {
+    console.log('AMOUNT:', amount);
     if (amount === null || amount === '') return '0';
     try {
-      // amount is a string (uint256 from Postgres), formatUnits returns a precise string (e.g. "1000.1234")
-      const formatted = ethers.formatUnits(amount, decimals || 18);
+      // Convert to BigInt first — ethers v6's getBigInt rejects JS Numbers > MAX_SAFE_INTEGER,
+      // which can happen when large uint256 strings from Postgres get coerced to Number by JSON parsing.
+      const formatted = ethers.formatUnits(BigInt(amount), decimals ?? 18);
       const [whole, fraction] = formatted.split('.');
 
       // Use BigInt to safely format the integer part with locale commas, avoiding Number() precision loss
@@ -134,7 +136,8 @@
       const trimmedFraction = fraction.slice(0, 4).replace(/0+$/, '');
 
       return trimmedFraction.length > 0 ? `${wholeFormatted}.${trimmedFraction}` : wholeFormatted;
-    } catch {
+    } catch (err) {
+      console.error('Format error:', err);
       return '0';
     }
   };
