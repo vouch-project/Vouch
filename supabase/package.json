@@ -5,6 +5,7 @@
   "main": "seed.js",
   "type": "module",
   "scripts": {
+    "start": "supabase start",
     "setup": "supabase db reset && node seed.js"
   },
   "dependencies": {
