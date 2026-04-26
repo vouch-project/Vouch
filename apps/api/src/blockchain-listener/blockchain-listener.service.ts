@@ -1,13 +1,13 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { Tables } from '@vouch/database-types';
 import { ethers } from 'ethers';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { LoansService } from '../loans/loans.service';
-import { Database } from '@vouch/database-types';
 import { SupabaseService } from '../supabase/supabase.service';
 
-type ChainConfig = Database['public']['Tables']['chains']['Row'];
+type ChainConfig = Tables<'chains'>;
 
 @Injectable()
 export class BlockchainListenerService implements OnModuleInit {
