@@ -1,18 +1,18 @@
 <script lang="ts">
-  import { supabase } from '$lib/supabase';
   import { resolve } from '$app/paths';
-  import { navLinksMap } from '$lib/navLinks';
-  import { onMount, onDestroy } from 'svelte';
-  import { ethers } from 'ethers';
-  import type { RealtimeChannel } from '@supabase/supabase-js';
-  import type { LoanWithTokens } from '$lib/types';
-  import * as Table from '$lib/components/ui/table';
-  import * as Tabs from '$lib/components/ui/tabs';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import * as Card from '$lib/components/ui/card';
-  import { RefreshCw, Zap, TrendingUp, ShieldCheck, Wallet, Info } from '@lucide/svelte';
+  import * as Table from '$lib/components/ui/table';
+  import * as Tabs from '$lib/components/ui/tabs';
+  import { navLinksMap } from '$lib/navLinks';
+  import { supabase } from '$lib/supabase';
+  import type { LoanWithTokens } from '$lib/types';
   import { cn } from '$lib/utils';
+  import { Info, RefreshCw, ShieldCheck, TrendingUp, Wallet, Zap } from '@lucide/svelte';
+  import type { RealtimeChannel } from '@supabase/supabase-js';
+  import { ethers } from 'ethers';
+  import { onDestroy } from 'svelte';
 
   let { data } = $props();
 
@@ -106,10 +106,6 @@
       realtimeActive = true;
     }
   };
-
-  onMount(() => {
-    void fetchLoans();
-  });
 
   onDestroy(() => {
     if (channel) {
