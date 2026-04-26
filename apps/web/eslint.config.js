@@ -15,6 +15,22 @@ export default [
   ...tseslint.configs.recommended,
   ...svelte.configs['flat/recommended'],
   {
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          args: 'all',
+          argsIgnorePattern: '^_',
+          caughtErrors: 'all',
+          caughtErrorsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          ignoreRestSiblings: true,
+        },
+      ],
+    },
+  },
+  {
     files: ['**/*.ts'],
     languageOptions: {
       parser: tseslint.parser,
@@ -121,6 +137,14 @@ export default [
       'svelte/no-export-load-in-svelte-module-in-kit-pages': 'error',
       'svelte/no-navigation-without-resolve': 'error',
       'svelte/valid-prop-names-in-kit-pages': 'error',
+    },
+  },
+  // Disable certain rules for shadcn-svelte library code to avoid modifying it
+  {
+    files: ['src/lib/components/ui/**/*.svelte', 'src/lib/components/ui/**/*.ts', 'src/lib/utils.ts'],
+    rules: {
+      'svelte/no-navigation-without-resolve': 'off',
+      'func-style': 'off',
     },
   },
   {

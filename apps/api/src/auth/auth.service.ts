@@ -44,7 +44,7 @@ export class AuthService {
     if (recovered.toLowerCase() !== address.toLowerCase())
       throw new UnauthorizedException('Invalid authentication credentials');
 
-    const payload = { address };
+    const payload = { address, role: 'authenticated' };
     const token = this.jwtService.sign(payload);
 
     await this.redis.del(this.nonceKey(address));

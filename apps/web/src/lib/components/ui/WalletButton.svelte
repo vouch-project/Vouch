@@ -10,6 +10,9 @@
    * component remains fully SSR-safe.
    */
   import { wallet } from '$lib/wallet/wallet.svelte';
+  import { Button } from '$lib/components/ui/button';
+  import { cn } from '$lib/utils';
+  import { LoaderCircle, Wallet } from '@lucide/svelte';
 
   const openConnectModal = async () => {
     const { getAppKit } = await import('$lib/wallet/appkit');
@@ -28,36 +31,26 @@
       openConnectModal();
     }
   };
-
-  const btnClass = $derived(
-    [
-      'inline-flex items-center justify-center gap-2 min-w-[9rem] px-[1.125rem] py-2 border-[1.5px] rounded-[0.625rem] bg-white text-sm font-semibold cursor-pointer transition-all duration-150 whitespace-nowrap disabled:opacity-65 disabled:cursor-not-allowed',
-      wallet.isConnected
-        ? 'border-green-600 text-green-700 hover:bg-green-50 hover:border-green-700'
-        : wallet.isLoading
-          ? 'border-indigo-400 text-indigo-600'
-          : 'border-gray-300 text-gray-900 hover:bg-gray-100 hover:border-gray-400',
-    ].join(' '),
-  );
 </script>
 
-<button
-  class={btnClass}
-  aria-label={wallet.isConnected ? `Wallet: ${wallet.address ?? ''}` : 'Connect Wallet'}
+<Button
+  class={cn(
+    'min-w-36 font-bold transition-all duration-200',
+    wallet.isConnected && 'border-green-500/50 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-500/10'
+  )}
   disabled={wallet.isLoading}
   onclick={handleClick}
-  type="button"
+  size="default"
+  variant={wallet.isConnected ? 'outline' : 'default'}
 >
   {#if wallet.isLoading && !wallet.isConnected}
-    <span
-      class="inline-block w-[0.875rem] h-[0.875rem] border-2 border-current border-t-transparent rounded-full animate-spin flex-shrink-0"
-      aria-hidden="true"
-    ></span>
+    <LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
     <span>Connecting…</span>
   {:else if wallet.isConnected}
-    <span class="w-2 h-2 rounded-full bg-green-600 flex-shrink-0" aria-hidden="true"></span>
+    <div class="mr-2 h-2 w-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"></div>
     <span>{wallet.shortAddress}</span>
   {:else}
+    <Wallet class="mr-2 h-4 w-4" />
     <span>Connect Wallet</span>
   {/if}
-</button>
+</Button>

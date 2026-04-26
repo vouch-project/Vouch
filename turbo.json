@@ -5,15 +5,39 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".svelte-kit/**", "build/**", "artifacts/**"]
     },
+    "@vouch/database-types#build": {
+      "outputs": ["dist/**"]
+    },
+    "@vouch/api#build": {
+      "dependsOn": ["@vouch/database-types#build"],
+      "outputs": ["dist/**"]
+    },
+    "@vouch/web#build": {
+      "dependsOn": ["@vouch/database-types#build"],
+      "outputs": [".svelte-kit/**"]
+    },
     "dev": {
       "cache": false,
       "persistent": true
+    },
+    "@vouch/api#dev": {
+      "dependsOn": ["supabase#start", "@vouch/database-types#build"],
+      "persistent": true,
+      "cache": false
+    },
+    "@vouch/web#dev": {
+      "dependsOn": ["supabase#start", "@vouch/database-types#build"],
+      "persistent": true,
+      "cache": false
     },
     "lint": {
       "dependsOn": ["^build"]
     },
     "test": {
       "dependsOn": ["build"]
+    },
+    "start": {
+      "cache": false
     }
   }
 }

@@ -24,6 +24,6 @@ export default defineConfig({
   // "require() of ES module" errors that can arise when Node tries to resolve
   // CJS wrappers for these packages.
   ssr: {
-    noExternal: ['@reown/appkit', '@reown/appkit-adapter-ethers', 'ethers'],
+    noExternal: ['@reown/appkit', '@reown/appkit-adapter-ethers', 'ethers', 'bits-ui', '@lucide/svelte'],
   },
 });
