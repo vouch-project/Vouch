@@ -142,7 +142,7 @@ python main.py
 ### Turborepo Pipeline
 
 - `dev` tasks are persistent and run in parallel
-- API and web `dev` tasks depend on `supabase#setup`
+- API and web `dev` tasks depend on `supabase#start`
 - `build` tasks have dependency chains via `^build`
 - `test` tasks depend on `build` completing first
 
