@@ -36,9 +36,6 @@
     "test": {
       "dependsOn": ["build"]
     },
-    "setup": {
-      "cache": false
-    },
     "start": {
       "cache": false
     }
