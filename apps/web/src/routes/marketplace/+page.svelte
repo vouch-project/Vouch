@@ -119,8 +119,8 @@
   };
 
   const formatAmount = (amount: string | null, decimals: number | null | undefined) => {
-    console.log('AMOUNT:', amount);
     if (amount === null || amount === '') return '0';
+
     try {
       // Convert to BigInt first — ethers v6's getBigInt rejects JS Numbers > MAX_SAFE_INTEGER,
       // which can happen when large uint256 strings from Postgres get coerced to Number by JSON parsing.
