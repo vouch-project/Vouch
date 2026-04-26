@@ -1,5 +1,5 @@
 import type { UUID } from 'crypto';
-import { MergeDeep } from 'type-fest';
+import type { MergeDeep } from 'type-fest';
 import { Address } from './address';
 import { Database as DatabaseGenerated } from './generated';
 
