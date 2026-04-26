@@ -121,10 +121,19 @@
   const formatAmount = (amount: string | null, decimals: number | null | undefined) => {
     if (amount === null || amount === '') return '0';
     try {
-      // Use ethers.formatUnits directly - amount is already a string (uint256 from Postgres)
-      return Number(ethers.formatUnits(amount, decimals || 18)).toLocaleString(undefined, {
-        maximumFractionDigits: 4,
-      });
+      // amount is a string (uint256 from Postgres), formatUnits returns a precise string (e.g. "1000.1234")
+      const formatted = ethers.formatUnits(amount, decimals || 18);
+      const [whole, fraction] = formatted.split('.');
+
+      // Use BigInt to safely format the integer part with locale commas, avoiding Number() precision loss
+      const wholeFormatted = BigInt(whole).toLocaleString();
+
+      if (!fraction) return wholeFormatted;
+
+      // Truncate to 4 decimal places and remove trailing zeros
+      const trimmedFraction = fraction.slice(0, 4).replace(/0+$/, '');
+
+      return trimmedFraction.length > 0 ? `${wholeFormatted}.${trimmedFraction}` : wholeFormatted;
     } catch {
       return '0';
     }
