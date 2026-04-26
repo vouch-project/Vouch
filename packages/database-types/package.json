@@ -33,12 +33,12 @@
   "scripts": {
     "build": "tsc"
   },
-  "peerDependencies": {
-    "ethers": "^6.16.0",
-    "type-fest": "^5.5.0"
+  "dependencies": {
+    "ethers": "^6.16.0"
   },
   "devDependencies": {
     "@vouch/config": "workspace:*",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "type-fest": "^5.5.0"
   }
 }
