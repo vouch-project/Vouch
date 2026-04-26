@@ -24,17 +24,20 @@ vouch/
 ## Development Commands
 
 ### Start Development Environment
+
 ```bash
 pnpm dev                # Runs ./run-dev.sh - starts Redis, Supabase, web + API
 ```
 
 The `run-dev.sh` script:
+
 - Starts Redis in Docker (vouch-redis container)
 - Starts Supabase local stack
 - Runs `turbo run dev` for web + API
 - Cleans up Redis and Supabase on exit
 
 ### Individual Workspace Commands
+
 ```bash
 # In root
 pnpm build              # Build all workspaces
@@ -61,6 +64,7 @@ npx hardhat compile     # Compile without dev setup
 ```
 
 ### Database Commands
+
 ```bash
 npx supabase start      # Start local Supabase (required before pnpm dev)
 npx supabase stop       # Stop Supabase
@@ -70,10 +74,11 @@ npx supabase db reset   # Reset database (apply all migrations)
 npx supabase migration new <name>    # Create new migration
 npx supabase db diff                 # Diff local schema changes
 pnpm db:generate                     # Create timestamped migration
-pnpm db:generate:types               # Generate TypeScript types to apps/api/src/supabase/database-generated.types.ts
+pnpm db:generate:types               # Generate TypeScript types to packages/database-types/src/generated.ts and build the database-types package
 ```
 
 ### Python Services (Optional)
+
 ```bash
 # ML Engine (apps/ml-engine)
 python -m venv .venv && source .venv/bin/activate
@@ -89,6 +94,7 @@ python main.py
 ## Architecture & Conventions
 
 ### API (NestJS)
+
 - **Modules**: `auth`, `loan`, `blockchain-listener`, `chain`, `tokens`, `supabase`
 - **Guards**: Auth guards located in `src/guards/`
 - **Supabase client**: Service wrapper in `src/supabase/` provides database access
@@ -97,6 +103,7 @@ python main.py
 - Redis for caching (automatically started by run-dev.sh)
 
 ### Web (SvelteKit)
+
 - **Routes**: File-based routing in `src/routes/` - `borrow`, `dashboard`, `lend`, `marketplace`
 - **API client**: Axios wrappers in `src/api/`
 - **UI components**: Reusable components in `src/lib/`
@@ -105,6 +112,7 @@ python main.py
 - Environment variables prefixed with `PUBLIC_` are exposed to browser
 
 #### Frontend Design & Styling
+
 - **Component library**: `shadcn-svelte` - import from `$lib/components/ui/`
   - Common components: `Button`, `Badge`, `Card`, `Table`, `Tabs`, etc.
   - Namespace imports for multi-part components: `* as Table from '$lib/components/ui/table'`
@@ -114,7 +122,7 @@ python main.py
   - Both light and dark modes supported via `.dark` class
   - Theme tokens: `background`, `foreground`, `card`, `muted`, `accent`, `primary`, `secondary`, `destructive`, `border`, `ring`
 - **Icons**: `lucide-svelte` icons
-- **Utilities**: 
+- **Utilities**:
   - `cn()` from `$lib/utils` for conditional classnames
   - Tailwind for spacing, layout, and utilities (but use theme colors for actual colors)
 - **Common patterns**:
@@ -125,12 +133,14 @@ python main.py
   - Hover effects: `hover:bg-muted/10 transition-colors`
 
 ### Smart Contracts (Hardhat)
+
 - **Main contract**: `VouchVault.sol` - handles lending/borrowing
 - **Test helpers**: `MockERC20.sol` for testing
 - Uses OpenZeppelin contracts (upgradeable)
 - Run `pnpm dev` in contracts package to start local chain with deployment scripts
 
 ### Turborepo Pipeline
+
 - `dev` tasks are persistent and run in parallel
 - API and web `dev` tasks depend on `supabase#setup`
 - `build` tasks have dependency chains via `^build`
@@ -140,22 +150,23 @@ python main.py
 
 Copy `.env.example` to `.env`. Key variables:
 
-| Variable                       | Used By    | Description                        |
-| ------------------------------ | ---------- | ---------------------------------- |
-| `SUPABASE_URL`                 | API        | Supabase API endpoint              |
-| `SUPABASE_SECRET_KEY`          | API        | Server-side key (bypasses RLS)     |
-| `JWT_SECRET`                   | API        | JWT signing secret                 |
-| `PUBLIC_SUPABASE_URL`          | Web        | Client-side Supabase URL           |
-| `PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Web     | Client-side publishable key        |
-| `PUBLIC_REOWN_PROJECT_ID`      | Web        | Reown/Web3Modal project ID         |
-| `DATABASE_URL`                 | API        | Direct Postgres connection string  |
-| `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` | API | Redis connection            |
+| Variable                                     | Used By | Description                       |
+| -------------------------------------------- | ------- | --------------------------------- |
+| `SUPABASE_URL`                               | API     | Supabase API endpoint             |
+| `SUPABASE_SECRET_KEY`                        | API     | Server-side key (bypasses RLS)    |
+| `JWT_SECRET`                                 | API     | JWT signing secret                |
+| `PUBLIC_SUPABASE_URL`                        | Web     | Client-side Supabase URL          |
+| `PUBLIC_SUPABASE_PUBLISHABLE_KEY`            | Web     | Client-side publishable key       |
+| `PUBLIC_REOWN_PROJECT_ID`                    | Web     | Reown/Web3Modal project ID        |
+| `DATABASE_URL`                               | API     | Direct Postgres connection string |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` | API     | Redis connection                  |
 
 Get Supabase keys by running `npx supabase start` - they're printed in the output.
 
 ## Local Service URLs
 
 After `pnpm dev`:
+
 - Web: http://localhost:5173
 - API: http://localhost:3000
 - Supabase Studio: http://localhost:54323
