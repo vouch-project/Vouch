@@ -23,7 +23,7 @@
           Define your loan parameters and lock collateral to get started.
         </Card.Description>
       </Card.Header>
-      <Card.Content class="p-8 pt-6">
+      <Card.Content class="flex justify-center p-8 pt-6">
         <CreateLoan />
       </Card.Content>
     </Card.Root>
