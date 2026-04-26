@@ -98,7 +98,7 @@ python main.py
 - **Modules**: `auth`, `loan`, `blockchain-listener`, `chain`, `tokens`, `supabase`
 - **Guards**: Auth guards located in `src/guards/`
 - **Supabase client**: Service wrapper in `src/supabase/` provides database access
-- **Database types**: Auto-generated in `src/supabase/database-generated.types.ts` via `pnpm db:generate:types`
+- **Database types**: Auto-generated in `packages/database-types/src/generated.ts` via `pnpm db:generate:types`
 - Uses JWT authentication with Supabase
 - Redis for caching (automatically started by run-dev.sh)
 
