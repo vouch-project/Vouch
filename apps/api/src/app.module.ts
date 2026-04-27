@@ -10,6 +10,7 @@ import { BlockchainListenerModule } from './blockchain-listener/blockchain-liste
 import { ChainsModule } from './chains/chains.module';
 import { LoansModule } from './loans/loans.module';
 import { SupabaseModule } from './supabase/supabase.module';
+import { ScoringModule } from './scoring/scoring.module';
 import { TokensModule } from './tokens/tokens.module';
 
 @Module({
@@ -39,6 +40,7 @@ import { TokensModule } from './tokens/tokens.module';
     BlockchainListenerModule,
     ChainsModule,
     LoansModule,
+    ScoringModule,
     SupabaseModule,
     TokensModule,
   ],

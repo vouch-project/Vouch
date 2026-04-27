@@ -17,18 +17,13 @@
   let { data } = $props();
 
   let loans: LoanWithTokens[] = $state([]);
+  let scores: Record<string, number> = $state({});
   let loading: boolean = $state(true);
   let refreshing: boolean = $state(false);
   let errorMsg: string | null = $state(null);
   let realtimeActive: boolean = $state(false);
   let channel: RealtimeChannel | null = $state(null);
   let activeTab: string = $state('borrow');
-
-  // Mock data generators for missing fields
-  const getMockCreditScore = (seed: string) => {
-    const charSum = seed.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return 650 + (charSum % 200);
-  };
 
   const getMockLTV = (seed: string) => {
     const charSum = seed.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -44,7 +39,7 @@
   $effect(() => {
     const fetchStreamed = async () => {
       try {
-        loans = await data.streamed.loansPromise;
+        [loans, scores] = await Promise.all([data.streamed.loansPromise, data.streamed.scoresPromise]);
       } catch (err) {
         console.error(err);
         errorMsg = err instanceof Error ? err.message : 'Failed to load loans';
@@ -274,9 +269,9 @@
                 </Table.Row>
               {:else}
                 {#each loans as loan (loan.id)}
-                  {@const score = getMockCreditScore(loan.borrowerAddress)}
+                  {@const score = scores[loan.borrowerAddress]}
                   {@const ltv = getMockLTV(loan.borrowerAddress)}
-                  {@const risk = getRiskLevel(score)}
+                  {@const risk = score !== undefined ? getRiskLevel(score) : null}
                   <Table.Row class="hover:bg-muted/10 transition-colors group">
                     <Table.Cell
                       class="pl-4 sm:pl-8 py-4 font-mono text-[10px] sm:text-xs font-medium whitespace-nowrap min-w-max"
@@ -294,7 +289,11 @@
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
                       <div class="flex items-center gap-1 sm:gap-2 font-bold text-foreground/80 text-[10px] sm:text-sm">
                         <TrendingUp class="h-3 w-3 sm:h-4 sm:w-4 text-blue-500 shrink-0" />
-                        {score}
+                        {#if score !== undefined}
+                          {score}
+                        {:else}
+                          <div class="h-4 w-8 bg-muted animate-pulse rounded"></div>
+                        {/if}
                       </div>
                     </Table.Cell>
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
@@ -338,12 +337,16 @@
                       {loan.interestRate ? `${loan.interestRate}%` : '8.5%'}
                     </Table.Cell>
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left min-w-max">
-                      <Badge
-                        class={cn('font-bold px-1 sm:px-2.5 py-0 text-[8px] sm:text-[10px]', risk.color)}
-                        variant="outline"
-                      >
-                        {risk.label}
-                      </Badge>
+                      {#if risk}
+                        <Badge
+                          class={cn('font-bold px-1 sm:px-2.5 py-0 text-[8px] sm:text-[10px]', risk.color)}
+                          variant="outline"
+                        >
+                          {risk.label}
+                        </Badge>
+                      {:else}
+                        <div class="h-4 w-10 bg-muted animate-pulse rounded"></div>
+                      {/if}
                     </Table.Cell>
                     <Table.Cell class="pr-4 sm:pr-10 py-4 text-right min-w-max">
                       <Button

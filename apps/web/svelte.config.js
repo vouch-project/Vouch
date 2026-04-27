@@ -9,6 +9,9 @@ const config = {
     env: {
       dir: '../../',
     },
+    alias: {
+      $api: './src/api',
+    },
   },
 };
 
