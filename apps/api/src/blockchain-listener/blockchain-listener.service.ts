@@ -88,6 +88,8 @@ export class BlockchainListenerService implements OnModuleInit {
         borrower: string,
         collateralTokenAddress: string,
         collateralAmount: bigint,
+        requestedPrincipalToken: string,
+        requestedPrincipalAmount: bigint,
         timestamp: bigint,
         { log: eventLog }: ethers.ContractEventPayload,
       ) => {
@@ -96,6 +98,31 @@ export class BlockchainListenerService implements OnModuleInit {
           borrower,
           collateralTokenAddress,
           collateralAmount,
+          requestedPrincipalToken,
+          requestedPrincipalAmount,
+          timestamp,
+          eventLog,
+          network,
+          config.contractAddress,
+        );
+      },
+    );
+
+    void contract.on(
+      'LoanFunded',
+      (
+        loanId: bigint,
+        lender: string,
+        borrower: string,
+        principalAmount: bigint,
+        timestamp: bigint,
+        { log: eventLog }: ethers.ContractEventPayload,
+      ) => {
+        void this.handleLoanFunded(
+          loanId,
+          lender,
+          borrower,
+          principalAmount,
           timestamp,
           eventLog,
           network,
@@ -110,6 +137,8 @@ export class BlockchainListenerService implements OnModuleInit {
     borrower: string,
     collateralTokenAddress: string,
     collateralAmount: bigint,
+    requestedPrincipalToken: string,
+    requestedPrincipalAmount: bigint,
     timestamp: bigint,
     {
       transactionHash,
@@ -126,6 +155,8 @@ export class BlockchainListenerService implements OnModuleInit {
         borrower,
         collateralAmount: collateralAmount,
         collateralTokenAddress,
+        requestedPrincipalTokenAddress: requestedPrincipalToken,
+        requestedPrincipalAmount: requestedPrincipalAmount,
         collateralTxHash: transactionHash,
         collateralBlockNumber: blockNumber,
         collateralBlockHash: blockHash,
@@ -136,6 +167,41 @@ export class BlockchainListenerService implements OnModuleInit {
       });
     } catch (error) {
       this.logger.error('Failed to create loan in DB', error);
+    }
+  }
+
+  private async handleLoanFunded(
+    loanId: bigint,
+    lender: string,
+    borrower: string,
+    principalAmount: bigint,
+    timestamp: bigint,
+    {
+      transactionHash,
+      blockNumber,
+      blockHash,
+      index: logIndex,
+    }: ethers.EventLog,
+    network: ethers.Network,
+    contractAddress: string,
+  ) {
+    try {
+      await this.loanService.fund({
+        onChainLoanId: loanId,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        lenderAddress: lender,
+        borrowerAddress: borrower,
+        principalAmount,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        fundedAt: new Date(Number(timestamp) * 1000),
+      });
+      this.logger.log(`Loan ${loanId.toString()} funded by ${lender}`);
+    } catch (error) {
+      this.logger.error('Failed to update funded loan in DB', error);
     }
   }
 }

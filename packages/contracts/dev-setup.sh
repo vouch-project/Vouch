@@ -26,6 +26,20 @@ if [ $? -eq 0 ]; then
     # Pass the mock ERC20 address from .env as an environment variable
     MOCK_ERC20_ADDRESS=$(grep HARDCODED_MOCK_ERC20_ADDRESS ../../.env | cut -d '=' -f2 | tr -d '\r\n')
     HARDCODED_MOCK_ERC20_ADDRESS="$MOCK_ERC20_ADDRESS" npx hardhat run scripts/mint-mock-to-wallets.ts --network localhost
+
+    # Write deployment timestamp so other services know to reload
+    TIMESTAMP=$(node -e "process.stdout.write(String(Date.now()))")
+    ENV_FILE="../../.env"
+    if grep -q '^CONTRACTS_DEPLOYED_AT=' "$ENV_FILE"; then
+        node -e "
+          const fs = require('fs');
+          const f = '$ENV_FILE';
+          fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/^CONTRACTS_DEPLOYED_AT=.*/m, 'CONTRACTS_DEPLOYED_AT=$TIMESTAMP'));
+        "
+    else
+        printf '\nCONTRACTS_DEPLOYED_AT=%s\n' "$TIMESTAMP" >> "$ENV_FILE"
+    fi
+    echo "🕐 CONTRACTS_DEPLOYED_AT=$TIMESTAMP written to .env"
 else
     echo "❌ Deployment failed. Skipping ABI sync."
     exit 1

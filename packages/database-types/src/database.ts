@@ -26,8 +26,6 @@ export type Database = MergeDeep<
             lenderAddress: Address | null;
             // uint256 columns — PostgREST serialises numeric as string
             onChainLoanId: string | null;
-            collateralAmount: string | null;
-            principalAmount: string | null;
             interestRate: string | null;
           };
           Insert: {
@@ -36,8 +34,6 @@ export type Database = MergeDeep<
             borrowerAddress: Address;
             lenderAddress?: Address | null;
             onChainLoanId?: string | null;
-            collateralAmount?: string | null;
-            principalAmount?: string | null;
             interestRate?: string | null;
           };
           Update: {
@@ -46,8 +42,6 @@ export type Database = MergeDeep<
             borrowerAddress?: Address;
             lenderAddress?: Address | null;
             onChainLoanId?: string | null;
-            collateralAmount?: string | null;
-            principalAmount?: string | null;
             interestRate?: string | null;
           };
         };
@@ -60,7 +54,6 @@ export type Database = MergeDeep<
             fromAddress: Address;
             toAddress: Address;
             // uint256 columns — PostgREST serialises numeric as string
-            amount: string | null;
             blockNumber: string | null;
             logIndex: string;
           };
@@ -72,7 +65,6 @@ export type Database = MergeDeep<
             txTimestamp: Date;
             fromAddress: Address;
             toAddress: Address;
-            amount?: string | null;
             blockNumber?: string | null;
             logIndex: string;
           };
@@ -84,7 +76,6 @@ export type Database = MergeDeep<
             txTimestamp?: Date;
             fromAddress?: Address;
             toAddress?: Address;
-            amount?: string | null;
             blockNumber?: string | null;
             logIndex?: string;
           };
@@ -94,7 +85,6 @@ export type Database = MergeDeep<
         create_loan_with_transaction: {
           Args: {
             p_borrower_address: Address;
-            p_collateral_amount: string;
             p_collateral_block_number: string;
             p_collateral_token_address: Address;
             p_contract_address: Address;

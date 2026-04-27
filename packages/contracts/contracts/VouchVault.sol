@@ -19,6 +19,14 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 createdAt;
         bool active;
         bool collateralLocked;
+        // V2 additions — appended to preserve storage layout
+        address lender;
+        uint256 principalAmount;
+        bool funded;
+        uint256 fundedAt;
+        // V3 additions — appended to preserve storage layout
+        address requestedPrincipalToken;  // token borrower wants to receive
+        uint256 requestedPrincipalAmount; // amount borrower wants to receive
     }
 
     // --- State Variables ---
@@ -32,10 +40,20 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     event Deposited(address indexed user, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);
     event LoanCreated(
-        uint256 indexed loanId, 
-        address indexed borrower, 
-        address collateralToken, 
+        uint256 indexed loanId,
+        address indexed borrower,
+        address collateralToken,
         uint256 collateralAmount,
+        address requestedPrincipalToken,
+        uint256 requestedPrincipalAmount,
+        uint256 timestamp
+    );
+
+    event LoanFunded(
+        uint256 indexed loanId,
+        address indexed lender,
+        address indexed borrower,
+        uint256 principalAmount,
         uint256 timestamp
     );
 
@@ -68,8 +86,11 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     /// @notice Create a new loan by depositing ETH collateral
-    function createLoan() external payable {
+    /// @param principalToken  The token the borrower wants to receive (address(0) = native ETH)
+    /// @param principalAmount The amount the borrower wants to receive
+    function createLoan(address principalToken, uint256 principalAmount) external payable {
         require(msg.value > 0, "Collateral must be > 0");
+        require(principalAmount > 0, "Principal amount must be > 0");
 
         // Collateral is tracked separately from withdrawable deposits.
         lockedEthCollateral[msg.sender] += msg.value;
@@ -80,17 +101,28 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             collateralAmount: msg.value,
             createdAt: block.timestamp,
             active: true,
-            collateralLocked: true
+            collateralLocked: true,
+            lender: address(0),
+            principalAmount: 0,
+            funded: false,
+            fundedAt: 0,
+            requestedPrincipalToken: principalToken,
+            requestedPrincipalAmount: principalAmount
         });
 
-        emit LoanCreated(nextLoanId, msg.sender, address(0), msg.value, block.timestamp);
+        emit LoanCreated(nextLoanId, msg.sender, address(0), msg.value, principalToken, principalAmount, block.timestamp);
         nextLoanId++;
     }
 
     /// @notice Create a new loan by depositing ERC20 collateral
-    function createLoanWithERC20(address token, uint256 amount) external {
+    /// @param token           The ERC20 token to use as collateral
+    /// @param amount          The amount of collateral to deposit
+    /// @param principalToken  The token the borrower wants to receive (address(0) = native ETH)
+    /// @param principalAmount The amount the borrower wants to receive
+    function createLoanWithERC20(address token, uint256 amount, address principalToken, uint256 principalAmount) external {
         require(amount > 0, "Collateral must be > 0");
         require(token != address(0), "Invalid token address");
+        require(principalAmount > 0, "Principal amount must be > 0");
 
         // Transfer tokens from user to this vault (SafeERC20 handles non-compliant tokens)
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
@@ -101,10 +133,16 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             collateralAmount: amount,
             createdAt: block.timestamp,
             active: true,
-            collateralLocked: true
+            collateralLocked: true,
+            lender: address(0),
+            principalAmount: 0,
+            funded: false,
+            fundedAt: 0,
+            requestedPrincipalToken: principalToken,
+            requestedPrincipalAmount: principalAmount
         });
 
-        emit LoanCreated(nextLoanId, msg.sender, token, amount, block.timestamp);
+        emit LoanCreated(nextLoanId, msg.sender, token, amount, principalToken, principalAmount, block.timestamp);
         nextLoanId++;
     }
 
@@ -122,6 +160,69 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     function releaseLoanCollateral(uint256 /*loanId*/) external pure {
         revert("Collateral release disabled");
+    }
+
+    /**
+     * @notice Fund an active ETH-principal loan by sending exactly the requested amount to the borrower.
+     * @dev Only one lender may fund a given loan. Funds are transferred immediately to the
+     *      borrower; nothing is held in escrow. `msg.value` must equal the borrower's
+     *      `requestedPrincipalAmount`, and the loan's `requestedPrincipalToken` must be
+     *      `address(0)` (i.e. match native ETH). For ERC20-principal loans use
+     *      `fundLoanWithERC20`.
+     * @param loanId  The ID of the loan to fund (must be active and not yet funded).
+     *
+     * Requirements:
+     * - `loanId` must refer to an active loan (`loan.active == true`).
+     * - The loan must not already be funded.
+     * - The lender cannot be the borrower.
+     * - `loan.requestedPrincipalToken` must be `address(0)` (native ETH).
+     * - `msg.value` must equal `loan.requestedPrincipalAmount`.
+     *
+     * Emits a {LoanFunded} event.
+     */
+    function fundLoan(uint256 loanId) external payable {
+        Loan storage loan = loans[loanId];
+        require(loan.active, "Loan is not active");
+        require(!loan.funded, "Loan already funded");
+        require(msg.sender != loan.borrower, "Borrower cannot fund own loan");
+        require(loan.requestedPrincipalToken == address(0), "Token does not match requested principal token");
+        require(msg.value == loan.requestedPrincipalAmount, "msg.value must equal requested principal amount");
+
+        loan.lender = msg.sender;
+        loan.principalAmount = loan.requestedPrincipalAmount;
+        loan.funded = true;
+        loan.fundedAt = block.timestamp;
+
+        // Transfer principal directly to the borrower.
+        (bool success, ) = payable(loan.borrower).call{value: loan.requestedPrincipalAmount}("");
+        require(success, "ETH transfer to borrower failed");
+
+        emit LoanFunded(loanId, msg.sender, loan.borrower, loan.requestedPrincipalAmount, block.timestamp);
+    }
+
+    /// @notice Fund a loan with an ERC20 principal token
+    /// @param loanId The ID of the loan to fund
+    /// @param token  The ERC20 token address to send as principal (must match requestedPrincipalToken)
+    /// @param amount The amount of tokens to send (must match requestedPrincipalAmount)
+    function fundLoanWithERC20(uint256 loanId, address token, uint256 amount) external {
+        Loan storage loan = loans[loanId];
+        require(loan.active, "Loan is not active");
+        require(!loan.funded, "Loan already funded");
+        require(msg.sender != loan.borrower, "Borrower cannot fund own loan");
+        require(loan.requestedPrincipalToken != address(0), "Loan requires native ETH principal; use fundLoan");
+        require(amount > 0, "Funding amount must be > 0");
+        require(token == loan.requestedPrincipalToken, "Token does not match requested principal token");
+        require(amount == loan.requestedPrincipalAmount, "Amount does not match requested principal amount");
+
+        loan.lender = msg.sender;
+        loan.principalAmount = amount;
+        loan.funded = true;
+        loan.fundedAt = block.timestamp;
+
+        // Transfer principal directly to the borrower.
+        IERC20(token).safeTransferFrom(msg.sender, loan.borrower, amount);
+
+        emit LoanFunded(loanId, msg.sender, loan.borrower, amount, block.timestamp);
     }
 
     // --- View Functions ---
@@ -164,5 +265,23 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             loan.createdAt, 
             loan.active
         );
+    }
+
+    /**
+     * @notice Returns funding details for a given loan.
+     * @param loanId The loan to query.
+     * @return lender          Address that funded the loan (zero address if unfunded).
+     * @return principalAmount ETH amount sent by the lender.
+     * @return funded          Whether the loan has been funded.
+     * @return fundedAt        Timestamp of funding (0 if unfunded).
+     */
+    function getFundingDetails(uint256 loanId) external view returns (
+        address lender,
+        uint256 principalAmount,
+        bool funded,
+        uint256 fundedAt
+    ) {
+        Loan memory loan = loans[loanId];
+        return (loan.lender, loan.principalAmount, loan.funded, loan.fundedAt);
     }
 }
