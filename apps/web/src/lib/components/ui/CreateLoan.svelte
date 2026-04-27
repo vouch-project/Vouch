@@ -4,20 +4,29 @@
   import TokenAutocomplete from './TokenAutocomplete.svelte';
 
   let collateralAmount = $state('1.0');
+  let borrowAmount = $state('');
   let status = $state('');
-  let selectedToken = $state('ETH');
+  let selectedCollateralToken = $state('ETH');
+  let selectedBorrowToken = $state('USDC');
 
   const handleCreateLoan = async (e: SubmitEvent) => {
     e.preventDefault();
     status = 'Waiting for wallet confirmation...';
-    const token = chainInfo.tokens.find((t) => t.symbol === selectedToken);
-    if (!token) {
-      status = 'Selected token not found';
+
+    const collateralToken = chainInfo.tokens.find((t) => t.symbol === selectedCollateralToken);
+    if (!collateralToken) {
+      status = 'Collateral token not found';
+      return;
+    }
+
+    const borrowToken = chainInfo.tokens.find((t) => t.symbol === selectedBorrowToken);
+    if (!borrowToken) {
+      status = 'Borrow token not found';
       return;
     }
 
     try {
-      await createLoan(collateralAmount, token);
+      await createLoan(collateralAmount, collateralToken, borrowToken, borrowAmount);
       status = 'Loan created!';
     } catch (e) {
       status = e instanceof Error ? e.message : 'Transaction failed';
@@ -28,15 +37,30 @@
 <form class="flex flex-col items-center gap-4 w-full max-w-sm" onsubmit={handleCreateLoan}>
   <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
     <span>Collateral Token:</span>
-    <TokenAutocomplete tokens={chainInfo.tokens} bind:value={selectedToken} />
+    <TokenAutocomplete tokens={chainInfo.tokens} bind:value={selectedCollateralToken} />
   </label>
   <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
-    <span>Collateral to Deposit ({selectedToken}):</span>
+    <span>Collateral to Deposit ({selectedCollateralToken}):</span>
     <input
       class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
       inputmode="decimal"
+      placeholder="0.0"
       type="text"
       bind:value={collateralAmount}
+    />
+  </label>
+  <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
+    <span>Borrow Currency:</span>
+    <TokenAutocomplete tokens={chainInfo.tokens} bind:value={selectedBorrowToken} />
+  </label>
+  <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
+    <span>Amount to Borrow ({selectedBorrowToken}):</span>
+    <input
+      class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
+      inputmode="decimal"
+      placeholder="0.0"
+      type="text"
+      bind:value={borrowAmount}
     />
   </label>
   <button

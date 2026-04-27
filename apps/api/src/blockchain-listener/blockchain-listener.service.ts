@@ -88,6 +88,8 @@ export class BlockchainListenerService implements OnModuleInit {
         borrower: string,
         collateralTokenAddress: string,
         collateralAmount: bigint,
+        requestedPrincipalToken: string,
+        requestedPrincipalAmount: bigint,
         timestamp: bigint,
         { log: eventLog }: ethers.ContractEventPayload,
       ) => {
@@ -96,6 +98,8 @@ export class BlockchainListenerService implements OnModuleInit {
           borrower,
           collateralTokenAddress,
           collateralAmount,
+          requestedPrincipalToken,
+          requestedPrincipalAmount,
           timestamp,
           eventLog,
           network,
@@ -103,6 +107,10 @@ export class BlockchainListenerService implements OnModuleInit {
         );
       },
     );
+
+    void contract.on('LoanFunded', (loanId: bigint, lender: string) => {
+      void this.handleLoanFunded(loanId, lender, config.id);
+    });
   }
 
   private async handleLoanCreated(
@@ -110,6 +118,8 @@ export class BlockchainListenerService implements OnModuleInit {
     borrower: string,
     collateralTokenAddress: string,
     collateralAmount: bigint,
+    requestedPrincipalToken: string,
+    requestedPrincipalAmount: bigint,
     timestamp: bigint,
     {
       transactionHash,
@@ -126,6 +136,8 @@ export class BlockchainListenerService implements OnModuleInit {
         borrower,
         collateralAmount: collateralAmount,
         collateralTokenAddress,
+        requestedPrincipalTokenAddress: requestedPrincipalToken,
+        requestedPrincipalAmount: requestedPrincipalAmount,
         collateralTxHash: transactionHash,
         collateralBlockNumber: blockNumber,
         collateralBlockHash: blockHash,
@@ -136,6 +148,23 @@ export class BlockchainListenerService implements OnModuleInit {
       });
     } catch (error) {
       this.logger.error('Failed to create loan in DB', error);
+    }
+  }
+
+  private async handleLoanFunded(
+    loanId: bigint,
+    lender: string,
+    chainId: string,
+  ) {
+    try {
+      await this.loanService.fund({
+        onChainLoanId: loanId,
+        chainId,
+        lenderAddress: lender,
+      });
+      this.logger.log(`Loan ${loanId.toString()} funded by ${lender}`);
+    } catch (error) {
+      this.logger.error('Failed to update funded loan in DB', error);
     }
   }
 }

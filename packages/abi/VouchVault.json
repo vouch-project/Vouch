@@ -156,12 +156,61 @@
       },
       {
         "indexed": false,
+        "internalType": "address",
+        "name": "requestedPrincipalToken",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "requestedPrincipalAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
         "internalType": "uint256",
         "name": "timestamp",
         "type": "uint256"
       }
     ],
     "name": "LoanCreated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "lender",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "principalAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "name": "LoanFunded",
     "type": "event"
   },
   {
@@ -248,7 +297,18 @@
     "type": "function"
   },
   {
-    "inputs": [],
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "principalToken",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "principalAmount",
+        "type": "uint256"
+      }
+    ],
     "name": "createLoan",
     "outputs": [],
     "stateMutability": "payable",
@@ -264,6 +324,16 @@
       {
         "internalType": "uint256",
         "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "principalToken",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "principalAmount",
         "type": "uint256"
       }
     ],
@@ -292,6 +362,76 @@
       {
         "internalType": "uint256",
         "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      }
+    ],
+    "name": "fundLoan",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "fundLoanWithERC20",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getFundingDetails",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "lender",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "principalAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "funded",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint256",
+        "name": "fundedAt",
         "type": "uint256"
       }
     ],
@@ -437,6 +577,36 @@
         "internalType": "bool",
         "name": "collateralLocked",
         "type": "bool"
+      },
+      {
+        "internalType": "address",
+        "name": "lender",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "principalAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "funded",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint256",
+        "name": "fundedAt",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "requestedPrincipalToken",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "requestedPrincipalAmount",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",

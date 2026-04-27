@@ -4,36 +4,42 @@ import { IsBigInt } from '../../decorators/is-bigint.decorator';
 
 export class CreateLoanDto {
   @IsBigInt()
-  loanId: bigint;
+  loanId!: bigint;
 
   @IsString()
-  borrower: string;
+  borrower!: string;
 
   @IsBigInt()
-  collateralAmount: bigint;
+  collateralAmount!: bigint;
+
+  @IsString()
+  requestedPrincipalTokenAddress!: string;
+
+  @IsBigInt()
+  requestedPrincipalAmount!: bigint;
 
   @IsNumberString()
-  networkId: string;
+  networkId!: string;
 
   @IsString()
-  collateralTxHash: string;
+  collateralTxHash!: string;
 
   @IsNumber()
-  collateralBlockNumber: number;
+  collateralBlockNumber!: number;
 
   @IsString()
-  collateralBlockHash: string;
+  collateralBlockHash!: string;
 
   @IsDate()
   @Type(() => Date)
-  collateralLockedAt: Date;
+  collateralLockedAt!: Date;
 
   @IsString()
-  collateralTokenAddress: string;
+  collateralTokenAddress!: string;
 
   @IsNumber()
-  logIndex: number;
+  logIndex!: number;
 
   @IsString()
-  contractAddress: string;
+  contractAddress!: string;
 }

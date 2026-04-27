@@ -9,6 +9,8 @@
   import { supabase } from '$lib/supabase';
   import type { LoanWithTokens } from '$lib/types';
   import { cn } from '$lib/utils';
+  import { fundLoan } from '$lib/wallet/vouchVault';
+  import { wallet } from '$lib/wallet/wallet.svelte';
   import { Info, RefreshCw, ShieldCheck, TrendingUp, Wallet, Zap } from '@lucide/svelte';
   import type { RealtimeChannel } from '@supabase/supabase-js';
   import { ethers } from 'ethers';
@@ -23,6 +25,7 @@
   let realtimeActive: boolean = $state(false);
   let channel: RealtimeChannel | null = $state(null);
   let activeTab: string = $state('borrow');
+  let fundingLoanId: string | null = $state(null);
 
   // Mock data generators for missing fields
   const getMockCreditScore = (seed: string) => {
@@ -47,7 +50,7 @@
         loans = await data.streamed.loansPromise;
       } catch (err) {
         console.error(err);
-        errorMsg = err instanceof Error ? err.message : 'Failed to load loans';
+        errorMsg = getErrorMessage(err);
       } finally {
         loading = false;
       }
@@ -75,7 +78,7 @@
       loans = loansData || [];
     } catch (e) {
       console.error('Fetch error:', e);
-      errorMsg = (e instanceof Error && e.message) || 'Failed to fetch loans.';
+      errorMsg = getErrorMessage(e);
     }
   };
 
@@ -116,6 +119,46 @@
   const truncateAddress = (addr: string) => {
     if (!addr || addr.length < 10) return addr;
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+  };
+
+  const getErrorMessage = (e: unknown): string => {
+    if (e instanceof Error) {
+      const err = e as { code?: unknown; reason?: unknown };
+      if (err.code === 'ACTION_REJECTED') return 'Transaction rejected.';
+      if (typeof err.reason === 'string' && err.reason) return err.reason;
+      // Strip verbose ethers prefix like "ethers-user-denied: ..."
+      const msg = e.message.replace(/^[\w-]+:\s*/, '');
+      return msg || 'An unexpected error occurred.';
+    }
+    return 'An unexpected error occurred.';
+  };
+
+  const handleFundLoan = async (loan: LoanWithTokens) => {
+    if (loan.onChainLoanId == null) {
+      errorMsg = 'Loan is missing on-chain ID.';
+      return;
+    }
+
+    if (!loan.principalAmount) {
+      errorMsg = 'Loan is missing principal amount.';
+      return;
+    }
+
+    fundingLoanId = loan.id;
+    errorMsg = null;
+
+    try {
+      await fundLoan(
+        ethers.getBigInt(loan.onChainLoanId),
+        ethers.getBigInt(loan.principalAmount),
+        loan.principalToken?.address ?? ethers.ZeroAddress,
+      );
+      loans = loans.filter((l) => l.id !== loan.id);
+    } catch (e) {
+      errorMsg = getErrorMessage(e);
+    } finally {
+      fundingLoanId = null;
+    }
   };
 
   const formatAmount = (amount: string | null, decimals: number | null | undefined) => {
@@ -186,8 +229,10 @@
           {#if realtimeActive}
             <span class="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-green-400 opacity-75"></span>
           {/if}
-          <span class={cn('relative inline-flex h-2 w-2 rounded-full', realtimeActive ? 'bg-green-500' : 'bg-gray-400')}
-          ></span>
+          <span
+            class={cn('relative inline-flex h-2 w-2 rounded-full', realtimeActive ? 'bg-green-500' : 'bg-gray-400')}
+          >
+          </span>
         </div>
         {realtimeActive ? 'Live Updates' : 'Realtime Off'}
       </Button>
@@ -277,6 +322,7 @@
                   {@const score = getMockCreditScore(loan.borrowerAddress)}
                   {@const ltv = getMockLTV(loan.borrowerAddress)}
                   {@const risk = getRiskLevel(score)}
+                  {@const isOwnLoan = wallet.address?.toLowerCase() === loan.borrowerAddress.toLowerCase()}
                   <Table.Row class="hover:bg-muted/10 transition-colors group">
                     <Table.Cell
                       class="pl-4 sm:pl-8 py-4 font-mono text-[10px] sm:text-xs font-medium whitespace-nowrap min-w-max"
@@ -346,13 +392,28 @@
                       </Badge>
                     </Table.Cell>
                     <Table.Cell class="pr-4 sm:pr-10 py-4 text-right min-w-max">
-                      <Button
-                        class="font-bold transition-transform group-hover:scale-105 h-7 sm:h-9 py-0 px-2 sm:px-3 text-[10px] sm:text-xs"
-                        size="sm"
-                        variant="default"
-                      >
-                        Fund
-                      </Button>
+                      <div class="flex items-center justify-end gap-1.5">
+                        {#if isOwnLoan}
+                          <span class="text-[10px] sm:text-xs font-semibold text-muted-foreground italic">
+                            Your loan
+                          </span>
+                        {:else}
+                          <Button
+                            class="font-bold transition-transform group-hover:scale-105 h-7 sm:h-9 py-0 px-2 sm:px-3 text-[10px] sm:text-xs"
+                            disabled={fundingLoanId === loan.id}
+                            onclick={() => handleFundLoan(loan)}
+                            size="sm"
+                            variant="default"
+                          >
+                            {#if fundingLoanId === loan.id}
+                              <RefreshCw class="mr-1.5 h-3 w-3 animate-spin" />
+                              Funding…
+                            {:else}
+                              Fund
+                            {/if}
+                          </Button>
+                        {/if}
+                      </div>
                     </Table.Cell>
                   </Table.Row>
                 {/each}
