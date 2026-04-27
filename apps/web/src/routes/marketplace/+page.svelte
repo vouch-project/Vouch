@@ -5,6 +5,7 @@
   import * as Card from '$lib/components/ui/card';
   import * as Table from '$lib/components/ui/table';
   import * as Tabs from '$lib/components/ui/tabs';
+  import { maxLtv } from '$lib/ltv';
   import { navLinksMap } from '$lib/navLinks';
   import { supabase } from '$lib/supabase';
   import type { LoanWithTokens } from '$lib/types';
@@ -27,11 +28,6 @@
   let channel: RealtimeChannel | null = $state(null);
   let activeTab: string = $state('borrow');
   let fundingLoanId: string | null = $state(null);
-
-  const getMockLTV = (seed: string) => {
-    const charSum = seed.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return 60 + (charSum % 25);
-  };
 
   const getRiskLevel = (score: number) => {
     if (score > 800) return { label: 'Low', color: 'bg-green-100 text-green-700 border-green-200' };
@@ -315,7 +311,7 @@
               {:else}
                 {#each loans as loan (loan.id)}
                   {@const score = scores[loan.borrowerAddress]}
-                  {@const ltv = getMockLTV(loan.borrowerAddress)}
+                  {@const ltv = maxLtv(loan.collateralToken?.symbol, loan.principalToken?.symbol, score)}
                   {@const risk = score !== undefined ? getRiskLevel(score) : null}
                   {@const isOwnLoan = wallet.address?.toLowerCase() === loan.borrowerAddress.toLowerCase()}
                   <Table.Row class="hover:bg-muted/10 transition-colors group">
