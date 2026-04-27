@@ -1,10 +1,4 @@
-export type Json =
-  | string
-  | number
-  | boolean
-  | null
-  | { [key: string]: Json | undefined }
-  | Json[];
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 export type Database = {
   graphql_public: {
@@ -71,7 +65,7 @@ export type Database = {
         Row: {
           borrowerAddress: string;
           chainId: string;
-          collateralAmount: number | null;
+          collateralAmount: string | null;
           collateralTokenId: string | null;
           createdAt: string;
           duration: string | null;
@@ -79,7 +73,7 @@ export type Database = {
           interestRate: number | null;
           lenderAddress: string | null;
           onChainLoanId: number | null;
-          principalAmount: number | null;
+          principalAmount: string | null;
           principalTokenId: string | null;
           startAt: string | null;
           status: Database['public']['Enums']['loanStatus'];
@@ -88,7 +82,7 @@ export type Database = {
         Insert: {
           borrowerAddress: string;
           chainId: string;
-          collateralAmount?: number | null;
+          collateralAmount?: string | null;
           collateralTokenId?: string | null;
           createdAt?: string;
           duration?: string | null;
@@ -96,7 +90,7 @@ export type Database = {
           interestRate?: number | null;
           lenderAddress?: string | null;
           onChainLoanId?: number | null;
-          principalAmount?: number | null;
+          principalAmount?: string | null;
           principalTokenId?: string | null;
           startAt?: string | null;
           status?: Database['public']['Enums']['loanStatus'];
@@ -105,7 +99,7 @@ export type Database = {
         Update: {
           borrowerAddress?: string;
           chainId?: string;
-          collateralAmount?: number | null;
+          collateralAmount?: string | null;
           collateralTokenId?: string | null;
           createdAt?: string;
           duration?: string | null;
@@ -113,7 +107,7 @@ export type Database = {
           interestRate?: number | null;
           lenderAddress?: string | null;
           onChainLoanId?: number | null;
-          principalAmount?: number | null;
+          principalAmount?: string | null;
           principalTokenId?: string | null;
           startAt?: string | null;
           status?: Database['public']['Enums']['loanStatus'];
@@ -183,7 +177,7 @@ export type Database = {
       };
       transactions: {
         Row: {
-          amount: number | null;
+          amount: string | null;
           blockHash: string | null;
           blockNumber: number | null;
           chainId: string;
@@ -201,7 +195,7 @@ export type Database = {
           updatedAt: string;
         };
         Insert: {
-          amount?: number | null;
+          amount?: string | null;
           blockHash?: string | null;
           blockNumber?: number | null;
           chainId: string;
@@ -219,7 +213,7 @@ export type Database = {
           updatedAt?: string;
         };
         Update: {
-          amount?: number | null;
+          amount?: string | null;
           blockHash?: string | null;
           blockNumber?: number | null;
           chainId?: string;
@@ -268,7 +262,7 @@ export type Database = {
       create_loan_with_transaction: {
         Args: {
           p_borrower_address: unknown;
-          p_collateral_amount: unknown;
+          p_collateral_amount: string;
           p_collateral_block_hash: string;
           p_collateral_block_number: unknown;
           p_collateral_locked_at: string;
@@ -278,20 +272,33 @@ export type Database = {
           p_log_index: unknown;
           p_network_id: string;
           p_on_chain_loan_id: unknown;
+          p_requested_principal_amount: string;
+          p_requested_principal_token_address: unknown;
         };
         Returns: string;
+      };
+      fund_loan_with_transaction: {
+        Args: {
+          p_block_hash: string;
+          p_block_number: unknown;
+          p_borrower_address: unknown;
+          p_contract_address: unknown;
+          p_funded_at: string;
+          p_lender_address: unknown;
+          p_log_index: unknown;
+          p_network_id: string;
+          p_on_chain_loan_id: unknown;
+          p_principal_amount: string;
+          p_tx_hash: string;
+        };
+        Returns: undefined;
       };
     };
     Enums: {
       addressType: 'evm' | 'solana' | 'bitcoin';
       loanStatus: 'pending' | 'active' | 'repaid' | 'defaulted' | 'cancelled';
       transactionStatus: 'pending' | 'confirmed' | 'failed';
-      transactionType:
-        | 'collateral_deposit'
-        | 'loan_disbursement'
-        | 'repayment'
-        | 'liquidation'
-        | 'withdrawal';
+      transactionType: 'collateral_deposit' | 'loan_disbursement' | 'repayment' | 'liquidation' | 'withdrawal';
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -301,10 +308,7 @@ export type Database = {
 
 type DatabaseWithoutInternals = Omit<Database, '__InternalSupabase'>;
 
-type DefaultSchema = DatabaseWithoutInternals[Extract<
-  keyof Database,
-  'public'
->];
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, 'public'>];
 
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
@@ -325,10 +329,8 @@ export type Tables<
     }
     ? R
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema['Tables'] &
-        DefaultSchema['Views'])
-    ? (DefaultSchema['Tables'] &
-        DefaultSchema['Views'])[DefaultSchemaTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema['Tables'] & DefaultSchema['Views'])
+    ? (DefaultSchema['Tables'] & DefaultSchema['Views'])[DefaultSchemaTableNameOrOptions] extends {
         Row: infer R;
       }
       ? R
@@ -336,9 +338,7 @@ export type Tables<
     : never;
 
 export type TablesInsert<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema['Tables']
-    | { schema: keyof DatabaseWithoutInternals },
+  DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables'] | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
@@ -361,9 +361,7 @@ export type TablesInsert<
     : never;
 
 export type TablesUpdate<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema['Tables']
-    | { schema: keyof DatabaseWithoutInternals },
+  DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables'] | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
@@ -386,9 +384,7 @@ export type TablesUpdate<
     : never;
 
 export type Enums<
-  DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema['Enums']
-    | { schema: keyof DatabaseWithoutInternals },
+  DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema['Enums'] | { schema: keyof DatabaseWithoutInternals },
   EnumName extends DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
@@ -428,13 +424,7 @@ export const Constants = {
       addressType: ['evm', 'solana', 'bitcoin'],
       loanStatus: ['pending', 'active', 'repaid', 'defaulted', 'cancelled'],
       transactionStatus: ['pending', 'confirmed', 'failed'],
-      transactionType: [
-        'collateral_deposit',
-        'loan_disbursement',
-        'repayment',
-        'liquidation',
-        'withdrawal',
-      ],
+      transactionType: ['collateral_deposit', 'loan_disbursement', 'repayment', 'liquidation', 'withdrawal'],
     },
   },
 } as const;

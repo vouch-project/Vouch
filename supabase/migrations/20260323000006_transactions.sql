@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     status "transactionStatus" NOT NULL DEFAULT 'pending',
     "fromAddress" address NOT NULL,
     "toAddress" address NOT NULL,
-    amount uint256,
+    amount text,
     "logIndex" uint256 NOT NULL,
     "txTimestamp" timestamptz NOT NULL,
     "createdAt" timestamptz NOT NULL DEFAULT now(),
