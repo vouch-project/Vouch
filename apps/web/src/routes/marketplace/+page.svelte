@@ -1,10 +1,12 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
+  import { axiosApi } from '$api/axiosApi';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import * as Card from '$lib/components/ui/card';
   import * as Table from '$lib/components/ui/table';
   import * as Tabs from '$lib/components/ui/tabs';
+  import { maxLtv } from '$lib/ltv';
   import { navLinksMap } from '$lib/navLinks';
   import { supabase } from '$lib/supabase';
   import type { LoanWithTokens } from '$lib/types';
@@ -13,12 +15,14 @@
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Info, RefreshCw, ShieldCheck, TrendingUp, Wallet, Zap } from '@lucide/svelte';
   import type { RealtimeChannel } from '@supabase/supabase-js';
+  import type { Address } from '@vouch/database-types';
   import { ethers } from 'ethers';
   import { onDestroy } from 'svelte';
 
   let { data } = $props();
 
   let loans: LoanWithTokens[] = $state([]);
+  let scores: Record<string, number> = $state({});
   let loading: boolean = $state(true);
   let refreshing: boolean = $state(false);
   let errorMsg: string | null = $state(null);
@@ -26,17 +30,6 @@
   let channel: RealtimeChannel | null = $state(null);
   let activeTab: string = $state('borrow');
   let fundingLoanId: string | null = $state(null);
-
-  // Mock data generators for missing fields
-  const getMockCreditScore = (seed: string) => {
-    const charSum = seed.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return 650 + (charSum % 200);
-  };
-
-  const getMockLTV = (seed: string) => {
-    const charSum = seed.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return 60 + (charSum % 25);
-  };
 
   const getRiskLevel = (score: number) => {
     if (score > 800) return { label: 'Low', color: 'bg-green-100 text-green-700 border-green-200' };
@@ -47,7 +40,7 @@
   $effect(() => {
     const fetchStreamed = async () => {
       try {
-        loans = await data.streamed.loansPromise;
+        [loans, scores] = await Promise.all([data.streamed.loansPromise, data.streamed.scoresPromise]);
       } catch (err) {
         console.error(err);
         errorMsg = getErrorMessage(err);
@@ -58,6 +51,22 @@
 
     void fetchStreamed();
   });
+
+  const fetchScores = async (newLoans: LoanWithTokens[]) => {
+    const addresses = [...new Set(newLoans.map((l) => l.borrowerAddress))];
+    const results = await Promise.allSettled(
+      addresses.map((address) =>
+        axiosApi
+          .get<{ score: number }>(`/scoring/${encodeURIComponent(address)}`)
+          .then(({ data }) => ({ address, score: data.score })),
+      ),
+    );
+    scores = Object.fromEntries(
+      results
+        .filter((r): r is PromiseFulfilledResult<{ address: Address; score: number }> => r.status === 'fulfilled')
+        .map((r) => [r.value.address, r.value.score]),
+    );
+  };
 
   const fetchLoans = async () => {
     try {
@@ -76,6 +85,7 @@
 
       if (error) throw error;
       loans = loansData || [];
+      await fetchScores(loans);
     } catch (e) {
       console.error('Fetch error:', e);
       errorMsg = getErrorMessage(e);
@@ -319,9 +329,9 @@
                 </Table.Row>
               {:else}
                 {#each loans as loan (loan.id)}
-                  {@const score = getMockCreditScore(loan.borrowerAddress)}
-                  {@const ltv = getMockLTV(loan.borrowerAddress)}
-                  {@const risk = getRiskLevel(score)}
+                  {@const score = scores[loan.borrowerAddress]}
+                  {@const ltv = maxLtv(loan.collateralToken?.symbol, loan.principalToken?.symbol, score)}
+                  {@const risk = score !== undefined ? getRiskLevel(score) : null}
                   {@const isOwnLoan = wallet.address?.toLowerCase() === loan.borrowerAddress.toLowerCase()}
                   <Table.Row class="hover:bg-muted/10 transition-colors group">
                     <Table.Cell
@@ -340,7 +350,11 @@
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
                       <div class="flex items-center gap-1 sm:gap-2 font-bold text-foreground/80 text-[10px] sm:text-sm">
                         <TrendingUp class="h-3 w-3 sm:h-4 sm:w-4 text-blue-500 shrink-0" />
-                        {score}
+                        {#if score !== undefined}
+                          {score}
+                        {:else}
+                          <div class="h-4 w-8 bg-muted animate-pulse rounded"></div>
+                        {/if}
                       </div>
                     </Table.Cell>
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
@@ -375,7 +389,7 @@
                         <div class="w-12 sm:w-16 h-1.5 sm:h-2 bg-muted rounded-full overflow-hidden hidden lg:block">
                           <div style:width="{ltv}%" class="h-full bg-green-500 transition-all"></div>
                         </div>
-                        <span class="font-bold text-green-600">{ltv}%</span>
+                        <span class="font-bold text-green-600">{ltv.toFixed(1)}%</span>
                       </div>
                     </Table.Cell>
                     <Table.Cell
@@ -384,12 +398,16 @@
                       {loan.interestRate ? `${loan.interestRate}%` : '8.5%'}
                     </Table.Cell>
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left min-w-max">
-                      <Badge
-                        class={cn('font-bold px-1 sm:px-2.5 py-0 text-[8px] sm:text-[10px]', risk.color)}
-                        variant="outline"
-                      >
-                        {risk.label}
-                      </Badge>
+                      {#if risk}
+                        <Badge
+                          class={cn('font-bold px-1 sm:px-2.5 py-0 text-[8px] sm:text-[10px]', risk.color)}
+                          variant="outline"
+                        >
+                          {risk.label}
+                        </Badge>
+                      {:else}
+                        <div class="h-4 w-10 bg-muted animate-pulse rounded"></div>
+                      {/if}
                     </Table.Cell>
                     <Table.Cell class="pr-4 sm:pr-10 py-4 text-right min-w-max">
                       <div class="flex items-center justify-end gap-1.5">

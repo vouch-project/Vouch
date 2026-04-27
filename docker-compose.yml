@@ -42,6 +42,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+      ML_ENGINE_URL: http://ml-engine:8001
 
   web:
     build:
@@ -81,7 +82,14 @@ services:
     restart: unless-stopped
     volumes:
       - redis_data:/data
-    command: ['redis-server', '--requirepass', '${REDIS_PASSWORD}', '--appendonly', 'yes']
+    command:
+      [
+        'redis-server',
+        '--requirepass',
+        '${REDIS_PASSWORD}',
+        '--appendonly',
+        'yes',
+      ]
 
 volumes:
   redis_data:
