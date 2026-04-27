@@ -1,5 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
+  import { axiosApi } from '$api/axiosApi';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import * as Card from '$lib/components/ui/card';
@@ -14,6 +15,7 @@
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Info, RefreshCw, ShieldCheck, TrendingUp, Wallet, Zap } from '@lucide/svelte';
   import type { RealtimeChannel } from '@supabase/supabase-js';
+  import type { Address } from '@vouch/database-types';
   import { ethers } from 'ethers';
   import { onDestroy } from 'svelte';
 
@@ -50,6 +52,22 @@
     void fetchStreamed();
   });
 
+  const fetchScores = async (newLoans: LoanWithTokens[]) => {
+    const addresses = [...new Set(newLoans.map((l) => l.borrowerAddress))];
+    const results = await Promise.allSettled(
+      addresses.map((address) =>
+        axiosApi
+          .get<{ score: number }>(`/scoring/${encodeURIComponent(address)}`)
+          .then(({ data }) => ({ address, score: data.score })),
+      ),
+    );
+    scores = Object.fromEntries(
+      results
+        .filter((r): r is PromiseFulfilledResult<{ address: Address; score: number }> => r.status === 'fulfilled')
+        .map((r) => [r.value.address, r.value.score]),
+    );
+  };
+
   const fetchLoans = async () => {
     try {
       errorMsg = null;
@@ -67,6 +85,7 @@
 
       if (error) throw error;
       loans = loansData || [];
+      await fetchScores(loans);
     } catch (e) {
       console.error('Fetch error:', e);
       errorMsg = getErrorMessage(e);
@@ -370,7 +389,7 @@
                         <div class="w-12 sm:w-16 h-1.5 sm:h-2 bg-muted rounded-full overflow-hidden hidden lg:block">
                           <div style:width="{ltv}%" class="h-full bg-green-500 transition-all"></div>
                         </div>
-                        <span class="font-bold text-green-600">{ltv}%</span>
+                        <span class="font-bold text-green-600">{ltv.toFixed(1)}%</span>
                       </div>
                     </Table.Cell>
                     <Table.Cell

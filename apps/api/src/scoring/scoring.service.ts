@@ -16,7 +16,9 @@ export class ScoringService {
 
   async getCreditScore(address: string): Promise<CreditScoreResult> {
     const { data } = await firstValueFrom(
-      this.httpService.get<CreditScoreResult>(`/api/v1/score/${address}`),
+      this.httpService.get<CreditScoreResult>(
+        `/api/v1/score/${encodeURIComponent(address)}`,
+      ),
     );
 
     return data;
