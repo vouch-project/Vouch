@@ -12,6 +12,7 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* turbo.json ./
 COPY apps/api/ apps/api/
 COPY packages/config/ packages/config/
 COPY packages/abi/ packages/abi/
+COPY packages/database-types/ packages/database-types/
 
 RUN pnpm install --frozen-lockfile
 RUN pnpm turbo run build --filter=@vouch/api
