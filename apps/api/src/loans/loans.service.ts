@@ -50,12 +50,19 @@ export class LoansService {
     chainId: string;
     lenderAddress: string;
   }) {
-    const { error } = await this.supabaseService.client
+    const { data, error } = await this.supabaseService.client
       .from('loans')
       .update({ status: 'active', lenderAddress: asAddress(lenderAddress) })
       .eq('onChainLoanId', onChainLoanId.toString())
-      .eq('chainId', chainId as UUID);
+      .eq('chainId', chainId as UUID)
+      .select('id');
 
     if (error) throw error;
+
+    if (!data || data.length === 0) {
+      throw new Error(
+        `No loan found to fund for chainId=${chainId} and onChainLoanId=${onChainLoanId.toString()}`,
+      );
+    }
   }
 }
