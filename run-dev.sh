@@ -18,10 +18,10 @@ fi
 
 cleanup() {
   echo "▶ Stopping Redis…"
-  docker stop vouch-redis
+  docker stop vouch-redis >/dev/null 2>/dev/null || true
 
   echo "▶ Stopping Supabase…"
-  npx supabase stop
+  npx supabase stop >/dev/null 2>/dev/null || true
 }
 trap cleanup EXIT INT
 
