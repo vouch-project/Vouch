@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { asAddress } from '@vouch/database-types';
-import { UUID } from 'crypto';
+import type { UUID } from 'crypto';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
 

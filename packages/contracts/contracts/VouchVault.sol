@@ -163,17 +163,20 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     /**
-     * @notice Fund an active loan by sending the principal amount directly to the borrower.
+     * @notice Fund an active ETH-principal loan by sending exactly the requested amount to the borrower.
      * @dev Only one lender may fund a given loan. Funds are transferred immediately to the
-     *      borrower; nothing is held in escrow. The caller must send exactly the amount they
-     *      wish to lend as `msg.value`.
+     *      borrower; nothing is held in escrow. `msg.value` must equal the borrower's
+     *      `requestedPrincipalAmount`, and the loan's `requestedPrincipalToken` must be
+     *      `address(0)` (i.e. match native ETH). For ERC20-principal loans use
+     *      `fundLoanWithERC20`.
      * @param loanId  The ID of the loan to fund (must be active and not yet funded).
      *
      * Requirements:
      * - `loanId` must refer to an active loan (`loan.active == true`).
      * - The loan must not already be funded.
      * - The lender cannot be the borrower.
-     * - `msg.value` must be greater than 0.
+     * - `loan.requestedPrincipalToken` must be `address(0)` (native ETH).
+     * - `msg.value` must equal `loan.requestedPrincipalAmount`.
      *
      * Emits a {LoanFunded} event.
      */
@@ -182,18 +185,19 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(loan.active, "Loan is not active");
         require(!loan.funded, "Loan already funded");
         require(msg.sender != loan.borrower, "Borrower cannot fund own loan");
-        require(msg.value > 0, "Funding amount must be > 0");
+        require(loan.requestedPrincipalToken == address(0), "Token does not match requested principal token");
+        require(msg.value == loan.requestedPrincipalAmount, "msg.value must equal requested principal amount");
 
         loan.lender = msg.sender;
-        loan.principalAmount = msg.value;
+        loan.principalAmount = loan.requestedPrincipalAmount;
         loan.funded = true;
         loan.fundedAt = block.timestamp;
 
         // Transfer principal directly to the borrower.
-        (bool success, ) = payable(loan.borrower).call{value: msg.value}("");
+        (bool success, ) = payable(loan.borrower).call{value: loan.requestedPrincipalAmount}("");
         require(success, "ETH transfer to borrower failed");
 
-        emit LoanFunded(loanId, msg.sender, loan.borrower, msg.value, block.timestamp);
+        emit LoanFunded(loanId, msg.sender, loan.borrower, loan.requestedPrincipalAmount, block.timestamp);
     }
 
     /// @notice Fund a loan with an ERC20 principal token
@@ -205,6 +209,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(loan.active, "Loan is not active");
         require(!loan.funded, "Loan already funded");
         require(msg.sender != loan.borrower, "Borrower cannot fund own loan");
+        require(loan.requestedPrincipalToken != address(0), "Loan requires native ETH principal; use fundLoan");
         require(amount > 0, "Funding amount must be > 0");
         require(token == loan.requestedPrincipalToken, "Token does not match requested principal token");
         require(amount == loan.requestedPrincipalAmount, "Amount does not match requested principal amount");

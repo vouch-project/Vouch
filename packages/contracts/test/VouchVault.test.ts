@@ -128,12 +128,11 @@ describe('VouchVault', function () {
       const collateral = ethers.parseEther('0.5');
       const principal = ethers.parseEther('1.0');
       await vault.connect(borrower).createLoan(ethers.ZeroAddress, principal, { value: collateral });
-      return { vault, owner, borrower, lender, collateral };
+      return { vault, owner, borrower, lender, collateral, principal };
     }
 
     it('Should fund a loan and transfer principal to borrower', async function () {
-      const { vault, borrower, lender } = await deployWithLoan();
-      const principal = ethers.parseEther('2.0');
+      const { vault, borrower, lender, principal } = await deployWithLoan();
 
       const borrowerBefore = await ethers.provider.getBalance(borrower.address);
       const tx = await vault.connect(lender).fundLoan(0, { value: principal });
@@ -147,8 +146,7 @@ describe('VouchVault', function () {
     });
 
     it('Should record funding details correctly', async function () {
-      const { vault, lender } = await deployWithLoan();
-      const principal = ethers.parseEther('1.5');
+      const { vault, lender, principal } = await deployWithLoan();
 
       await vault.connect(lender).fundLoan(0, { value: principal });
 
@@ -182,9 +180,37 @@ describe('VouchVault', function () {
       );
     });
 
-    it('Should fail if funding amount is zero', async function () {
-      const { vault, lender } = await deployWithLoan();
-      await expect(vault.connect(lender).fundLoan(0, { value: 0 })).to.be.revertedWith('Funding amount must be > 0');
+    it('Should fail if msg.value does not equal requestedPrincipalAmount', async function () {
+      const { vault, lender, principal } = await deployWithLoan();
+      await expect(vault.connect(lender).fundLoan(0, { value: principal - 1n })).to.be.revertedWith(
+        'msg.value must equal requested principal amount',
+      );
+      await expect(vault.connect(lender).fundLoan(0, { value: principal + 1n })).to.be.revertedWith(
+        'msg.value must equal requested principal amount',
+      );
+      await expect(vault.connect(lender).fundLoan(0, { value: 0 })).to.be.revertedWith(
+        'msg.value must equal requested principal amount',
+      );
+    });
+
+    it('Should fail if loan requests an ERC20 principal', async function () {
+      const [owner, borrower, lender] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const MockERC20 = await ethers.getContractFactory('MockERC20');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      const token = await MockERC20.deploy('Mock', 'MOCK', 18, ethers.parseUnits('1000', 18));
+      const collateral = ethers.parseEther('0.5');
+      const principalAmount = ethers.parseUnits('100', 18);
+
+      await token.transfer(borrower.address, collateral);
+      await token.connect(borrower).approve(await vault.getAddress(), collateral);
+      await vault
+        .connect(borrower)
+        .createLoanWithERC20(await token.getAddress(), collateral, await token.getAddress(), principalAmount);
+
+      await expect(vault.connect(lender).fundLoan(0, { value: ethers.parseEther('1.0') })).to.be.revertedWith(
+        'Token does not match requested principal token',
+      );
     });
 
     it('Should not affect collateral tracking when funded', async function () {
@@ -198,6 +224,25 @@ describe('VouchVault', function () {
       expect(await vault.loanLockedBalanceOf(0)).to.equal(collateral);
       const locked = await vault.getLoanLockedCollateral(0);
       expect(locked[2]).to.equal(true);
+    });
+  });
+
+  describe('fundLoanWithERC20', function () {
+    it('Should fail if loan requests native ETH principal', async function () {
+      const [owner, borrower, lender] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const MockERC20 = await ethers.getContractFactory('MockERC20');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      const token = await MockERC20.deploy('Mock', 'MOCK', 18, ethers.parseUnits('1000', 18));
+      const collateral = ethers.parseEther('0.5');
+      const principalAmount = ethers.parseEther('1.0');
+
+      // Loan requesting native ETH as principal
+      await vault.connect(borrower).createLoan(ethers.ZeroAddress, principalAmount, { value: collateral });
+
+      await expect(
+        vault.connect(lender).fundLoanWithERC20(0, await token.getAddress(), principalAmount),
+      ).to.be.revertedWith('Loan requires native ETH principal; use fundLoan');
     });
   });
 });

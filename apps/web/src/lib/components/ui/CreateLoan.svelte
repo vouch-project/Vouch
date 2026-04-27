@@ -28,8 +28,15 @@
     try {
       await createLoan(collateralAmount, collateralToken, borrowToken, borrowAmount);
       status = 'Loan created!';
-    } catch (e) {
-      status = e instanceof Error ? e.message : 'Transaction failed';
+    } catch (e: unknown) {
+      if (e && typeof e === 'object' && 'code' in e && e.code === 'ACTION_REJECTED') {
+        status = 'Transaction rejected by user.';
+      } else if (e && typeof e === 'object' && 'info' in e) {
+        const info = (e as { info?: { error?: { message?: string } } }).info;
+        status = info?.error?.message ?? 'Transaction failed';
+      } else {
+        status = e instanceof Error ? e.message : 'Transaction failed';
+      }
     }
   };
 </script>

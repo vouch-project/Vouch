@@ -41,6 +41,10 @@ BEGIN
     FROM public.tokens
     WHERE address = p_requested_principal_token_address AND "chainId" = v_chain_id;
 
+    IF v_principal_token_id IS NULL THEN
+        RAISE EXCEPTION 'Principal token not found: % on chain %', p_requested_principal_token_address, p_network_id;
+    END IF;
+
     INSERT INTO public.loans (
         "onChainLoanId", "borrowerAddress", "collateralAmount",
         "collateralTokenId", "principalTokenId", "principalAmount", "chainId"
