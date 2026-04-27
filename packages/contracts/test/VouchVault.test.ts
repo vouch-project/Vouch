@@ -136,11 +136,12 @@ describe('VouchVault', function () {
 
       const borrowerBefore = await ethers.provider.getBalance(borrower.address);
       const tx = await vault.connect(lender).fundLoan(0, { value: principal });
-      const borrowerAfter = await ethers.provider.getBalance(borrower.address);
 
       await expect(tx)
         .to.emit(vault, 'LoanFunded')
         .withArgs(0, lender.address, borrower.address, principal, (ts: bigint) => ts > 0n);
+
+      const borrowerAfter = await ethers.provider.getBalance(borrower.address);
 
       expect(borrowerAfter - borrowerBefore).to.equal(principal);
     });
@@ -228,6 +229,42 @@ describe('VouchVault', function () {
   });
 
   describe('fundLoanWithERC20', function () {
+    it('Should fund an ERC20-principal loan and transfer tokens to borrower', async function () {
+      const [owner, borrower, lender] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const MockERC20 = await ethers.getContractFactory('MockERC20');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+
+      const totalSupply = ethers.parseUnits('1000', 18);
+      const token = await MockERC20.deploy('Mock', 'MOCK', 18, totalSupply);
+
+      const collateral = ethers.parseEther('0.5');
+      const principalAmount = ethers.parseUnits('100', 18);
+
+      // Give borrower ETH collateral and create the loan requesting ERC20 principal
+      await vault.connect(borrower).createLoan(await token.getAddress(), principalAmount, { value: collateral });
+
+      // Give lender enough tokens and approve the vault
+      await token.transfer(lender.address, principalAmount);
+      await token.connect(lender).approve(await vault.getAddress(), principalAmount);
+
+      const borrowerBefore = await token.balanceOf(borrower.address);
+      const tx = await vault.connect(lender).fundLoanWithERC20(0, await token.getAddress(), principalAmount);
+
+      await expect(tx)
+        .to.emit(vault, 'LoanFunded')
+        .withArgs(0, lender.address, borrower.address, principalAmount, (ts: bigint) => ts > 0n);
+
+      const borrowerAfter = await token.balanceOf(borrower.address);
+      expect(borrowerAfter - borrowerBefore).to.equal(principalAmount);
+
+      const details = await vault.getFundingDetails(0);
+      expect(details[0]).to.equal(lender.address); // lender
+      expect(details[1]).to.equal(principalAmount); // principalAmount
+      expect(details[2]).to.equal(true); // funded
+      expect(details[3]).to.be.greaterThan(0n); // fundedAt
+    });
+
     it('Should fail if loan requests native ETH principal', async function () {
       const [owner, borrower, lender] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');

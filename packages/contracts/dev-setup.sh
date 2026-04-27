@@ -28,10 +28,14 @@ if [ $? -eq 0 ]; then
     HARDCODED_MOCK_ERC20_ADDRESS="$MOCK_ERC20_ADDRESS" npx hardhat run scripts/mint-mock-to-wallets.ts --network localhost
 
     # Write deployment timestamp so other services know to reload
-    TIMESTAMP=$(date +%s%3N)
+    TIMESTAMP=$(node -e "process.stdout.write(String(Date.now()))")
     ENV_FILE="../../.env"
     if grep -q '^CONTRACTS_DEPLOYED_AT=' "$ENV_FILE"; then
-        sed -i '' "s/^CONTRACTS_DEPLOYED_AT=.*/CONTRACTS_DEPLOYED_AT=$TIMESTAMP/" "$ENV_FILE"
+        node -e "
+          const fs = require('fs');
+          const f = '$ENV_FILE';
+          fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/^CONTRACTS_DEPLOYED_AT=.*/m, 'CONTRACTS_DEPLOYED_AT=$TIMESTAMP'));
+        "
     else
         printf '\nCONTRACTS_DEPLOYED_AT=%s\n' "$TIMESTAMP" >> "$ENV_FILE"
     fi

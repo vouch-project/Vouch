@@ -11,6 +11,19 @@
 
   const handleCreateLoan = async (e: SubmitEvent) => {
     e.preventDefault();
+
+    const collateralValue = Number(collateralAmount);
+    if (!collateralAmount.trim() || !isFinite(collateralValue) || collateralValue <= 0) {
+      status = 'Enter a valid collateral amount greater than 0.';
+      return;
+    }
+
+    const borrowValue = Number(borrowAmount);
+    if (!borrowAmount.trim() || !isFinite(borrowValue) || borrowValue <= 0) {
+      status = 'Enter a valid borrow amount greater than 0.';
+      return;
+    }
+
     status = 'Waiting for wallet confirmation...';
 
     const collateralToken = chainInfo.tokens.find((t) => t.symbol === selectedCollateralToken);
