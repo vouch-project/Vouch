@@ -12,6 +12,7 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* turbo.json ./
 COPY apps/web/ apps/web/
 COPY packages/config/ packages/config/
 COPY packages/abi/ packages/abi/
+COPY packages/database-types/ packages/database-types/
 
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter=@vouch/web exec svelte-kit sync
