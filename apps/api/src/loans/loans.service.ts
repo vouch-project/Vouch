@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { asAddress } from '@vouch/database-types';
-import type { UUID } from 'crypto';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
+import { FundLoanDto } from './dto/fund-loan.dto';
 
 @Injectable()
 export class LoansService {
@@ -43,18 +43,33 @@ export class LoansService {
 
   async fund({
     onChainLoanId,
-    chainId,
+    networkId,
+    contractAddress,
     lenderAddress,
-  }: {
-    onChainLoanId: bigint;
-    chainId: string;
-    lenderAddress: string;
-  }) {
-    const { error } = await this.supabaseService.client
-      .from('loans')
-      .update({ status: 'active', lenderAddress: asAddress(lenderAddress) })
-      .eq('onChainLoanId', onChainLoanId.toString())
-      .eq('chainId', chainId as UUID);
+    borrowerAddress,
+    principalAmount,
+    txHash,
+    blockNumber,
+    blockHash,
+    logIndex,
+    fundedAt,
+  }: FundLoanDto) {
+    const { error } = await this.supabaseService.client.rpc(
+      'fund_loan_with_transaction',
+      {
+        p_network_id: networkId,
+        p_contract_address: asAddress(contractAddress),
+        p_on_chain_loan_id: onChainLoanId.toString(),
+        p_lender_address: asAddress(lenderAddress),
+        p_borrower_address: asAddress(borrowerAddress),
+        p_principal_amount: principalAmount.toString(),
+        p_tx_hash: txHash,
+        p_block_number: blockNumber.toString(),
+        p_block_hash: blockHash,
+        p_log_index: logIndex,
+        p_funded_at: fundedAt.toISOString(),
+      },
+    );
 
     if (error) throw error;
   }

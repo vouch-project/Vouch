@@ -108,9 +108,28 @@ export class BlockchainListenerService implements OnModuleInit {
       },
     );
 
-    void contract.on('LoanFunded', (loanId: bigint, lender: string) => {
-      void this.handleLoanFunded(loanId, lender, config.id);
-    });
+    void contract.on(
+      'LoanFunded',
+      (
+        loanId: bigint,
+        lender: string,
+        borrower: string,
+        principalAmount: bigint,
+        timestamp: bigint,
+        { log: eventLog }: ethers.ContractEventPayload,
+      ) => {
+        void this.handleLoanFunded(
+          loanId,
+          lender,
+          borrower,
+          principalAmount,
+          timestamp,
+          eventLog,
+          network,
+          config.contractAddress,
+        );
+      },
+    );
   }
 
   private async handleLoanCreated(
@@ -154,13 +173,31 @@ export class BlockchainListenerService implements OnModuleInit {
   private async handleLoanFunded(
     loanId: bigint,
     lender: string,
-    chainId: string,
+    borrower: string,
+    principalAmount: bigint,
+    timestamp: bigint,
+    {
+      transactionHash,
+      blockNumber,
+      blockHash,
+      index: logIndex,
+    }: ethers.EventLog,
+    network: ethers.Network,
+    contractAddress: string,
   ) {
     try {
       await this.loanService.fund({
         onChainLoanId: loanId,
-        chainId,
+        networkId: network.chainId.toString(),
+        contractAddress,
         lenderAddress: lender,
+        borrowerAddress: borrower,
+        principalAmount,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        fundedAt: new Date(Number(timestamp) * 1000),
       });
       this.logger.log(`Loan ${loanId.toString()} funded by ${lender}`);
     } catch (error) {

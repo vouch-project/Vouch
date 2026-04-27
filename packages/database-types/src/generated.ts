@@ -277,6 +277,22 @@ export type Database = {
         };
         Returns: string;
       };
+      fund_loan_with_transaction: {
+        Args: {
+          p_block_hash: string;
+          p_block_number: unknown;
+          p_borrower_address: unknown;
+          p_contract_address: unknown;
+          p_funded_at: string;
+          p_lender_address: unknown;
+          p_log_index: unknown;
+          p_network_id: string;
+          p_on_chain_loan_id: unknown;
+          p_principal_amount: string;
+          p_tx_hash: string;
+        };
+        Returns: undefined;
+      };
     };
     Enums: {
       addressType: 'evm' | 'solana' | 'bitcoin';
