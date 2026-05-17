@@ -1,4 +1,10 @@
-export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
 
 export type Database = {
   graphql_public: {
@@ -58,6 +64,45 @@ export type Database = {
           networkType?: Database['public']['Enums']['addressType'];
           rpcUrl?: string;
           updatedAt?: string;
+        };
+        Relationships: [];
+      };
+      credit_scores: {
+        Row: {
+          confidence: number;
+          createdAt: string;
+          factors: Json;
+          id: string;
+          modelVersion: string;
+          riskLevel: Database['public']['Enums']['riskLevel'];
+          score: number;
+          scoredAt: string;
+          updatedAt: string;
+          walletAddress: string;
+        };
+        Insert: {
+          confidence: number;
+          createdAt?: string;
+          factors?: Json;
+          id?: string;
+          modelVersion: string;
+          riskLevel: Database['public']['Enums']['riskLevel'];
+          score: number;
+          scoredAt?: string;
+          updatedAt?: string;
+          walletAddress: string;
+        };
+        Update: {
+          confidence?: number;
+          createdAt?: string;
+          factors?: Json;
+          id?: string;
+          modelVersion?: string;
+          riskLevel?: Database['public']['Enums']['riskLevel'];
+          score?: number;
+          scoredAt?: string;
+          updatedAt?: string;
+          walletAddress?: string;
         };
         Relationships: [];
       };
@@ -175,6 +220,42 @@ export type Database = {
           },
         ];
       };
+      training_dataset: {
+        Row: {
+          createdAt: string;
+          dataSource: string;
+          historicalLiquidationCount: number;
+          id: string;
+          totalTransactions: number;
+          uniqueProtocolsUsed: number;
+          walletAddress: string;
+          walletAgeDays: number;
+          wasLiquidated: boolean;
+        };
+        Insert: {
+          createdAt?: string;
+          dataSource: string;
+          historicalLiquidationCount?: number;
+          id?: string;
+          totalTransactions: number;
+          uniqueProtocolsUsed?: number;
+          walletAddress: string;
+          walletAgeDays: number;
+          wasLiquidated: boolean;
+        };
+        Update: {
+          createdAt?: string;
+          dataSource?: string;
+          historicalLiquidationCount?: number;
+          id?: string;
+          totalTransactions?: number;
+          uniqueProtocolsUsed?: number;
+          walletAddress?: string;
+          walletAgeDays?: number;
+          wasLiquidated?: boolean;
+        };
+        Relationships: [];
+      };
       transactions: {
         Row: {
           amount: string | null;
@@ -254,6 +335,42 @@ export type Database = {
           },
         ];
       };
+      user_credit_features: {
+        Row: {
+          avgHealthFactorMaintained: number | null;
+          createdAt: string;
+          id: string;
+          lastUpdatedAt: string | null;
+          onTimeRepaymentRate: number | null;
+          totalLoansDefaulted: number;
+          totalLoansRepaid: number;
+          totalLoansTaken: number;
+          walletAddress: string;
+        };
+        Insert: {
+          avgHealthFactorMaintained?: number | null;
+          createdAt?: string;
+          id?: string;
+          lastUpdatedAt?: string | null;
+          onTimeRepaymentRate?: number | null;
+          totalLoansDefaulted?: number;
+          totalLoansRepaid?: number;
+          totalLoansTaken?: number;
+          walletAddress: string;
+        };
+        Update: {
+          avgHealthFactorMaintained?: number | null;
+          createdAt?: string;
+          id?: string;
+          lastUpdatedAt?: string | null;
+          onTimeRepaymentRate?: number | null;
+          totalLoansDefaulted?: number;
+          totalLoansRepaid?: number;
+          totalLoansTaken?: number;
+          walletAddress?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -297,8 +414,14 @@ export type Database = {
     Enums: {
       addressType: 'evm' | 'solana' | 'bitcoin';
       loanStatus: 'pending' | 'active' | 'repaid' | 'defaulted' | 'cancelled';
+      riskLevel: 'very_low' | 'low' | 'medium' | 'high' | 'very_high';
       transactionStatus: 'pending' | 'confirmed' | 'failed';
-      transactionType: 'collateral_deposit' | 'loan_disbursement' | 'repayment' | 'liquidation' | 'withdrawal';
+      transactionType:
+        | 'collateral_deposit'
+        | 'loan_disbursement'
+        | 'repayment'
+        | 'liquidation'
+        | 'withdrawal';
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -308,7 +431,10 @@ export type Database = {
 
 type DatabaseWithoutInternals = Omit<Database, '__InternalSupabase'>;
 
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, 'public'>];
+type DefaultSchema = DatabaseWithoutInternals[Extract<
+  keyof Database,
+  'public'
+>];
 
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
@@ -329,8 +455,10 @@ export type Tables<
     }
     ? R
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema['Tables'] & DefaultSchema['Views'])
-    ? (DefaultSchema['Tables'] & DefaultSchema['Views'])[DefaultSchemaTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema['Tables'] &
+        DefaultSchema['Views'])
+    ? (DefaultSchema['Tables'] &
+        DefaultSchema['Views'])[DefaultSchemaTableNameOrOptions] extends {
         Row: infer R;
       }
       ? R
@@ -338,7 +466,9 @@ export type Tables<
     : never;
 
 export type TablesInsert<
-  DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables'] | { schema: keyof DatabaseWithoutInternals },
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema['Tables']
+    | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
@@ -361,7 +491,9 @@ export type TablesInsert<
     : never;
 
 export type TablesUpdate<
-  DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables'] | { schema: keyof DatabaseWithoutInternals },
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema['Tables']
+    | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
@@ -384,7 +516,9 @@ export type TablesUpdate<
     : never;
 
 export type Enums<
-  DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema['Enums'] | { schema: keyof DatabaseWithoutInternals },
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema['Enums']
+    | { schema: keyof DatabaseWithoutInternals },
   EnumName extends DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
@@ -423,8 +557,15 @@ export const Constants = {
     Enums: {
       addressType: ['evm', 'solana', 'bitcoin'],
       loanStatus: ['pending', 'active', 'repaid', 'defaulted', 'cancelled'],
+      riskLevel: ['very_low', 'low', 'medium', 'high', 'very_high'],
       transactionStatus: ['pending', 'confirmed', 'failed'],
-      transactionType: ['collateral_deposit', 'loan_disbursement', 'repayment', 'liquidation', 'withdrawal'],
+      transactionType: [
+        'collateral_deposit',
+        'loan_disbursement',
+        'repayment',
+        'liquidation',
+        'withdrawal',
+      ],
     },
   },
 } as const;
