@@ -1,6 +1,5 @@
 import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreditScoreResponseDto, RiskLevel } from './dto/credit-score-response.dto';
@@ -19,16 +18,11 @@ interface MlScoreResponse {
 @Injectable()
 export class ScoringService {
   private readonly logger = new Logger(ScoringService.name);
-  private readonly mlEngineUrl: string;
 
   constructor(
     private readonly httpService: HttpService,
     private readonly supabaseService: SupabaseService,
-    private readonly configService: ConfigService,
-  ) {
-    this.mlEngineUrl =
-      this.configService.get<string>('ML_ENGINE_URL') ?? 'http://localhost:8001';
-  }
+  ) {}
 
   async getCreditScore(walletAddress: string): Promise<CreditScoreResponseDto> {
     const cached = await this.getCachedScore(walletAddress);
@@ -66,7 +60,7 @@ export class ScoringService {
     try {
       const response = await firstValueFrom(
         this.httpService.get<MlScoreResponse>(
-          `${this.mlEngineUrl}/api/v1/score/${walletAddress}`,
+          `/api/v1/score/${encodeURIComponent(walletAddress)}`,
         ),
       );
       mlData = response.data;

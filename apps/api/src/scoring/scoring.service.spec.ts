@@ -1,5 +1,4 @@
 import { HttpService } from '@nestjs/axios';
-import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { of } from 'rxjs';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -49,10 +48,6 @@ describe('ScoringService', () => {
           },
         },
         { provide: SupabaseService, useValue: supabaseService },
-        {
-          provide: ConfigService,
-          useValue: { get: jest.fn().mockReturnValue('http://localhost:8001') },
-        },
       ],
     }).compile();
 
@@ -98,5 +93,15 @@ describe('ScoringService', () => {
 
     expect(httpService.get).not.toHaveBeenCalled();
     expect(result.score).toBe(600);
+  });
+
+  it('throws ServiceUnavailableException when ml-engine call fails', async () => {
+    jest.spyOn(httpService, 'get').mockImplementation(() => {
+      throw new Error('Connection refused');
+    });
+
+    await expect(service.getCreditScore(MOCK_ADDRESS)).rejects.toThrow(
+      'Credit scoring service unavailable',
+    );
   });
 });
