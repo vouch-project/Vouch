@@ -5,8 +5,11 @@
 -- a row before processing each on-chain event; the unique index guarantees
 -- idempotent handling even if the RPC delivers duplicates.
 --
--- `analytics_events` is a generic event sink for product analytics, fed by
--- both the web client and the API.
+-- `analytics_events` is a generic event sink for product analytics. It is
+-- written exclusively by the NestJS API (running as `service_role`); the web
+-- client forwards events through an API endpoint rather than inserting
+-- directly, which lets us validate / enrich payloads and keeps the table
+-- locked down via the deny-all RLS policy in 20260518000010_rls_policies.sql.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'eventProcessingStatus') THEN
