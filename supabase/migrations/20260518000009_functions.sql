@@ -7,7 +7,7 @@
 -- Returned by the auth flow whenever a wallet logs in.
 --
 -- The address is stored verbatim — callers must already have normalized it
--- per chain-type (lowercase EVM, case-preserving Solana / Bitcoin / …).
+-- per chain-type (EIP-55 checksum-cased EVM, case-preserving Solana / Bitcoin / …).
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.ensure_user (p_address address) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER
 SET

@@ -5,8 +5,8 @@
 -- to render rich UIs, drive analytics, and feed the credit-scoring engine.
 --
 -- Notes:
---   * `address` is stored lowercased; the application layer is responsible
---     for normalizing before insert.
+--   * `address` is stored using the canonical representation supplied by the
+--     application/auth layer (for example, a checksummed EVM address).
 --   * A row is created lazily the first time a wallet authenticates
 --     (see `public.ensure_user`).
 --   * KYC fields are nullable so anonymous wallets remain first-class.
