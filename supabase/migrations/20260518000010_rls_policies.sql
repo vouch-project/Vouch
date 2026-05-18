@@ -43,12 +43,13 @@ SELECT
     authenticated USING (TRUE);
 
 -- ---------------------------------------------------------------------------
--- Users: public-readable profiles (anyone can browse), self-write only.
+-- Users: the base table contains sensitive fields, so reads are limited to
+-- the current authenticated user's own row. Public profile browsing should
+-- be exposed through a separate sanitized view instead of this table.
 -- ---------------------------------------------------------------------------
-CREATE POLICY "users_public_read" ON public.users FOR
+CREATE POLICY "users_self_read" ON public.users FOR
 SELECT
-    TO anon,
-    authenticated USING (TRUE);
+    TO authenticated USING (address = public.current_wallet_address ());
 
 CREATE POLICY "users_self_update" ON public.users
 FOR UPDATE
