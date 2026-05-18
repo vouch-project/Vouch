@@ -209,14 +209,17 @@ apps/ml-engine (FastAPI)            services/ml-training (batch)
 
 When the API receives `GET /scoring/:address`:
 
-1. It proxies to `apps/ml-engine`.
+1. It proxies the request to `apps/ml-engine`.
 2. The engine computes (or reuses a cached) feature vector and persists it
    to `ml_feature_snapshots`.
 3. The engine inserts the resulting score into `credit_scores`.
-4. The API returns the row from `credit_scores_latest` for snappy reads.
+4. The API returns the response from `apps/ml-engine`; it does not currently
+   read back from `credit_scores_latest` on the request path.
 
 This persistence loop makes every scoring decision reproducible, supports
-offline retraining, and powers downstream analytics dashboards.
+offline retraining, and powers downstream analytics dashboards. Persisted
+scores can still be queried later for analytics or other database-backed
+read paths.
 
 ---
 
