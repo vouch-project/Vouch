@@ -2,21 +2,26 @@ import { InjectRedis } from '@nestjs-modules/ioredis';
 import {
   BadRequestException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { asAddress } from '@vouch/database-types';
 import { randomBytes } from 'crypto';
 import { ethers } from 'ethers';
 import type { Redis } from 'ioredis';
+import { SupabaseService } from '../supabase/supabase.service';
 import { LoginDto } from './dto/login.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   private nonceTtlSec = 10 * 60; // 10 minutes in seconds
 
   constructor(
     private readonly jwtService: JwtService,
     @InjectRedis() private readonly redis: Redis,
+    private readonly supabaseService: SupabaseService,
   ) {}
 
   async getNonce(address: string): Promise<string> {
@@ -44,10 +49,26 @@ export class AuthService {
     if (recovered.toLowerCase() !== address.toLowerCase())
       throw new UnauthorizedException('Invalid authentication credentials');
 
-    const payload = { address, role: 'authenticated' };
+    // Canonical EIP-55 checksum form is what we persist in `users.address`
+    // and what we put in the JWT `address` claim so RLS comparisons against
+    // `public.current_wallet_address()` line up exactly. (We intentionally
+    // do NOT lowercase server-side — that would mangle Solana / Bitcoin /
+    // any non-EVM address we add later. Each chain family normalizes in TS.)
+    const checksumAddress = asAddress(address);
+
+    const payload = { address: checksumAddress, role: 'authenticated' };
     const token = this.jwtService.sign(payload);
 
     await this.redis.del(this.nonceKey(address));
+
+    // Lazily upsert the user profile + stamp lastLoginAt. Failure here must
+    // not block authentication, so we log and continue.
+    const { error } = await this.supabaseService.client.rpc('ensure_user', {
+      p_address: checksumAddress,
+    });
+    if (error) {
+      this.logger.error(`ensure_user failed for ${address}: ${error.message}`);
+    }
 
     return token;
   }

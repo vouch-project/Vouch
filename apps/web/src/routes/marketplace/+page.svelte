@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { resolve } from '$app/paths';
   import { axiosApi } from '$api/axiosApi';
+  import { resolve } from '$app/paths';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import * as Card from '$lib/components/ui/card';
@@ -395,7 +395,7 @@
                     <Table.Cell
                       class="px-1 sm:px-3 lg:px-6 py-4 font-bold text-indigo-600 text-left underline-offset-4 whitespace-nowrap text-[10px] sm:text-sm min-w-max"
                     >
-                      {loan.interestRate ? `${loan.interestRate}%` : '8.5%'}
+                      {loan.interestRateBps != null ? `${(loan.interestRateBps / 100).toFixed(2)}%` : '8.5%'}
                     </Table.Cell>
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left min-w-max">
                       {#if risk}
