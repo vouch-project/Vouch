@@ -61,16 +61,27 @@ export class AuthService {
 
     await this.redis.del(this.nonceKey(address));
 
-    // Lazily upsert the user profile + stamp lastLoginAt. Failure here must
-    // not block authentication, so we log and continue.
-    const { error } = await this.supabaseService.client.rpc('ensure_user', {
-      p_address: checksumAddress,
-    });
-    if (error) {
-      this.logger.error(`ensure_user failed for ${address}: ${error.message}`);
-    }
+    void this.ensureUserProfile(checksumAddress);
 
     return token;
+  }
+
+  private async ensureUserProfile(address: string): Promise<void> {
+    try {
+      const { error } = await this.supabaseService.client
+        .rpc('ensure_user', { p_address: address })
+        .abortSignal(AbortSignal.timeout(2_000));
+
+      if (error) {
+        this.logger.error(
+          `ensure_user failed for ${address}: ${error.message}`,
+        );
+      }
+    } catch (err: unknown) {
+      this.logger.error(
+        `ensure_user threw for ${address}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   private nonceKey(address: string): string {

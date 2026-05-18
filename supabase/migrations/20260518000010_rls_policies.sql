@@ -99,3 +99,51 @@ CREATE POLICY "analytics_events_deny_all" ON public.analytics_events AS RESTRICT
 authenticated USING (FALSE)
 WITH
     CHECK (FALSE);
+
+-- ---------------------------------------------------------------------------
+-- Column-level write privileges.
+--
+-- RLS only filters *rows*, not *columns*. By default Supabase grants
+-- INSERT/UPDATE/DELETE on every `public` table to `authenticated` and
+-- `anon`, which would let a wallet that satisfies the `users_self_update`
+-- row predicate also rewrite server-managed columns on its own row
+-- (`kycStatus`, `emailVerified`, the counters, `reputationScore`, …).
+--
+-- We revoke the broad grants for these two tables and re-grant UPDATE only
+-- on the columns the end-user is allowed to touch directly. INSERTs and
+-- DELETEs remain service-only — `ensure_user` and the notification fan-out
+-- run as `service_role`, which is unaffected by these revokes.
+-- ---------------------------------------------------------------------------
+REVOKE INSERT,
+UPDATE,
+DELETE ON public.users
+FROM
+    anon,
+    authenticated;
+
+REVOKE INSERT,
+UPDATE,
+DELETE ON public.notifications
+FROM
+    anon,
+    authenticated;
+
+-- Profile fields a user owns: identity bits + free-form preferences bag.
+-- Notably excludes `address`, `kycStatus`, `kycProvider`, `kycReference`,
+-- `emailVerified`, `reputationScore`, every `total*` counter, `metadata`,
+-- and the `*At` timestamps.
+GRANT
+UPDATE (
+    handle,
+    "displayName",
+    bio,
+    "avatarUrl",
+    email,
+    preferences
+) ON public.users TO authenticated;
+
+-- The only thing a recipient is allowed to change on a notification is the
+-- read state. Everything else (type, title, body, payload, recipient, …) is
+-- written by the service and immutable from the client.
+GRANT
+UPDATE ("readAt") ON public.notifications TO authenticated;
