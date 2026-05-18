@@ -112,9 +112,12 @@ deliver toasts and update the bell badge in real time.
 ### `blockchain_event_log`
 
 Idempotency / replay log for the chain ingestion pipeline
-(`apps/api/src/blockchain-listener`). The listener calls
-`record_blockchain_event(...)`; if the event is new the function returns
-`true` and the handler proceeds, otherwise the event is skipped.
+(`apps/api/src/blockchain-listener`). The table/function pair is the
+intended deduplication mechanism for blockchain events, but the current
+`BlockchainListenerService` implementation does not invoke
+`record_blockchain_event(...)` before writing loan/transaction state.
+Do not rely on this table alone for deduplication/replay guarantees until
+the listener is explicitly wired to that RPC.
 
 ### `analytics_events`
 
