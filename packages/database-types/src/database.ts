@@ -26,6 +26,7 @@ export type Database = MergeDeep<
             lenderAddress: Address | null;
             // uint256 columns — PostgREST serialises numeric as string
             onChainLoanId: string | null;
+            interestRate: string | null;
           };
           Insert: {
             id?: UUID;
@@ -33,6 +34,7 @@ export type Database = MergeDeep<
             borrowerAddress: Address;
             lenderAddress?: Address | null;
             onChainLoanId?: string | null;
+            interestRate?: string | null;
           };
           Update: {
             id?: UUID;
@@ -40,6 +42,7 @@ export type Database = MergeDeep<
             borrowerAddress?: Address;
             lenderAddress?: Address | null;
             onChainLoanId?: string | null;
+            interestRate?: string | null;
           };
         };
         transactions: {
