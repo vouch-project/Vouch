@@ -8,11 +8,6 @@
 -- it appears in CREATE INDEX statements for defensive clarity.
 CREATE SCHEMA IF NOT EXISTS extensions;
 
--- gen_random_uuid()
-CREATE EXTENSION IF NOT EXISTS "pgcrypto"
-WITH
-    SCHEMA extensions;
-
 -- case-insensitive text (handles, emails)
 CREATE EXTENSION IF NOT EXISTS "citext"
 WITH

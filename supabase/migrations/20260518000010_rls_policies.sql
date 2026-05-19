@@ -10,6 +10,14 @@
 -- ---------------------------------------------------------------------------
 -- Public read access — reference data + marketplace surfaces.
 -- ---------------------------------------------------------------------------
+DROP POLICY IF EXISTS "Enable read access for all users" ON public.chains;
+
+DROP POLICY IF EXISTS "Enable read access for all users" ON public.tokens;
+
+DROP POLICY IF EXISTS "Enable read access for all users" ON public.loans;
+
+DROP POLICY IF EXISTS "Enable read access for all users" ON public.transactions;
+
 CREATE POLICY "chains_public_read" ON public.chains FOR
 SELECT
     TO anon,

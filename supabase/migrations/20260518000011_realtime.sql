@@ -4,7 +4,7 @@ DO $$
 DECLARE
     t text;
 BEGIN
-    FOREACH t IN ARRAY ARRAY['loans', 'transactions', 'notifications', 'credit_scores'] LOOP
+    FOREACH t IN ARRAY ARRAY['transactions', 'notifications', 'credit_scores'] LOOP
         IF NOT EXISTS (
             SELECT 1
             FROM pg_publication_tables
