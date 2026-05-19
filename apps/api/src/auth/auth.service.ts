@@ -49,11 +49,11 @@ export class AuthService {
     if (recovered.toLowerCase() !== address.toLowerCase())
       throw new UnauthorizedException('Invalid authentication credentials');
 
-    // Canonical EIP-55 checksum form is what we persist in `users.address`
-    // and what we put in the JWT `address` claim so RLS comparisons against
-    // `public.current_wallet_address()` line up exactly. (We intentionally
-    // do NOT lowercase server-side — that would mangle Solana / Bitcoin /
-    // any non-EVM address we add later. Each chain family normalizes in TS.)
+    // This login flow is currently EVM-only: signature recovery uses
+    // `ethers.verifyMessage()` and address normalization uses `asAddress()`.
+    // Persist the wallet in canonical EIP-55 checksum form in `users.address`
+    // and in the JWT `address` claim so RLS comparisons against
+    // `public.current_wallet_address()` line up exactly.
     const checksumAddress = asAddress(address);
 
     const payload = { address: checksumAddress, role: 'authenticated' };
