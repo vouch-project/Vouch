@@ -395,7 +395,7 @@
                     <Table.Cell
                       class="px-1 sm:px-3 lg:px-6 py-4 font-bold text-indigo-600 text-left underline-offset-4 whitespace-nowrap text-[10px] sm:text-sm min-w-max"
                     >
-                      {loan.interestRateBps != null ? `${(loan.interestRateBps / 100).toFixed(2)}%` : '8.5%'}
+                      {loan.interestRate != null ? `${(loan.interestRate / 100).toFixed(2)}%` : '8.5%'}
                     </Table.Cell>
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left min-w-max">
                       {#if risk}

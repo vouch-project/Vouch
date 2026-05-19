@@ -5,10 +5,9 @@
 ALTER TYPE "loanStatus"
 ADD VALUE IF NOT EXISTS 'liquidated' BEFORE 'cancelled';
 
--- New loan columns: a basis-points interest rate, free-form borrower context,
--- per-state lifecycle timestamps and a generic metadata bag.
+-- New loan columns: free-form borrower context, per-state lifecycle
+-- timestamps and a generic metadata bag.
 ALTER TABLE loans
-ADD COLUMN IF NOT EXISTS "interestRateBps" integer,
 ADD COLUMN IF NOT EXISTS purpose text,
 ADD COLUMN IF NOT EXISTS description text,
 ADD COLUMN IF NOT EXISTS "dueAt" timestamptz,
