@@ -10,6 +10,16 @@ import { CreditScoreResponseDto } from './dto/credit-score-response.dto';
 
 const SCORE_TTL_MS = 24 * 60 * 60 * 1000;
 
+// Wire format from ml-engine (Python/Pydantic snake_case)
+interface MlEngineResponse {
+  address: string;
+  score: number;
+  confidence: number;
+  model_version: string;
+  factors: string[];
+  explanation: string | null;
+}
+
 @Injectable()
 export class ScoringService {
   private readonly logger = new Logger(ScoringService.name);
@@ -23,7 +33,7 @@ export class ScoringService {
     const normalized = walletAddress.toLowerCase();
     const cached = await this.getCachedScore(normalized);
     if (cached) return cached;
-    return this.fetchScore(normalized);
+    return this.fetchAndPersistScore(normalized);
   }
 
   private async getCachedScore(
@@ -46,24 +56,54 @@ export class ScoringService {
       confidence: data.confidence as number,
       modelVersion: data.modelVersion as string,
       factors: data.factors as string[],
-      explanation: data.explanation as string | null,
+      explanation: data.explanation,
       computedAt: data.computedAt as string,
     };
   }
 
-  private async fetchScore(address: string): Promise<CreditScoreResponseDto> {
+  private async fetchAndPersistScore(
+    address: string,
+  ): Promise<CreditScoreResponseDto> {
+    let mlData: MlEngineResponse;
+
     try {
       const response = await firstValueFrom(
-        this.httpService.get<CreditScoreResponseDto>(
+        this.httpService.get<MlEngineResponse>(
           `/api/v1/score/${encodeURIComponent(address)}`,
         ),
       );
-      return response.data;
+      mlData = response.data;
     } catch (err) {
       this.logger.error(`ml-engine call failed for ${address}: ${String(err)}`);
       throw new ServiceUnavailableException(
         'Credit scoring service unavailable',
       );
     }
+
+    const computedAt = new Date().toISOString();
+    const { error } = await this.supabaseService.client
+      .from('credit_scores')
+      .insert({
+        address,
+        score: mlData.score,
+        confidence: mlData.confidence,
+        modelVersion: mlData.model_version,
+        factors: mlData.factors,
+        explanation: mlData.explanation,
+        computedAt,
+      });
+
+    if (error)
+      this.logger.error(`Failed to persist credit score: ${error.message}`);
+
+    return {
+      address,
+      score: mlData.score,
+      confidence: mlData.confidence,
+      modelVersion: mlData.model_version,
+      factors: mlData.factors,
+      explanation: mlData.explanation,
+      computedAt,
+    };
   }
 }

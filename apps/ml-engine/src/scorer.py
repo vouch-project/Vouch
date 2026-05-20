@@ -1,8 +1,7 @@
 """Credit scoring logic — loads model artifact and runs inference."""
 from dataclasses import dataclass
-from typing import Literal
 
-RiskLevel = Literal["very_low", "low", "medium", "high", "very_high"]
+from src.schemas import RiskLevel
 
 
 @dataclass

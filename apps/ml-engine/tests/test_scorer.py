@@ -1,5 +1,4 @@
 """Tests for the credit scorer module."""
-import pytest
 from fastapi.testclient import TestClient
 from main import app
 from src.scorer import CreditScorer, ScoringResult

@@ -138,25 +138,27 @@ The existing stub endpoint is upgraded to a real inference endpoint.
 
 **Path param:** `address` — EVM wallet address (e.g. `0x1234...`)
 
-**Response (200):**
+**Response (200) — ml-engine wire format (snake_case):**
 ```json
 {
   "address": "0x1234...",
   "score": 742,
   "confidence": 0.87,
-  "riskLevel": "low",
+  "model_version": "v1",
   "factors": ["wallet_age_days", "total_transactions"],
-  "modelVersion": "v1"
+  "explanation": null
 }
 ```
+
+NestJS receives this response and maps snake_case → camelCase (`model_version` → `modelVersion`) before returning `CreditScoreResponseDto` to the frontend. NestJS also inserts the score into `credit_scores` with `computedAt = now()` so future requests within the 24h TTL window read from `credit_scores_latest` without hitting ml-engine.
 
 | Field | Description |
 |---|---|
 | `score` | Integer 0–1000. Higher = lower risk. |
 | `confidence` | Model confidence in this prediction (0.0–1.0). |
-| `riskLevel` | Human-readable bucket derived from score. |
+| `model_version` | Matches the artifact filename (`credit_model_v1.json`). Stored as `modelVersion` in `credit_scores`. |
 | `factors` | Top features that influenced the score — stored in `credit_scores.factors` for explainability. |
-| `modelVersion` | Matches the artifact filename (`credit_model_v1.json`). Allows NestJS to detect when a score was produced by an outdated model. |
+| `explanation` | Optional human-readable explanation string. Null until implemented in issue #14. |
 
 **Response when model is not yet loaded (503):**
 ```json

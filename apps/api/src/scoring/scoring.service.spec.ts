@@ -6,23 +6,24 @@ import { ScoringService } from './scoring.service';
 
 const MOCK_ADDRESS = '0x1234567890abcdef1234567890abcdef12345678';
 
+// Matches the actual ml-engine wire format (Pydantic snake_case)
 const MOCK_ML_RESPONSE = {
   address: MOCK_ADDRESS,
   score: 742,
   confidence: 0.87,
-  modelVersion: 'v1',
+  model_version: 'v1',
   factors: ['wallet_age_days'],
   explanation: null,
-  computedAt: new Date().toISOString(),
 };
 
 describe('ScoringService', () => {
   let service: ScoringService;
   let httpGetSpy: jest.Mock;
+  let insertMock: jest.Mock;
   let supabaseService: { client: { from: jest.Mock } };
 
   beforeEach(async () => {
-    httpGetSpy = jest.fn().mockReturnValue(of({ data: MOCK_ML_RESPONSE }));
+    insertMock = jest.fn().mockResolvedValue({ error: null });
 
     supabaseService = {
       client: {
@@ -32,9 +33,12 @@ describe('ScoringService', () => {
               single: jest.fn().mockResolvedValue({ data: null, error: null }),
             }),
           }),
+          insert: insertMock,
         })),
       },
     };
+
+    httpGetSpy = jest.fn().mockReturnValue(of({ data: MOCK_ML_RESPONSE }));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -51,16 +55,24 @@ describe('ScoringService', () => {
     expect(service).toBeDefined();
   });
 
-  it('calls ml-engine when no cached score exists', async () => {
+  it('calls ml-engine, maps snake_case to camelCase, and inserts score', async () => {
     const result = await service.getCreditScore(MOCK_ADDRESS);
 
     expect(httpGetSpy).toHaveBeenCalledWith(
       expect.stringContaining(`/api/v1/score/${MOCK_ADDRESS.toLowerCase()}`),
     );
     expect(result.score).toBe(742);
+    expect(result.modelVersion).toBe('v1');
+    expect(insertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        address: MOCK_ADDRESS.toLowerCase(),
+        score: 742,
+        modelVersion: 'v1',
+      }),
+    );
   });
 
-  it('normalizes address to lowercase before querying and calling ml-engine', async () => {
+  it('normalizes address to lowercase', async () => {
     await service.getCreditScore('0xABCDEF1234567890ABCDEF1234567890ABCDEF12');
 
     expect(httpGetSpy).toHaveBeenCalledWith(
@@ -89,6 +101,7 @@ describe('ScoringService', () => {
             .mockResolvedValue({ data: recentScore, error: null }),
         }),
       }),
+      insert: insertMock,
     }));
 
     const result = await service.getCreditScore(MOCK_ADDRESS);
@@ -116,6 +129,7 @@ describe('ScoringService', () => {
             .mockResolvedValue({ data: staleScore, error: null }),
         }),
       }),
+      insert: insertMock,
     }));
 
     const result = await service.getCreditScore(MOCK_ADDRESS);
