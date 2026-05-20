@@ -1,6 +1,5 @@
 CREATE TABLE IF NOT EXISTS training_dataset (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    -- TODO: migrate walletAddress FK to userId uuid REFERENCES users(id) once #11 merges
     "walletAddress" address NOT NULL,
     "walletAgeDays" integer NOT NULL,
     "totalTransactions" integer NOT NULL,

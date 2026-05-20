@@ -1,6 +1,5 @@
 CREATE TABLE IF NOT EXISTS user_credit_features (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    -- TODO: migrate walletAddress FK to userId uuid REFERENCES users(id) once #11 merges
     "walletAddress" address NOT NULL UNIQUE,
     "totalLoansTaken" integer NOT NULL DEFAULT 0,
     "totalLoansRepaid" integer NOT NULL DEFAULT 0,
