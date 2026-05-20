@@ -1,7 +1,6 @@
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { SupabaseModule } from '../supabase/supabase.module';
 import { ScoringController } from './scoring.controller';
 import { ScoringService } from './scoring.service';
 
@@ -18,7 +17,6 @@ import { ScoringService } from './scoring.service';
       }),
       inject: [ConfigService],
     }),
-    SupabaseModule,
   ],
   controllers: [ScoringController],
   providers: [ScoringService],

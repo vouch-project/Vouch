@@ -10,6 +10,3 @@ ALTER TABLE user_credit_features
     ADD CONSTRAINT user_credit_features_loans_taken_non_neg CHECK ("totalLoansTaken" >= 0),
     ADD CONSTRAINT user_credit_features_loans_repaid_non_neg CHECK ("totalLoansRepaid" >= 0),
     ADD CONSTRAINT user_credit_features_loans_defaulted_non_neg CHECK ("totalLoansDefaulted" >= 0);
-
--- Drop duplicate index on credit_scores.walletAddress (UNIQUE constraint already creates one)
-DROP INDEX IF EXISTS credit_scores_wallet_idx;
