@@ -5,6 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { firstValueFrom } from 'rxjs';
+import { asAddress } from '@vouch/database-types';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreditScoreResponseDto } from './dto/credit-score-response.dto';
 
@@ -84,7 +85,7 @@ export class ScoringService {
     const { error } = await this.supabaseService.client
       .from('credit_scores')
       .insert({
-        address,
+        address: asAddress(address),
         score: mlData.score,
         confidence: mlData.confidence,
         modelVersion: mlData.model_version,

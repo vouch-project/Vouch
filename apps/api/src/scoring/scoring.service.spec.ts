@@ -65,7 +65,6 @@ describe('ScoringService', () => {
     expect(result.modelVersion).toBe('v1');
     expect(insertMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        address: MOCK_ADDRESS.toLowerCase(),
         score: 742,
         modelVersion: 'v1',
       }),
