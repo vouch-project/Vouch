@@ -699,19 +699,17 @@ PASS src/credit-score/credit-score.service.spec.ts
 Create `apps/api/src/credit-score/credit-score.controller.ts`:
 
 ```typescript
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '../guards/jwt-auth.guard';
-import { CreditScoreService } from './credit-score.service';
+import { Controller, Get, Param } from '@nestjs/common';
 import { CreditScoreResponseDto } from './dto/credit-score-response.dto';
+import { ScoringService } from './scoring.service';
 
-@Controller('users')
-export class CreditScoreController {
-  constructor(private readonly creditScoreService: CreditScoreService) {}
+@Controller('scoring')
+export class ScoringController {
+  constructor(private readonly scoringService: ScoringService) {}
 
-  @Get('score/:address')
-  @UseGuards(JwtAuthGuard)
-  getScore(@Param('address') address: string): Promise<CreditScoreResponseDto> {
-    return this.creditScoreService.getScore(address);
+  @Get(':address')
+  getCreditScore(@Param('address') address: string): Promise<CreditScoreResponseDto> {
+    return this.scoringService.getCreditScore(address);
   }
 }
 ```
