@@ -1,5 +1,6 @@
 import { Controller, Get, Param } from '@nestjs/common';
-import { ScoringService, type CreditScoreResult } from './scoring.service';
+import { CreditScoreResponseDto } from './dto/credit-score-response.dto';
+import { ScoringService } from './scoring.service';
 
 @Controller('scoring')
 export class ScoringController {
@@ -8,7 +9,7 @@ export class ScoringController {
   @Get(':address')
   getCreditScore(
     @Param('address') address: string,
-  ): Promise<CreditScoreResult> {
+  ): Promise<CreditScoreResponseDto> {
     return this.scoringService.getCreditScore(address);
   }
 }

@@ -1,26 +1,117 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { firstValueFrom } from 'rxjs';
+import { asAddress } from '@vouch/database-types';
+import { SupabaseService } from '../supabase/supabase.service';
+import { CreditScoreResponseDto } from './dto/credit-score-response.dto';
 
-export interface CreditScoreResult {
+const SCORE_TTL_MS = 24 * 60 * 60 * 1000;
+
+// Wire format from ml-engine (Python/Pydantic snake_case)
+interface MlEngineResponse {
   address: string;
   score: number;
   confidence: number;
+  model_version: string;
   factors: string[];
-  message: string;
+  explanation: string | null;
 }
 
 @Injectable()
 export class ScoringService {
-  constructor(private readonly httpService: HttpService) {}
+  private readonly logger = new Logger(ScoringService.name);
 
-  async getCreditScore(address: string): Promise<CreditScoreResult> {
-    const { data } = await firstValueFrom(
-      this.httpService.get<CreditScoreResult>(
-        `/api/v1/score/${encodeURIComponent(address)}`,
-      ),
-    );
+  constructor(
+    private readonly httpService: HttpService,
+    private readonly supabaseService: SupabaseService,
+  ) {}
 
-    return data;
+  async getCreditScore(walletAddress: string): Promise<CreditScoreResponseDto> {
+    let address: string;
+    try {
+      address = asAddress(walletAddress);
+    } catch {
+      throw new BadRequestException('Invalid wallet address');
+    }
+    const cached = await this.getCachedScore(address);
+    if (cached) return cached;
+    return this.fetchAndPersistScore(address);
+  }
+
+  private async getCachedScore(
+    address: string,
+  ): Promise<CreditScoreResponseDto | null> {
+    const { data, error } = await this.supabaseService.client
+      .from('credit_scores_latest')
+      .select('*')
+      .eq('address', address)
+      .single();
+
+    if (error || !data) return null;
+
+    const computedAt = new Date(data.computedAt as string).getTime();
+    if (Date.now() - computedAt > SCORE_TTL_MS) return null;
+
+    return {
+      address: data.address as string,
+      score: data.score as number,
+      confidence: data.confidence as number,
+      modelVersion: data.modelVersion as string,
+      factors: data.factors as string[],
+      explanation: data.explanation,
+      computedAt: data.computedAt as string,
+    };
+  }
+
+  private async fetchAndPersistScore(
+    address: string,
+  ): Promise<CreditScoreResponseDto> {
+    let mlData: MlEngineResponse;
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<MlEngineResponse>(
+          `/api/v1/score/${encodeURIComponent(address)}`,
+        ),
+      );
+      mlData = response.data;
+    } catch (err) {
+      this.logger.error(`ml-engine call failed for ${address}: ${String(err)}`);
+      throw new ServiceUnavailableException(
+        'Credit scoring service unavailable',
+      );
+    }
+
+    const computedAt = new Date().toISOString();
+    const { error } = await this.supabaseService.client
+      .from('credit_scores')
+      .insert({
+        address: asAddress(address),
+        score: mlData.score,
+        confidence: mlData.confidence,
+        modelVersion: mlData.model_version,
+        factors: mlData.factors,
+        explanation: mlData.explanation,
+        computedAt,
+      });
+
+    // best-effort: return score to caller even if persistence fails
+    if (error)
+      this.logger.error(`Failed to persist credit score: ${error.message}`);
+
+    return {
+      address,
+      score: mlData.score,
+      confidence: mlData.confidence,
+      modelVersion: mlData.model_version,
+      factors: mlData.factors,
+      explanation: mlData.explanation,
+      computedAt,
+    };
   }
 }

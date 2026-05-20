@@ -1,7 +1,9 @@
 """Vouch Credit Scoring ML Engine."""
-
 from fastapi import FastAPI
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+
+from src.schemas import CreditScoreResponse
+from src.scorer import CreditScorer
 
 app = FastAPI(
     title="Vouch ML Engine",
@@ -9,13 +11,7 @@ app = FastAPI(
     version="0.1.0",
 )
 
-
-class CreditScoreResponse(BaseModel):
-    address: str
-    score: int
-    confidence: float
-    factors: list[str]
-    message: str
+scorer = CreditScorer()
 
 
 @app.get("/health")
@@ -25,22 +21,22 @@ async def health() -> dict[str, str]:
 
 
 @app.get("/api/v1/score/{address}", response_model=CreditScoreResponse)
-async def get_credit_score(address: str) -> CreditScoreResponse:
-    """Return a deterministic mock credit score for the given wallet address.
+async def get_credit_score(address: str) -> CreditScoreResponse | JSONResponse:
+    """Return a credit score for the given wallet address."""
+    if not scorer.is_ready():
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Model not loaded — run training pipeline first."},
+        )
 
-    Score is derived from the character sum of the address, producing a stable
-    value in the 650–850 range. This mirrors the previous frontend stub and will
-    be replaced with a real ML model in a future iteration.
-    """
-    char_sum = sum(ord(c) for c in address)
-    score = 650 + (char_sum % 200)
-
+    result = scorer.score(address)
     return CreditScoreResponse(
         address=address,
-        score=score,
-        confidence=0.5,
-        factors=[],
-        message="Scoring model not yet trained — returning deterministic mock.",
+        score=result.score,
+        confidence=result.confidence,
+        factors=result.factors,
+        model_version=result.model_version,
+        explanation=result.explanation,
     )
 
 

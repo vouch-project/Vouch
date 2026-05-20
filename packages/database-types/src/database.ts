@@ -80,56 +80,10 @@ export type Database = MergeDeep<
             logIndex?: string;
           };
         };
-        vouches: {
-          Row: {
-            id: UUID;
-            chainId: UUID | null;
-            stakeTokenId: UUID | null;
-            voucherAddress: Address;
-            voucheeAddress: Address;
-            // uint256 column — PostgREST serialises numeric as string
-            onChainVouchId: string | null;
-          };
-          Insert: {
-            id?: UUID;
-            chainId?: UUID | null;
-            stakeTokenId?: UUID | null;
-            voucherAddress: Address;
-            voucheeAddress: Address;
-            onChainVouchId?: string | null;
-          };
-          Update: {
-            id?: UUID;
-            chainId?: UUID | null;
-            stakeTokenId?: UUID | null;
-            voucherAddress?: Address;
-            voucheeAddress?: Address;
-            onChainVouchId?: string | null;
-          };
-        };
-        blockchain_event_log: {
-          Row: {
-            id: UUID;
-            chainId: UUID;
-            contractAddress: Address;
-            // uint256 columns — PostgREST serialises numeric as string
-            blockNumber: string;
-            logIndex: string;
-          };
-          Insert: {
-            id?: UUID;
-            chainId: UUID;
-            contractAddress: Address;
-            blockNumber: string;
-            logIndex: string;
-          };
-          Update: {
-            id?: UUID;
-            chainId?: UUID;
-            contractAddress?: Address;
-            blockNumber?: string;
-            logIndex?: string;
-          };
+        credit_scores: {
+          Row: { id: UUID; address: Address };
+          Insert: { id?: UUID; address: Address };
+          Update: { id?: UUID; address?: Address };
         };
       };
       Functions: {
