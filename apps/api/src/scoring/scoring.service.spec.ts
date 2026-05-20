@@ -1,4 +1,5 @@
 import { HttpService } from '@nestjs/axios';
+import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { of } from 'rxjs';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -77,8 +78,18 @@ describe('ScoringService', () => {
     await service.getCreditScore('0x1234567890abcdef1234567890abcdef12345678');
 
     expect(httpGetSpy).toHaveBeenCalledWith(
-      expect.stringContaining('/api/v1/score/'),
+      expect.stringContaining(`/api/v1/score/${MOCK_ADDRESS}`),
     );
+    expect(insertMock).toHaveBeenCalledWith(
+      expect.objectContaining({ address: MOCK_ADDRESS }),
+    );
+  });
+
+  it('throws BadRequestException for an invalid wallet address', async () => {
+    await expect(service.getCreditScore('not-an-address')).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(httpGetSpy).not.toHaveBeenCalled();
   });
 
   it('returns cached score when computedAt is within 24h', async () => {

@@ -11,6 +11,7 @@ class ScoringResult:
     risk_level: RiskLevel
     factors: list[str]
     model_version: str
+    explanation: str | None = None
 
 
 class CreditScorer:

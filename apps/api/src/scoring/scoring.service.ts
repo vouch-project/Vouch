@@ -1,5 +1,6 @@
 import { HttpService } from '@nestjs/axios';
 import {
+  BadRequestException,
   Injectable,
   Logger,
   ServiceUnavailableException,
@@ -31,7 +32,12 @@ export class ScoringService {
   ) {}
 
   async getCreditScore(walletAddress: string): Promise<CreditScoreResponseDto> {
-    const address = asAddress(walletAddress);
+    let address: string;
+    try {
+      address = asAddress(walletAddress);
+    } catch {
+      throw new BadRequestException('Invalid wallet address');
+    }
     const cached = await this.getCachedScore(address);
     if (cached) return cached;
     return this.fetchAndPersistScore(address);
@@ -94,6 +100,7 @@ export class ScoringService {
         computedAt,
       });
 
+    // best-effort: return score to caller even if persistence fails
     if (error)
       this.logger.error(`Failed to persist credit score: ${error.message}`);
 

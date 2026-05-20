@@ -13,4 +13,6 @@ CREATE TABLE IF NOT EXISTS training_dataset (
 CREATE INDEX IF NOT EXISTS training_dataset_wallet_idx ON training_dataset ("walletAddress");
 CREATE INDEX IF NOT EXISTS training_dataset_label_idx ON training_dataset ("wasLiquidated");
 
+-- RLS enabled; no public policy by design — this table is written by offline ETL scripts
+-- using the service_role key, which bypasses RLS. No authenticated/anon access intended.
 ALTER TABLE training_dataset ENABLE ROW LEVEL SECURITY;
