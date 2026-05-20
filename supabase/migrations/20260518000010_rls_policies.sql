@@ -4,7 +4,9 @@
 --   * `service_role` (used by the NestJS API with the secret key) bypasses
 --     RLS entirely and is responsible for all writes.
 --   * `anon` + `authenticated` clients (the SvelteKit web app) can SELECT
---     public marketplace data and write only their own profile / metadata.
+--     public marketplace data, read their own notifications + ML feature
+--     snapshots, and mark their own notifications as read
+--     (`notifications.readAt`). No other client-side writes are permitted.
 --   * The web app authenticates via wallet signatures; the API returns a JWT
 --     with an `address` claim, which `public.current_wallet_address()` reads.
 -- ---------------------------------------------------------------------------
