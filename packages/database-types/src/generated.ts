@@ -28,11 +28,96 @@ export type Database = {
   };
   public: {
     Tables: {
+      analytics_events: {
+        Row: {
+          actorAddress: string | null;
+          eventName: string;
+          id: number;
+          occurredAt: string;
+          properties: Json;
+          sessionId: string | null;
+        };
+        Insert: {
+          actorAddress?: string | null;
+          eventName: string;
+          id?: number;
+          occurredAt?: string;
+          properties?: Json;
+          sessionId?: string | null;
+        };
+        Update: {
+          actorAddress?: string | null;
+          eventName?: string;
+          id?: number;
+          occurredAt?: string;
+          properties?: Json;
+          sessionId?: string | null;
+        };
+        Relationships: [];
+      };
+      blockchain_event_log: {
+        Row: {
+          args: Json;
+          blockHash: string;
+          blockNumber: number;
+          chainId: string;
+          contractAddress: string;
+          createdAt: string;
+          error: string | null;
+          eventName: string;
+          id: string;
+          logIndex: number;
+          processedAt: string | null;
+          status: Database['public']['Enums']['eventProcessingStatus'];
+          txHash: string;
+        };
+        Insert: {
+          args?: Json;
+          blockHash: string;
+          blockNumber: number;
+          chainId: string;
+          contractAddress: string;
+          createdAt?: string;
+          error?: string | null;
+          eventName: string;
+          id?: string;
+          logIndex: number;
+          processedAt?: string | null;
+          status?: Database['public']['Enums']['eventProcessingStatus'];
+          txHash: string;
+        };
+        Update: {
+          args?: Json;
+          blockHash?: string;
+          blockNumber?: number;
+          chainId?: string;
+          contractAddress?: string;
+          createdAt?: string;
+          error?: string | null;
+          eventName?: string;
+          id?: string;
+          logIndex?: number;
+          processedAt?: string | null;
+          status?: Database['public']['Enums']['eventProcessingStatus'];
+          txHash?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'blockchain_event_log_chainId_fkey';
+            columns: ['chainId'];
+            isOneToOne: false;
+            referencedRelation: 'chains';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       chains: {
         Row: {
+          blockExplorerUrl: string | null;
           contractAddress: string;
           createdAt: string;
           id: string;
+          isTestnet: boolean;
           name: string | null;
           networkId: string;
           networkType: Database['public']['Enums']['addressType'];
@@ -40,9 +125,11 @@ export type Database = {
           updatedAt: string;
         };
         Insert: {
+          blockExplorerUrl?: string | null;
           contractAddress: string;
           createdAt?: string;
           id?: string;
+          isTestnet?: boolean;
           name?: string | null;
           networkId: string;
           networkType: Database['public']['Enums']['addressType'];
@@ -50,9 +137,11 @@ export type Database = {
           updatedAt?: string;
         };
         Update: {
+          blockExplorerUrl?: string | null;
           contractAddress?: string;
           createdAt?: string;
           id?: string;
+          isTestnet?: boolean;
           name?: string | null;
           networkId?: string;
           networkType?: Database['public']['Enums']['addressType'];
@@ -61,54 +150,111 @@ export type Database = {
         };
         Relationships: [];
       };
+      credit_scores: {
+        Row: {
+          address: string;
+          computedAt: string;
+          confidence: number;
+          explanation: string | null;
+          factors: Json;
+          id: string;
+          modelVersion: string;
+          score: number;
+        };
+        Insert: {
+          address: string;
+          computedAt?: string;
+          confidence: number;
+          explanation?: string | null;
+          factors?: Json;
+          id?: string;
+          modelVersion: string;
+          score: number;
+        };
+        Update: {
+          address?: string;
+          computedAt?: string;
+          confidence?: number;
+          explanation?: string | null;
+          factors?: Json;
+          id?: string;
+          modelVersion?: string;
+          score?: number;
+        };
+        Relationships: [];
+      };
       loans: {
         Row: {
           borrowerAddress: string;
+          cancelledAt: string | null;
           chainId: string;
           collateralAmount: string | null;
           collateralTokenId: string | null;
           createdAt: string;
+          description: string | null;
+          dueAt: string | null;
           duration: string | null;
+          fundedAt: string | null;
           id: string;
           interestRate: number | null;
           lenderAddress: string | null;
+          liquidatedAt: string | null;
+          metadata: Json;
           onChainLoanId: number | null;
           principalAmount: string | null;
           principalTokenId: string | null;
+          purpose: string | null;
+          repaidAt: string | null;
           startAt: string | null;
           status: Database['public']['Enums']['loanStatus'];
           updatedAt: string;
         };
         Insert: {
           borrowerAddress: string;
+          cancelledAt?: string | null;
           chainId: string;
           collateralAmount?: string | null;
           collateralTokenId?: string | null;
           createdAt?: string;
+          description?: string | null;
+          dueAt?: string | null;
           duration?: string | null;
+          fundedAt?: string | null;
           id?: string;
           interestRate?: number | null;
           lenderAddress?: string | null;
+          liquidatedAt?: string | null;
+          metadata?: Json;
           onChainLoanId?: number | null;
           principalAmount?: string | null;
           principalTokenId?: string | null;
+          purpose?: string | null;
+          repaidAt?: string | null;
           startAt?: string | null;
           status?: Database['public']['Enums']['loanStatus'];
           updatedAt?: string;
         };
         Update: {
           borrowerAddress?: string;
+          cancelledAt?: string | null;
           chainId?: string;
           collateralAmount?: string | null;
           collateralTokenId?: string | null;
           createdAt?: string;
+          description?: string | null;
+          dueAt?: string | null;
           duration?: string | null;
+          fundedAt?: string | null;
           id?: string;
           interestRate?: number | null;
           lenderAddress?: string | null;
+          liquidatedAt?: string | null;
+          metadata?: Json;
           onChainLoanId?: number | null;
           principalAmount?: string | null;
           principalTokenId?: string | null;
+          purpose?: string | null;
+          repaidAt?: string | null;
           startAt?: string | null;
           status?: Database['public']['Enums']['loanStatus'];
           updatedAt?: string;
@@ -137,12 +283,85 @@ export type Database = {
           },
         ];
       };
+      ml_feature_snapshots: {
+        Row: {
+          address: string;
+          createdAt: string;
+          features: Json;
+          featureSet: string;
+          id: string;
+          sourceHash: string | null;
+        };
+        Insert: {
+          address: string;
+          createdAt?: string;
+          features: Json;
+          featureSet: string;
+          id?: string;
+          sourceHash?: string | null;
+        };
+        Update: {
+          address?: string;
+          createdAt?: string;
+          features?: Json;
+          featureSet?: string;
+          id?: string;
+          sourceHash?: string | null;
+        };
+        Relationships: [];
+      };
+      notifications: {
+        Row: {
+          body: string | null;
+          createdAt: string;
+          id: string;
+          loanId: string | null;
+          payload: Json;
+          readAt: string | null;
+          recipientAddress: string;
+          title: string;
+          type: Database['public']['Enums']['notificationType'];
+        };
+        Insert: {
+          body?: string | null;
+          createdAt?: string;
+          id?: string;
+          loanId?: string | null;
+          payload?: Json;
+          readAt?: string | null;
+          recipientAddress: string;
+          title: string;
+          type: Database['public']['Enums']['notificationType'];
+        };
+        Update: {
+          body?: string | null;
+          createdAt?: string;
+          id?: string;
+          loanId?: string | null;
+          payload?: Json;
+          readAt?: string | null;
+          recipientAddress?: string;
+          title?: string;
+          type?: Database['public']['Enums']['notificationType'];
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'notifications_loanId_fkey';
+            columns: ['loanId'];
+            isOneToOne: false;
+            referencedRelation: 'loans';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       tokens: {
         Row: {
           address: string;
           chainId: string;
+          createdAt: string;
           decimals: number;
           id: string;
+          isNative: boolean;
           logoURI: string | null;
           name: string | null;
           symbol: string;
@@ -150,8 +369,10 @@ export type Database = {
         Insert: {
           address: string;
           chainId: string;
+          createdAt?: string;
           decimals: number;
           id?: string;
+          isNative?: boolean;
           logoURI?: string | null;
           name?: string | null;
           symbol: string;
@@ -159,8 +380,10 @@ export type Database = {
         Update: {
           address?: string;
           chainId?: string;
+          createdAt?: string;
           decimals?: number;
           id?: string;
+          isNative?: boolean;
           logoURI?: string | null;
           name?: string | null;
           symbol?: string;
@@ -254,9 +477,161 @@ export type Database = {
           },
         ];
       };
+      users: {
+        Row: {
+          address: string;
+          avatarUrl: string | null;
+          bio: string | null;
+          createdAt: string;
+          displayName: string | null;
+          email: string | null;
+          emailVerified: boolean;
+          handle: string | null;
+          id: string;
+          kycProvider: string | null;
+          kycReference: string | null;
+          kycStatus: Database['public']['Enums']['kycStatus'];
+          lastLoginAt: string | null;
+          metadata: Json;
+          preferences: Json;
+          reputationScore: number;
+          totalLoansBorrowed: number;
+          totalLoansFunded: number;
+          totalVouchesGiven: number;
+          totalVouchesReceived: number;
+          updatedAt: string;
+        };
+        Insert: {
+          address: string;
+          avatarUrl?: string | null;
+          bio?: string | null;
+          createdAt?: string;
+          displayName?: string | null;
+          email?: string | null;
+          emailVerified?: boolean;
+          handle?: string | null;
+          id?: string;
+          kycProvider?: string | null;
+          kycReference?: string | null;
+          kycStatus?: Database['public']['Enums']['kycStatus'];
+          lastLoginAt?: string | null;
+          metadata?: Json;
+          preferences?: Json;
+          reputationScore?: number;
+          totalLoansBorrowed?: number;
+          totalLoansFunded?: number;
+          totalVouchesGiven?: number;
+          totalVouchesReceived?: number;
+          updatedAt?: string;
+        };
+        Update: {
+          address?: string;
+          avatarUrl?: string | null;
+          bio?: string | null;
+          createdAt?: string;
+          displayName?: string | null;
+          email?: string | null;
+          emailVerified?: boolean;
+          handle?: string | null;
+          id?: string;
+          kycProvider?: string | null;
+          kycReference?: string | null;
+          kycStatus?: Database['public']['Enums']['kycStatus'];
+          lastLoginAt?: string | null;
+          metadata?: Json;
+          preferences?: Json;
+          reputationScore?: number;
+          totalLoansBorrowed?: number;
+          totalLoansFunded?: number;
+          totalVouchesGiven?: number;
+          totalVouchesReceived?: number;
+          updatedAt?: string;
+        };
+        Relationships: [];
+      };
+      vouches: {
+        Row: {
+          chainId: string | null;
+          createdAt: string;
+          expiresAt: string | null;
+          id: string;
+          note: string | null;
+          onChainTxHash: string | null;
+          onChainVouchId: number | null;
+          revokedAt: string | null;
+          stakeAmount: string | null;
+          stakeTokenId: string | null;
+          status: Database['public']['Enums']['vouchStatus'];
+          trustWeight: number;
+          updatedAt: string;
+          voucheeAddress: string;
+          voucherAddress: string;
+        };
+        Insert: {
+          chainId?: string | null;
+          createdAt?: string;
+          expiresAt?: string | null;
+          id?: string;
+          note?: string | null;
+          onChainTxHash?: string | null;
+          onChainVouchId?: number | null;
+          revokedAt?: string | null;
+          stakeAmount?: string | null;
+          stakeTokenId?: string | null;
+          status?: Database['public']['Enums']['vouchStatus'];
+          trustWeight?: number;
+          updatedAt?: string;
+          voucheeAddress: string;
+          voucherAddress: string;
+        };
+        Update: {
+          chainId?: string | null;
+          createdAt?: string;
+          expiresAt?: string | null;
+          id?: string;
+          note?: string | null;
+          onChainTxHash?: string | null;
+          onChainVouchId?: number | null;
+          revokedAt?: string | null;
+          stakeAmount?: string | null;
+          stakeTokenId?: string | null;
+          status?: Database['public']['Enums']['vouchStatus'];
+          trustWeight?: number;
+          updatedAt?: string;
+          voucheeAddress?: string;
+          voucherAddress?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'vouches_chainId_fkey';
+            columns: ['chainId'];
+            isOneToOne: false;
+            referencedRelation: 'chains';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'vouches_stakeTokenId_fkey';
+            columns: ['stakeTokenId'];
+            isOneToOne: false;
+            referencedRelation: 'tokens';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
     };
     Views: {
-      [_ in never]: never;
+      credit_scores_latest: {
+        Row: {
+          address: string | null;
+          computedAt: string | null;
+          confidence: number | null;
+          explanation: string | null;
+          factors: Json | null;
+          modelVersion: string | null;
+          score: number | null;
+        };
+        Relationships: [];
+      };
     };
     Functions: {
       create_loan_with_transaction: {
@@ -277,6 +652,8 @@ export type Database = {
         };
         Returns: string;
       };
+      current_wallet_address: { Args: never; Returns: string };
+      ensure_user: { Args: { p_address: unknown }; Returns: string };
       fund_loan_with_transaction: {
         Args: {
           p_block_hash: string;
@@ -293,12 +670,37 @@ export type Database = {
         };
         Returns: undefined;
       };
+      record_blockchain_event: {
+        Args: {
+          p_args: Json;
+          p_block_hash: string;
+          p_block_number: unknown;
+          p_contract_address: unknown;
+          p_event_name: string;
+          p_log_index: unknown;
+          p_network_id: string;
+          p_tx_hash: string;
+        };
+        Returns: boolean;
+      };
     };
     Enums: {
       addressType: 'evm' | 'solana' | 'bitcoin';
-      loanStatus: 'pending' | 'active' | 'repaid' | 'defaulted' | 'cancelled';
+      eventProcessingStatus: 'pending' | 'processed' | 'failed' | 'skipped';
+      kycStatus: 'none' | 'pending' | 'verified' | 'rejected';
+      loanStatus: 'pending' | 'active' | 'repaid' | 'defaulted' | 'liquidated' | 'cancelled';
+      notificationType:
+        | 'loan_funded'
+        | 'loan_repaid'
+        | 'loan_liquidated'
+        | 'loan_due_soon'
+        | 'vouch_received'
+        | 'vouch_revoked'
+        | 'credit_score_updated'
+        | 'system';
       transactionStatus: 'pending' | 'confirmed' | 'failed';
       transactionType: 'collateral_deposit' | 'loan_disbursement' | 'repayment' | 'liquidation' | 'withdrawal';
+      vouchStatus: 'active' | 'revoked' | 'slashed' | 'expired';
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -422,9 +824,22 @@ export const Constants = {
   public: {
     Enums: {
       addressType: ['evm', 'solana', 'bitcoin'],
-      loanStatus: ['pending', 'active', 'repaid', 'defaulted', 'cancelled'],
+      eventProcessingStatus: ['pending', 'processed', 'failed', 'skipped'],
+      kycStatus: ['none', 'pending', 'verified', 'rejected'],
+      loanStatus: ['pending', 'active', 'repaid', 'defaulted', 'liquidated', 'cancelled'],
+      notificationType: [
+        'loan_funded',
+        'loan_repaid',
+        'loan_liquidated',
+        'loan_due_soon',
+        'vouch_received',
+        'vouch_revoked',
+        'credit_score_updated',
+        'system',
+      ],
       transactionStatus: ['pending', 'confirmed', 'failed'],
       transactionType: ['collateral_deposit', 'loan_disbursement', 'repayment', 'liquidation', 'withdrawal'],
+      vouchStatus: ['active', 'revoked', 'slashed', 'expired'],
     },
   },
 } as const;

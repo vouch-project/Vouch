@@ -80,6 +80,57 @@ export type Database = MergeDeep<
             logIndex?: string;
           };
         };
+        vouches: {
+          Row: {
+            id: UUID;
+            chainId: UUID | null;
+            stakeTokenId: UUID | null;
+            voucherAddress: Address;
+            voucheeAddress: Address;
+            // uint256 column — PostgREST serialises numeric as string
+            onChainVouchId: string | null;
+          };
+          Insert: {
+            id?: UUID;
+            chainId?: UUID | null;
+            stakeTokenId?: UUID | null;
+            voucherAddress: Address;
+            voucheeAddress: Address;
+            onChainVouchId?: string | null;
+          };
+          Update: {
+            id?: UUID;
+            chainId?: UUID | null;
+            stakeTokenId?: UUID | null;
+            voucherAddress?: Address;
+            voucheeAddress?: Address;
+            onChainVouchId?: string | null;
+          };
+        };
+        blockchain_event_log: {
+          Row: {
+            id: UUID;
+            chainId: UUID;
+            contractAddress: Address;
+            // uint256 columns — PostgREST serialises numeric as string
+            blockNumber: string;
+            logIndex: string;
+          };
+          Insert: {
+            id?: UUID;
+            chainId: UUID;
+            contractAddress: Address;
+            blockNumber: string;
+            logIndex: string;
+          };
+          Update: {
+            id?: UUID;
+            chainId?: UUID;
+            contractAddress?: Address;
+            blockNumber?: string;
+            logIndex?: string;
+          };
+        };
       };
       Functions: {
         create_loan_with_transaction: {
@@ -92,6 +143,12 @@ export type Database = MergeDeep<
             p_on_chain_loan_id: string;
           };
           Returns: string;
+        };
+        // The SQL function uses nullif(...) and returns NULL when the JWT
+        // is missing the `address` claim (unauthenticated callers).
+        current_wallet_address: {
+          Args: Record<string, never>;
+          Returns: string | null;
         };
       };
     };

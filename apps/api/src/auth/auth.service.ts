@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { asAddress } from '@vouch/database-types';
 import { randomBytes } from 'crypto';
 import { ethers } from 'ethers';
 import type { Redis } from 'ioredis';
@@ -44,7 +45,22 @@ export class AuthService {
     if (recovered.toLowerCase() !== address.toLowerCase())
       throw new UnauthorizedException('Invalid authentication credentials');
 
-    const payload = { address, role: 'authenticated' };
+    // This login flow is currently EVM-only: signature recovery uses
+    // `ethers.verifyMessage()` and address normalization uses `asAddress()`.
+    // The JWT `address` claim is stored in canonical EIP-55 checksum form so
+    // RLS comparisons against `public.current_wallet_address()` line up exactly.
+    let checksumAddress;
+    try {
+      checksumAddress = asAddress(address);
+    } catch {
+      // `asAddress` throws for any non-EVM-address input. Signature recovery
+      // above already implies the string is a valid hex address, so reaching
+      // here means the client sent a malformed address — surface it as a 400
+      // rather than letting it bubble up as a 500.
+      throw new BadRequestException('Invalid address');
+    }
+
+    const payload = { address: checksumAddress, role: 'authenticated' };
     const token = this.jwtService.sign(payload);
 
     await this.redis.del(this.nonceKey(address));
