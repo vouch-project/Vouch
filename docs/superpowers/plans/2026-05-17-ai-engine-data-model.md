@@ -16,11 +16,11 @@
 - `supabase/migrations/20260517000001_training_dataset.sql`
 - `supabase/migrations/20260517000002_credit_scores.sql`
 - `supabase/migrations/20260517000003_user_credit_features.sql`
-- `apps/api/src/credit-score/credit-score.module.ts`
-- `apps/api/src/credit-score/credit-score.service.ts`
-- `apps/api/src/credit-score/credit-score.service.spec.ts`
-- `apps/api/src/credit-score/credit-score.controller.ts`
-- `apps/api/src/credit-score/dto/credit-score-response.dto.ts`
+- `apps/api/src/scoring/scoring.module.ts`
+- `apps/api/src/scoring/scoring.service.ts`
+- `apps/api/src/scoring/scoring.service.spec.ts`
+- `apps/api/src/scoring/scoring.controller.ts`
+- `apps/api/src/scoring/dto/credit-score-response.dto.ts`
 - `apps/ml-engine/src/__init__.py`
 - `apps/ml-engine/src/schemas.py`
 - `apps/ml-engine/src/scorer.py`

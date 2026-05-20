@@ -1,5 +1,4 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '../guards/jwt-auth.guard';
+import { Controller, Get, Param } from '@nestjs/common';
 import { CreditScoreResponseDto } from './dto/credit-score-response.dto';
 import { ScoringService } from './scoring.service';
 
@@ -8,8 +7,9 @@ export class ScoringController {
   constructor(private readonly scoringService: ScoringService) {}
 
   @Get(':address')
-  @UseGuards(JwtAuthGuard)
-  getCreditScore(@Param('address') address: string): Promise<CreditScoreResponseDto> {
+  getCreditScore(
+    @Param('address') address: string,
+  ): Promise<CreditScoreResponseDto> {
     return this.scoringService.getCreditScore(address);
   }
 }

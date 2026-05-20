@@ -103,7 +103,7 @@ This flow is entirely offline. NestJS is not involved.
 ### B. Live inference (triggered when user connects wallet)
 
 ```
-Frontend → NestJS GET /users/score/:address
+Frontend → NestJS GET /scoring/:address
   → NestJS reads credit_scores: is scoredAt within 24h?
     → yes: return cached score immediately
     → no: call ml-engine GET /api/v1/score/:address
