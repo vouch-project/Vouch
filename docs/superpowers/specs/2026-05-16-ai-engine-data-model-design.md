@@ -49,20 +49,20 @@ Populated by the issue #13 ETL script from Aave V3 subgraph and Etherscan data. 
 
 ### `credit_scores`
 
-Cached inference results. Upserted by NestJS after calling the ml-engine. One row per wallet. NestJS checks `scoredAt` freshness before deciding whether to re-score (TTL: 24h).
+Append-only scoring log. One row is inserted by NestJS per scoring run. Hot-path reads use the `credit_scores_latest` view (DISTINCT ON address, ORDER BY computedAt DESC) which always surfaces the most recent score per wallet. NestJS compares `computedAt` against the 24h TTL to decide whether to re-score.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid PK | |
-| `walletAddress` | address UNIQUE | TODO: migrate to `userId uuid REFERENCES users(id)` once #11 merges |
+| `address` | address | EIP-55 checksum form. TODO: migrate to `userId uuid REFERENCES users(id)` once #11 merges |
 | `score` | integer | 0–1000 normalized |
 | `confidence` | numeric(4,3) | 0.000–1.000 |
-| `riskLevel` | enum | `very_low`, `low`, `medium`, `high`, `very_high` |
-| `factors` | jsonb | Array of feature names that most influenced the score (explainability) |
 | `modelVersion` | text | e.g. `'v1'` — ties score to the artifact that produced it |
-| `scoredAt` | timestamptz | TTL anchor — re-score if older than 24h |
-| `createdAt` | timestamptz | |
-| `updatedAt` | timestamptz | |
+| `factors` | jsonb | Array of feature names that most influenced the score (explainability) |
+| `explanation` | text | Optional human-readable explanation. Null until implemented in issue #14 |
+| `computedAt` | timestamptz | When this score was computed. TTL anchor for the 24h cache check |
+
+**View:** `credit_scores_latest` — `SELECT DISTINCT ON (address) * FROM credit_scores ORDER BY address, "computedAt" DESC`
 
 ---
 
@@ -104,15 +104,16 @@ This flow is entirely offline. NestJS is not involved.
 
 ```
 Frontend → NestJS GET /scoring/:address
-  → NestJS reads credit_scores: is scoredAt within 24h?
+  → NestJS reads credit_scores_latest: is computedAt within 24h?
     → yes: return cached score immediately
     → no: call ml-engine GET /api/v1/score/:address
         → ml-engine fetches wallet features from Etherscan
         → ml-engine reads user_credit_features from Supabase (empty for now)
         → ml-engine runs inference using loaded credit_model_v1.json
-        → returns { score, confidence, riskLevel, factors, modelVersion }
-      → NestJS upserts result into credit_scores (sets scoredAt = now)
-      → returns score to frontend
+        → returns { score, confidence, risk_level, model_version, factors, explanation } (snake_case wire format)
+      → NestJS maps snake_case → camelCase (model_version → modelVersion)
+      → NestJS inserts row into credit_scores (append-only, computedAt = now)
+      → returns CreditScoreResponseDto (camelCase) to frontend
 ```
 
 ---
@@ -123,7 +124,7 @@ Frontend → NestJS GET /scoring/:address
 Loan repaid or defaulted on-chain
   → NestJS blockchain-listener detects event
   → NestJS upserts aggregated stats into user_credit_features
-  → NestJS sets credit_scores.scoredAt = epoch for that wallet (forces re-score on next request)
+  → NestJS sets credit_scores.computedAt = epoch for that wallet (forces re-score on next request)
 ```
 
 This flow is a no-op until Vouch has live loans. The schema is ready to receive data when it does.

@@ -10,8 +10,6 @@ CREATE TABLE IF NOT EXISTS user_credit_features (
     "createdAt" timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS user_credit_features_wallet_idx ON user_credit_features ("walletAddress");
-
 -- RLS enabled; no public policy by design — this table is written by NestJS using the
 -- service_role key, which bypasses RLS. No authenticated/anon access intended.
 ALTER TABLE user_credit_features ENABLE ROW LEVEL SECURITY;
