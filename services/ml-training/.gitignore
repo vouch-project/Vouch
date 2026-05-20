@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.env
+src/vouch_ml_training/models/artifacts/*
+!src/vouch_ml_training/models/artifacts/.gitkeep
+data/cache/
+data/snapshots/
+*.joblib
+*.pkl
