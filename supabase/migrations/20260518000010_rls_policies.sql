@@ -142,7 +142,7 @@ WITH
 -- INSERT/UPDATE/DELETE on every `public` table to `authenticated` and
 -- `anon`, which would let a wallet that satisfies the `users_self_update`
 -- row predicate also rewrite server-managed columns on its own row
--- (`kycStatus`, `emailVerified`, the counters, `reputationScore`, …).
+-- (`emailVerified`, the counters, `reputationScore`, …).
 --
 -- We revoke the broad grants for these two tables and re-grant UPDATE only
 -- on the columns the end-user is allowed to touch directly. INSERTs and
@@ -164,9 +164,8 @@ FROM
     authenticated;
 
 -- Profile fields a user owns: identity bits + free-form preferences bag.
--- Notably excludes `address`, `kycStatus`, `kycProvider`, `kycReference`,
--- `emailVerified`, `reputationScore`, every `total*` counter, `metadata`,
--- and the `*At` timestamps.
+-- Notably excludes `address`, `emailVerified`, `reputationScore`, 
+-- every `total*` counter, `metadata`, and the `*At` timestamps.
 GRANT
 UPDATE (
     handle,

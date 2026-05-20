@@ -9,14 +9,6 @@
 --     application/auth layer (for example, a checksummed EVM address).
 --   * A row is created lazily the first time a wallet authenticates
 --     (see `public.ensure_user`).
---   * KYC fields are nullable so anonymous wallets remain first-class.
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'kycStatus') THEN
-        CREATE TYPE "kycStatus" AS ENUM ('none', 'pending', 'verified', 'rejected');
-    END IF;
-END$$;
-
 CREATE TABLE IF NOT EXISTS users (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     address address NOT NULL UNIQUE,
@@ -26,9 +18,6 @@ CREATE TABLE IF NOT EXISTS users (
     "avatarUrl" text,
     email extensions.citext UNIQUE,
     "emailVerified" boolean NOT NULL DEFAULT FALSE,
-    "kycStatus" "kycStatus" NOT NULL DEFAULT 'none',
-    "kycProvider" text,
-    "kycReference" text,
     -- Denormalized aggregates kept in sync by triggers / background jobs so
     -- the UI can avoid expensive joins on hot paths.
     "reputationScore" integer NOT NULL DEFAULT 0,
@@ -47,8 +36,6 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS users_address_idx ON users (address);
 
 CREATE INDEX IF NOT EXISTS users_handle_idx ON users (handle);
-
-CREATE INDEX IF NOT EXISTS users_kyc_status_idx ON users ("kycStatus");
 
 CREATE INDEX IF NOT EXISTS users_address_trgm_idx ON users USING gin (address extensions.gin_trgm_ops);
 
