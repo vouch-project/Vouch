@@ -80,6 +80,11 @@ export type Database = MergeDeep<
             logIndex?: string;
           };
         };
+        credit_scores: {
+          Row: { id: UUID; address: Address };
+          Insert: { id?: UUID; address: Address };
+          Update: { id?: UUID; address?: Address };
+        };
       };
       Functions: {
         create_loan_with_transaction: {

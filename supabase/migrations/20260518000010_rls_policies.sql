@@ -81,16 +81,6 @@ WITH
     );
 
 -- ---------------------------------------------------------------------------
--- ML feature snapshots: writes are service-only; reads are restricted to the
--- subject (a wallet can see features computed about itself).
--- ---------------------------------------------------------------------------
-DROP POLICY IF EXISTS "ml_features_self_read" ON public.ml_feature_snapshots;
-
-CREATE POLICY "ml_features_self_read" ON public.ml_feature_snapshots FOR
-SELECT
-    TO authenticated USING (address = public.current_wallet_address ());
-
--- ---------------------------------------------------------------------------
 -- Column-level write privileges.
 --
 -- RLS only filters *rows*, not *columns*. By default Supabase grants
