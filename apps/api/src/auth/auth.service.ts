@@ -2,7 +2,6 @@ import { InjectRedis } from '@nestjs-modules/ioredis';
 import {
   BadRequestException,
   Injectable,
-  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -10,18 +9,15 @@ import { asAddress } from '@vouch/database-types';
 import { randomBytes } from 'crypto';
 import { ethers } from 'ethers';
 import type { Redis } from 'ioredis';
-import { SupabaseService } from '../supabase/supabase.service';
 import { LoginDto } from './dto/login.dto';
 
 @Injectable()
 export class AuthService {
-  private readonly logger = new Logger(AuthService.name);
   private nonceTtlSec = 10 * 60; // 10 minutes in seconds
 
   constructor(
     private readonly jwtService: JwtService,
     @InjectRedis() private readonly redis: Redis,
-    private readonly supabaseService: SupabaseService,
   ) {}
 
   async getNonce(address: string): Promise<string> {
@@ -51,9 +47,8 @@ export class AuthService {
 
     // This login flow is currently EVM-only: signature recovery uses
     // `ethers.verifyMessage()` and address normalization uses `asAddress()`.
-    // Persist the wallet in canonical EIP-55 checksum form in `users.address`
-    // and in the JWT `address` claim so RLS comparisons against
-    // `public.current_wallet_address()` line up exactly.
+    // The JWT `address` claim is stored in canonical EIP-55 checksum form so
+    // RLS comparisons against `public.current_wallet_address()` line up exactly.
     let checksumAddress;
     try {
       checksumAddress = asAddress(address);
@@ -70,27 +65,7 @@ export class AuthService {
 
     await this.redis.del(this.nonceKey(address));
 
-    void this.ensureUserProfile(checksumAddress);
-
     return token;
-  }
-
-  private async ensureUserProfile(address: string): Promise<void> {
-    try {
-      const { error } = await this.supabaseService.client
-        .rpc('ensure_user', { p_address: address })
-        .abortSignal(AbortSignal.timeout(2_000));
-
-      if (error) {
-        this.logger.error(
-          `ensure_user failed for ${address}: ${error.message}`,
-        );
-      }
-    } catch (err: unknown) {
-      this.logger.error(
-        `ensure_user threw for ${address}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
   }
 
   private nonceKey(address: string): string {

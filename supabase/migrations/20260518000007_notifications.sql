@@ -9,8 +9,6 @@ BEGIN
             'loan_repaid',
             'loan_liquidated',
             'loan_due_soon',
-            'vouch_received',
-            'vouch_revoked',
             'credit_score_updated',
             'system'
         );

@@ -46,13 +46,6 @@ SELECT
     TO anon,
     authenticated USING (TRUE);
 
-DROP POLICY IF EXISTS "vouches_public_read" ON public.vouches;
-
-CREATE POLICY "vouches_public_read" ON public.vouches FOR
-SELECT
-    TO anon,
-    authenticated USING (TRUE);
-
 -- Credit scores: public read of *latest* per address is acceptable for the
 -- marketplace UI; raw snapshots are also readable.
 DROP POLICY IF EXISTS "credit_scores_public_read" ON public.credit_scores;
@@ -61,25 +54,6 @@ CREATE POLICY "credit_scores_public_read" ON public.credit_scores FOR
 SELECT
     TO anon,
     authenticated USING (TRUE);
-
--- ---------------------------------------------------------------------------
--- Users: the base table contains sensitive fields, so reads are limited to
--- the current authenticated user's own row. Public profile browsing should
--- be exposed through a separate sanitized view instead of this table.
--- ---------------------------------------------------------------------------
-DROP POLICY IF EXISTS "users_self_read" ON public.users;
-
-CREATE POLICY "users_self_read" ON public.users FOR
-SELECT
-    TO authenticated USING (address = public.current_wallet_address ());
-
-DROP POLICY IF EXISTS "users_self_update" ON public.users;
-
-CREATE POLICY "users_self_update" ON public.users
-FOR UPDATE
-    TO authenticated USING (address = public.current_wallet_address ())
-WITH
-    CHECK (address = public.current_wallet_address ());
 
 -- ---------------------------------------------------------------------------
 -- Notifications: only the recipient may read or mark their own as read.
@@ -115,66 +89,21 @@ SELECT
     TO authenticated USING (address = public.current_wallet_address ());
 
 -- ---------------------------------------------------------------------------
--- Operational tables: writable + readable only by the service_role (which
--- bypasses RLS entirely). We attach explicit deny-all policies for anon /
--- authenticated so the Supabase linter doesn't flag the tables for having
--- RLS enabled with no policy. The effect is the same: zero rows visible
--- and zero writes accepted from any non-service caller.
--- ---------------------------------------------------------------------------
-DROP POLICY IF EXISTS "blockchain_event_log_deny_all" ON public.blockchain_event_log;
-
-CREATE POLICY "blockchain_event_log_deny_all" ON public.blockchain_event_log AS RESTRICTIVE FOR ALL TO anon,
-authenticated USING (FALSE)
-WITH
-    CHECK (FALSE);
-
-DROP POLICY IF EXISTS "analytics_events_deny_all" ON public.analytics_events;
-
-CREATE POLICY "analytics_events_deny_all" ON public.analytics_events AS RESTRICTIVE FOR ALL TO anon,
-authenticated USING (FALSE)
-WITH
-    CHECK (FALSE);
-
--- ---------------------------------------------------------------------------
 -- Column-level write privileges.
 --
 -- RLS only filters *rows*, not *columns*. By default Supabase grants
 -- INSERT/UPDATE/DELETE on every `public` table to `authenticated` and
--- `anon`, which would let a wallet that satisfies the `users_self_update`
--- row predicate also rewrite server-managed columns on its own row
--- (`emailVerified`, the counters, `reputationScore`, …).
---
--- We revoke the broad grants for these two tables and re-grant UPDATE only
--- on the columns the end-user is allowed to touch directly. INSERTs and
--- DELETEs remain service-only — `ensure_user` and the notification fan-out
--- run as `service_role`, which is unaffected by these revokes.
+-- `anon`. We revoke the broad grants for notifications and re-grant UPDATE
+-- only on the column the end-user is allowed to touch directly. INSERTs and
+-- DELETEs remain service-only — the notification fan-out runs as
+-- `service_role`, which is unaffected by these revokes.
 -- ---------------------------------------------------------------------------
-REVOKE INSERT,
-UPDATE,
-DELETE ON public.users
-FROM
-    anon,
-    authenticated;
-
 REVOKE INSERT,
 UPDATE,
 DELETE ON public.notifications
 FROM
     anon,
     authenticated;
-
--- Profile fields a user owns: identity bits + free-form preferences bag.
--- Notably excludes `address`, `emailVerified`, `reputationScore`, 
--- every `total*` counter, `metadata`, and the `*At` timestamps.
-GRANT
-UPDATE (
-    handle,
-    "displayName",
-    bio,
-    "avatarUrl",
-    email,
-    preferences
-) ON public.users TO authenticated;
 
 -- The only thing a recipient is allowed to change on a notification is the
 -- read state. Everything else (type, title, body, payload, recipient, …) is
