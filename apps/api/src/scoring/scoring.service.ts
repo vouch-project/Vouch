@@ -31,10 +31,10 @@ export class ScoringService {
   ) {}
 
   async getCreditScore(walletAddress: string): Promise<CreditScoreResponseDto> {
-    const normalized = walletAddress.toLowerCase();
-    const cached = await this.getCachedScore(normalized);
+    const address = asAddress(walletAddress);
+    const cached = await this.getCachedScore(address);
     if (cached) return cached;
-    return this.fetchAndPersistScore(normalized);
+    return this.fetchAndPersistScore(address);
   }
 
   private async getCachedScore(

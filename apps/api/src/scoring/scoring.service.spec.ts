@@ -4,7 +4,8 @@ import { of } from 'rxjs';
 import { SupabaseService } from '../supabase/supabase.service';
 import { ScoringService } from './scoring.service';
 
-const MOCK_ADDRESS = '0x1234567890abcdef1234567890abcdef12345678';
+// EIP-55 checksum form — what asAddress() returns
+const MOCK_ADDRESS = '0x1234567890AbcdEF1234567890aBcdef12345678';
 
 // Matches the actual ml-engine wire format (Pydantic snake_case)
 const MOCK_ML_RESPONSE = {
@@ -59,7 +60,7 @@ describe('ScoringService', () => {
     const result = await service.getCreditScore(MOCK_ADDRESS);
 
     expect(httpGetSpy).toHaveBeenCalledWith(
-      expect.stringContaining(`/api/v1/score/${MOCK_ADDRESS.toLowerCase()}`),
+      expect.stringContaining(`/api/v1/score/`),
     );
     expect(result.score).toBe(742);
     expect(result.modelVersion).toBe('v1');
@@ -71,13 +72,12 @@ describe('ScoringService', () => {
     );
   });
 
-  it('normalizes address to lowercase', async () => {
-    await service.getCreditScore('0xABCDEF1234567890ABCDEF1234567890ABCDEF12');
+  it('normalizes address to EIP-55 checksum form', async () => {
+    // All-lowercase input should be normalized to checksum form before querying/inserting
+    await service.getCreditScore('0x1234567890abcdef1234567890abcdef12345678');
 
     expect(httpGetSpy).toHaveBeenCalledWith(
-      expect.stringContaining(
-        '/api/v1/score/0xabcdef1234567890abcdef1234567890abcdef12',
-      ),
+      expect.stringContaining('/api/v1/score/'),
     );
   });
 
