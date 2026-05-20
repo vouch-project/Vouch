@@ -69,40 +69,34 @@ export type Database = {
       }
       credit_scores: {
         Row: {
+          address: string
+          computedAt: string
           confidence: number
-          createdAt: string
+          explanation: string | null
           factors: Json
           id: string
           modelVersion: string
-          riskLevel: Database["public"]["Enums"]["riskLevel"]
           score: number
-          scoredAt: string
-          updatedAt: string
-          walletAddress: string
         }
         Insert: {
+          address: string
+          computedAt?: string
           confidence: number
-          createdAt?: string
+          explanation?: string | null
           factors?: Json
           id?: string
           modelVersion: string
-          riskLevel: Database["public"]["Enums"]["riskLevel"]
           score: number
-          scoredAt?: string
-          updatedAt?: string
-          walletAddress: string
         }
         Update: {
+          address?: string
+          computedAt?: string
           confidence?: number
-          createdAt?: string
+          explanation?: string | null
           factors?: Json
           id?: string
           modelVersion?: string
-          riskLevel?: Database["public"]["Enums"]["riskLevel"]
           score?: number
-          scoredAt?: string
-          updatedAt?: string
-          walletAddress?: string
         }
         Relationships: []
       }
@@ -205,6 +199,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ml_feature_snapshots: {
+        Row: {
+          address: string
+          createdAt: string
+          features: Json
+          featureSet: string
+          id: string
+          sourceHash: string | null
+        }
+        Insert: {
+          address: string
+          createdAt?: string
+          features: Json
+          featureSet: string
+          id?: string
+          sourceHash?: string | null
+        }
+        Update: {
+          address?: string
+          createdAt?: string
+          features?: Json
+          featureSet?: string
+          id?: string
+          sourceHash?: string | null
+        }
+        Relationships: []
       }
       notifications: {
         Row: {
@@ -441,7 +462,18 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      credit_scores_latest: {
+        Row: {
+          address: string | null
+          computedAt: string | null
+          confidence: number | null
+          explanation: string | null
+          factors: Json | null
+          modelVersion: string | null
+          score: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       create_loan_with_transaction: {
@@ -496,7 +528,6 @@ export type Database = {
         | "loan_due_soon"
         | "credit_score_updated"
         | "system"
-      riskLevel: "very_low" | "low" | "medium" | "high" | "very_high"
       transactionStatus: "pending" | "confirmed" | "failed"
       transactionType:
         | "collateral_deposit"
@@ -651,7 +682,6 @@ export const Constants = {
         "credit_score_updated",
         "system",
       ],
-      riskLevel: ["very_low", "low", "medium", "high", "very_high"],
       transactionStatus: ["pending", "confirmed", "failed"],
       transactionType: [
         "collateral_deposit",
