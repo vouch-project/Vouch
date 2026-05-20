@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { resolve } from '$app/paths';
   import { axiosApi } from '$api/axiosApi';
+  import { resolve } from '$app/paths';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import * as Card from '$lib/components/ui/card';
   import * as Table from '$lib/components/ui/table';
   import * as Tabs from '$lib/components/ui/tabs';
+  import { formatUint256 } from '$lib/formatUint256';
   import { maxLtv } from '$lib/ltv';
   import { navLinksMap } from '$lib/navLinks';
   import { supabase } from '$lib/supabase';
@@ -168,30 +169,6 @@
       errorMsg = getErrorMessage(e);
     } finally {
       fundingLoanId = null;
-    }
-  };
-
-  const formatAmount = (amount: string | null, decimals: number | null | undefined) => {
-    if (amount === null || amount === '') return '0';
-
-    try {
-      // Convert to BigInt first — ethers v6's getBigInt rejects JS Numbers > MAX_SAFE_INTEGER,
-      // which can happen when large uint256 strings from Postgres get coerced to Number by JSON parsing.
-      const formatted = ethers.formatUnits(BigInt(amount), decimals ?? 18);
-      const [whole, fraction] = formatted.split('.');
-
-      // Use BigInt to safely format the integer part with locale commas, avoiding Number() precision loss
-      const wholeFormatted = BigInt(whole).toLocaleString();
-
-      if (!fraction) return wholeFormatted;
-
-      // Truncate to 4 decimal places and remove trailing zeros
-      const trimmedFraction = fraction.slice(0, 4).replace(/0+$/, '');
-
-      return trimmedFraction.length > 0 ? `${wholeFormatted}.${trimmedFraction}` : wholeFormatted;
-    } catch (err) {
-      console.error('Format error:', err);
-      return '0';
     }
   };
 </script>
@@ -359,7 +336,7 @@
                     </Table.Cell>
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
                       <div class="font-bold text-foreground text-[10px] sm:text-sm">
-                        {formatAmount(loan.principalAmount, loan.principalToken?.decimals)}
+                        {formatUint256(loan.principalAmount, loan.principalToken?.decimals)}
                         <span class="text-[9px] sm:text-xs font-semibold text-muted-foreground uppercase ml-0.5">
                           {loan.principalToken?.symbol || 'USDT'}
                         </span>
@@ -377,7 +354,7 @@
                           <div class="h-4 w-4 sm:h-5 sm:w-5 rounded-full bg-muted shrink-0"></div>
                         {/if}
                         <span>
-                          {formatAmount(loan.collateralAmount, loan.collateralToken?.decimals)}
+                          {formatUint256(loan.collateralAmount, loan.collateralToken?.decimals)}
                           {loan.collateralToken?.symbol || 'ETH'}
                         </span>
                       </div>
@@ -395,7 +372,7 @@
                     <Table.Cell
                       class="px-1 sm:px-3 lg:px-6 py-4 font-bold text-indigo-600 text-left underline-offset-4 whitespace-nowrap text-[10px] sm:text-sm min-w-max"
                     >
-                      {loan.interestRate ? `${loan.interestRate}%` : '8.5%'}
+                      {formatUint256(loan.interestRate)}%
                     </Table.Cell>
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left min-w-max">
                       {#if risk}

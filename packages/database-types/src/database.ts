@@ -93,6 +93,12 @@ export type Database = MergeDeep<
           };
           Returns: string;
         };
+        // The SQL function uses nullif(...) and returns NULL when the JWT
+        // is missing the `address` claim (unauthenticated callers).
+        current_wallet_address: {
+          Args: Record<string, never>;
+          Returns: string | null;
+        };
       };
     };
   }

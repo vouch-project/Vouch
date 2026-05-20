@@ -3,8 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "setup": "python3 -m venv .venv && ./.venv/bin/pip install --quiet -e .",
-    "predev": "lsof -ti:8001 | xargs kill -9 2>/dev/null || true && (test -d .venv || pnpm setup)",
+    "setup:venv": "python3 -m venv .venv",
+    "setup:deps": "(test -x ./.venv/bin/pip || python3 -m venv .venv) && ./.venv/bin/pip install --quiet -e .",
+    "setup": "pnpm setup:deps",
+    "predev": "lsof -ti:8001 | xargs kill -9 2>/dev/null || true && pnpm setup:deps",
     "dev": "./.venv/bin/uvicorn main:app --app-dir . --host 127.0.0.1 --port 8001 --reload"
   }
 }
