@@ -34,9 +34,9 @@ async def get_credit_score(address: str) -> CreditScoreResponse | JSONResponse:
         address=address,
         score=result.score,
         confidence=result.confidence,
-        risk_level=result.risk_level,
         factors=result.factors,
         model_version=result.model_version,
+        explanation=result.explanation,
     )
 
 

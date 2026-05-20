@@ -12,7 +12,6 @@ def test_scorer_returns_stub_when_no_model() -> None:
     assert isinstance(result, ScoringResult)
     assert result.score == 0
     assert result.confidence == 0.0
-    assert result.risk_level == "very_high"
     assert result.factors == []
     assert result.model_version == "none"
 

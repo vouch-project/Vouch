@@ -1,14 +1,11 @@
 """Credit scoring logic — loads model artifact and runs inference."""
 from dataclasses import dataclass
 
-from src.schemas import RiskLevel
-
 
 @dataclass
 class ScoringResult:
     score: int
     confidence: float
-    risk_level: RiskLevel
     factors: list[str]
     model_version: str
     explanation: str | None = None
@@ -33,7 +30,6 @@ class CreditScorer:
             return ScoringResult(
                 score=0,
                 confidence=0.0,
-                risk_level="very_high",
                 factors=[],
                 model_version=self._model_version,
             )
