@@ -171,6 +171,13 @@
     }
   };
 
+  const formatInterestRateBps = (raw: string | null | undefined): string => {
+    if (raw == null || raw === '') return '8.5%';
+    const bps = Number(raw);
+    if (!Number.isFinite(bps)) return '8.5%';
+    return `${(bps / 100).toFixed(2)}%`;
+  };
+
   const formatAmount = (amount: string | null, decimals: number | null | undefined) => {
     if (amount === null || amount === '') return '0';
 
@@ -395,7 +402,7 @@
                     <Table.Cell
                       class="px-1 sm:px-3 lg:px-6 py-4 font-bold text-indigo-600 text-left underline-offset-4 whitespace-nowrap text-[10px] sm:text-sm min-w-max"
                     >
-                      {loan.interestRate != null ? `${(loan.interestRate / 100).toFixed(2)}%` : '8.5%'}
+                      {formatInterestRateBps(loan.interestRate)}
                     </Table.Cell>
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left min-w-max">
                       {#if risk}

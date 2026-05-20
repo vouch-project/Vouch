@@ -3,10 +3,11 @@
 -- (shared with Supabase), so PostgREST/RLS can read it transparently.
 --
 -- The claim is returned verbatim — no case-folding. Normalization is
--- chain-type-specific (lowercase for EVM, case-preserving for Solana /
--- Bitcoin / etc.) and is the responsibility of the application layer that
--- mints the JWT and writes addresses to the database. As long as both sides
--- normalize identically before write / sign, RLS comparisons line up.
+-- chain-type-specific (EIP-55 checksum-cased for EVM, case-preserving for
+-- Solana / Bitcoin / etc.) and is the responsibility of the application
+-- layer that mints the JWT and writes addresses to the database. As long as
+-- both sides normalize identically before write / sign, RLS comparisons
+-- line up.
 CREATE OR REPLACE FUNCTION public.current_wallet_address () RETURNS text LANGUAGE sql STABLE
 SET
     search_path = '' AS $$

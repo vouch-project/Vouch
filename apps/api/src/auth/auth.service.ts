@@ -54,7 +54,16 @@ export class AuthService {
     // Persist the wallet in canonical EIP-55 checksum form in `users.address`
     // and in the JWT `address` claim so RLS comparisons against
     // `public.current_wallet_address()` line up exactly.
-    const checksumAddress = asAddress(address);
+    let checksumAddress;
+    try {
+      checksumAddress = asAddress(address);
+    } catch {
+      // `asAddress` throws for any non-EVM-address input. Signature recovery
+      // above already implies the string is a valid hex address, so reaching
+      // here means the client sent a malformed address — surface it as a 400
+      // rather than letting it bubble up as a 500.
+      throw new BadRequestException('Invalid address');
+    }
 
     const payload = { address: checksumAddress, role: 'authenticated' };
     const token = this.jwtService.sign(payload);

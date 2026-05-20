@@ -18,25 +18,35 @@ DROP POLICY IF EXISTS "Enable read access for all users" ON public.loans;
 
 DROP POLICY IF EXISTS "Enable read access for all users" ON public.transactions;
 
+DROP POLICY IF EXISTS "chains_public_read" ON public.chains;
+
 CREATE POLICY "chains_public_read" ON public.chains FOR
 SELECT
     TO anon,
     authenticated USING (TRUE);
+
+DROP POLICY IF EXISTS "tokens_public_read" ON public.tokens;
 
 CREATE POLICY "tokens_public_read" ON public.tokens FOR
 SELECT
     TO anon,
     authenticated USING (TRUE);
 
+DROP POLICY IF EXISTS "loans_public_read" ON public.loans;
+
 CREATE POLICY "loans_public_read" ON public.loans FOR
 SELECT
     TO anon,
     authenticated USING (TRUE);
 
+DROP POLICY IF EXISTS "transactions_public_read" ON public.transactions;
+
 CREATE POLICY "transactions_public_read" ON public.transactions FOR
 SELECT
     TO anon,
     authenticated USING (TRUE);
+
+DROP POLICY IF EXISTS "vouches_public_read" ON public.vouches;
 
 CREATE POLICY "vouches_public_read" ON public.vouches FOR
 SELECT
@@ -45,6 +55,8 @@ SELECT
 
 -- Credit scores: public read of *latest* per address is acceptable for the
 -- marketplace UI; raw snapshots are also readable.
+DROP POLICY IF EXISTS "credit_scores_public_read" ON public.credit_scores;
+
 CREATE POLICY "credit_scores_public_read" ON public.credit_scores FOR
 SELECT
     TO anon,
@@ -55,9 +67,13 @@ SELECT
 -- the current authenticated user's own row. Public profile browsing should
 -- be exposed through a separate sanitized view instead of this table.
 -- ---------------------------------------------------------------------------
+DROP POLICY IF EXISTS "users_self_read" ON public.users;
+
 CREATE POLICY "users_self_read" ON public.users FOR
 SELECT
     TO authenticated USING (address = public.current_wallet_address ());
+
+DROP POLICY IF EXISTS "users_self_update" ON public.users;
 
 CREATE POLICY "users_self_update" ON public.users
 FOR UPDATE
@@ -68,11 +84,15 @@ WITH
 -- ---------------------------------------------------------------------------
 -- Notifications: only the recipient may read or mark their own as read.
 -- ---------------------------------------------------------------------------
+DROP POLICY IF EXISTS "notifications_recipient_read" ON public.notifications;
+
 CREATE POLICY "notifications_recipient_read" ON public.notifications FOR
 SELECT
     TO authenticated USING (
         "recipientAddress" = public.current_wallet_address ()
     );
+
+DROP POLICY IF EXISTS "notifications_recipient_update" ON public.notifications;
 
 CREATE POLICY "notifications_recipient_update" ON public.notifications
 FOR UPDATE
@@ -88,6 +108,8 @@ WITH
 -- ML feature snapshots: writes are service-only; reads are restricted to the
 -- subject (a wallet can see features computed about itself).
 -- ---------------------------------------------------------------------------
+DROP POLICY IF EXISTS "ml_features_self_read" ON public.ml_feature_snapshots;
+
 CREATE POLICY "ml_features_self_read" ON public.ml_feature_snapshots FOR
 SELECT
     TO authenticated USING (address = public.current_wallet_address ());
@@ -99,10 +121,14 @@ SELECT
 -- RLS enabled with no policy. The effect is the same: zero rows visible
 -- and zero writes accepted from any non-service caller.
 -- ---------------------------------------------------------------------------
+DROP POLICY IF EXISTS "blockchain_event_log_deny_all" ON public.blockchain_event_log;
+
 CREATE POLICY "blockchain_event_log_deny_all" ON public.blockchain_event_log AS RESTRICTIVE FOR ALL TO anon,
 authenticated USING (FALSE)
 WITH
     CHECK (FALSE);
+
+DROP POLICY IF EXISTS "analytics_events_deny_all" ON public.analytics_events;
 
 CREATE POLICY "analytics_events_deny_all" ON public.analytics_events AS RESTRICTIVE FOR ALL TO anon,
 authenticated USING (FALSE)

@@ -155,13 +155,13 @@ per-wallet access on tables like `notifications` and `users`.
 
 ## Row-Level Security
 
-| Table                                                                   | anon / authenticated       | service_role |
-| ----------------------------------------------------------------------- | -------------------------- | ------------ |
-| `chains`, `tokens`, `loans`, `transactions`, `vouches`, `credit_scores` | SELECT                     | full         |
-| `users`                                                                 | SELECT all; UPDATE own row | full         |
-| `notifications`                                                         | SELECT / UPDATE own row    | full         |
-| `ml_feature_snapshots`                                                  | SELECT own row             | full         |
-| `blockchain_event_log`, `analytics_events`                              | — (no public policies)     | full         |
+| Table                                                                   | anon / authenticated                                      | service_role |
+| ----------------------------------------------------------------------- | --------------------------------------------------------- | ------------ |
+| `chains`, `tokens`, `loans`, `transactions`, `vouches`, `credit_scores` | SELECT                                                    | full         |
+| `users`                                                                 | SELECT own row; UPDATE own row (whitelisted columns only) | full         |
+| `notifications`                                                         | SELECT own row; UPDATE own row (`readAt` only)            | full         |
+| `ml_feature_snapshots`                                                  | SELECT own row                                            | full         |
+| `blockchain_event_log`, `analytics_events`                              | deny-all (restrictive policy)                             | full         |
 
 The API uses `SUPABASE_SECRET_KEY` (service role) and bypasses RLS for all
 writes; the web client uses `PUBLIC_SUPABASE_PUBLISHABLE_KEY` (anon role)
