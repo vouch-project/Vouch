@@ -34,10 +34,12 @@ _SNAPSHOT_DIR = Path(__file__).resolve().parents[3] / "data" / "snapshots"
 _TABLE = "training_dataset"
 
 
-def _fetch_all_rows(settings: Settings) -> pl.DataFrame:
+def fetch_all_rows(settings: Settings) -> pl.DataFrame:
     """Read every row for the current featureSetVersion out of Supabase.
 
     PostgREST caps responses at 1000 rows, so we paginate by row offset.
+    A deterministic `order("id")` is required: without it Postgres is free
+    to return rows in any order, which causes duplicates/gaps across pages.
     """
     client = get_supabase_client(settings)
     page_size = 1000
@@ -48,6 +50,7 @@ def _fetch_all_rows(settings: Settings) -> pl.DataFrame:
             client.table(_TABLE)
             .select("*")
             .eq("featureSetVersion", settings.feature_set_version)
+            .order("id")
             .range(offset, offset + page_size - 1)
             .execute()
         )
@@ -72,7 +75,7 @@ def export_snapshot(settings: Settings | None = None) -> Path:
 
     settings = settings or get_settings()
 
-    df = _fetch_all_rows(settings)
+    df = fetch_all_rows(settings)
     if df.is_empty():
         raise RuntimeError(
             f"training_dataset is empty for featureSetVersion={settings.feature_set_version!r}; "

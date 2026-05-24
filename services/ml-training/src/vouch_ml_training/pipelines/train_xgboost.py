@@ -30,7 +30,6 @@ from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier
 
 from vouch_ml_training.config import Settings, get_settings
-from vouch_ml_training.data.load import get_supabase_client
 from vouch_ml_training.logging import get_logger
 
 log = get_logger(__name__)
@@ -66,22 +65,22 @@ def _load_dataframe(settings: Settings) -> pl.DataFrame:
     snapshot exists yet we fall back to a live Supabase read so the
     trainer still works end-to-end on a fresh setup.
     """
-    from vouch_ml_training.data.parquet_io import load_latest_snapshot
+    from vouch_ml_training.data.parquet_io import fetch_all_rows, load_latest_snapshot
 
     try:
         df = load_latest_snapshot(settings)
         log.info("loaded training data from parquet snapshot (rows=%d)", df.height)
     except FileNotFoundError:
-        log.info("no parquet snapshot found; reading directly from Supabase")
-        client = get_supabase_client(settings)
-        cols = ["address", LABEL_COLUMN, *FEATURE_COLUMNS]
-        res = (
-            client.table("training_dataset")
-            .select(",".join(cols))
-            .eq("featureSetVersion", settings.feature_set_version)
-            .execute()
-        )
-        df = pl.from_dicts(res.data, infer_schema_length=None) if res.data else pl.DataFrame()
+        # Fall back to a live Supabase read so the trainer still works on a
+        # fresh setup. Use the paginated fetcher from parquet_io: PostgREST
+        # caps responses at 1000 rows, so a single `.select().execute()`
+        # would silently truncate datasets larger than that (the default
+        # ETL targets are 750 risky + 750 safe = 1500 rows).
+        log.info("no parquet snapshot found; reading directly from Supabase (paginated)")
+        df = fetch_all_rows(settings)
+        if not df.is_empty():
+            keep = [c for c in ["address", LABEL_COLUMN, *FEATURE_COLUMNS] if c in df.columns]
+            df = df.select(keep)
 
     if df.is_empty():
         raise RuntimeError(
