@@ -230,8 +230,8 @@ async def fetch_safe_borrowers(
                     "borrows: fetched=%d distinct_safe=%d",
                     fetched, len(by_addr),
                 )
-            # We need to over-sample because some borrowers will be in the
-            # excluded set. Keep paging until we have enough fresh ones.
+            # `by_addr` only contains non-excluded wallets, so stop paging
+            # once we have enough distinct safe borrowers collected.
             if len(by_addr) >= target_count:
                 break
 
