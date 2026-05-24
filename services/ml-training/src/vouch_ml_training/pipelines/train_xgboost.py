@@ -130,6 +130,28 @@ def train(settings: Settings | None = None) -> TrainingResult:
     x = df.select(FEATURE_COLUMNS).cast(pl.Float64).to_numpy()
     y = df.get_column(LABEL_COLUMN).cast(pl.Int8).to_numpy()
 
+    # Stratified splits require both classes to be present with enough samples
+    # to survive two successive splits (train/test then train/val). With the
+    # default 0.2 test ratios that means each class needs >=4 rows in the
+    # original dataset so the smallest resulting fold still has >=1 sample.
+    # Fail loudly with a fix-it message instead of letting sklearn raise a
+    # cryptic ValueError.
+    classes, counts = np.unique(y, return_counts=True)
+    class_counts = dict(zip(classes.tolist(), counts.tolist(), strict=True))
+    risky_n = class_counts.get(1, 0)
+    safe_n = class_counts.get(0, 0)
+    min_per_class = 4
+    if risky_n < min_per_class or safe_n < min_per_class:
+        raise RuntimeError(
+            "Training data does not contain both classes with enough samples "
+            f"for stratified splitting (risky={risky_n}, safe={safe_n}, "
+            f"need >= {min_per_class} of each).\n"
+            "Re-run the ETL with larger targets, e.g.:\n"
+            "  vouch-ml-training build-dataset --risky-target 500 --safe-target 500\n"
+            "or check that extract_aave is returning both liquidated and "
+            "safe-borrower wallets for the current chain."
+        )
+
     x_train, x_test, y_train, y_test = train_test_split(
         x, y, test_size=0.2, stratify=y, random_state=42,
     )

@@ -69,8 +69,17 @@ async def _etherscan_call(
     # append-only on the most-recent end, but for our features (first-tx
     # timestamp + distinct contracts in first 10k txs) the cached value is
     # stable enough for development. Delete data/cache/etherscan/ to bust.
+    #
+    # Scope the key by chain id + base URL so cache entries from one
+    # network (e.g. mainnet) can't be reused for another (e.g. sepolia)
+    # when the same address/action is requested.
+    cache_material = {
+        "params": params,
+        "chainid": settings.target_chain_id,
+        "base_url": settings.etherscan_base_url,
+    }
     cache_key = hashlib.sha1(
-        json.dumps(params, sort_keys=True).encode(), usedforsecurity=False
+        json.dumps(cache_material, sort_keys=True).encode(), usedforsecurity=False
     ).hexdigest()
     cache_file = _CACHE_DIR / f"{cache_key}.json.gz"
     if cache_file.exists():

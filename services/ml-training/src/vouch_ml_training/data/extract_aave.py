@@ -12,6 +12,7 @@ subgraph caps `skip` at 5000. This also makes incremental pulls trivial
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
 
@@ -31,7 +32,7 @@ _LIQUIDATION_QUERY = """
 query Liquidations($first: Int!, $cursor: Int!) {
   liquidationCalls(
     first: $first
-    where: { timestamp_lt: $cursor }
+    where: { timestamp_lte: $cursor }
     orderBy: timestamp
     orderDirection: desc
   ) {
@@ -49,7 +50,7 @@ _BORROWS_QUERY = """
 query Borrows($first: Int!, $cursor: Int!) {
   borrows(
     first: $first
-    where: { timestamp_lt: $cursor }
+    where: { timestamp_lte: $cursor }
     orderBy: timestamp
     orderDirection: desc
   ) {
@@ -97,6 +98,57 @@ def _to_usd(amount_raw: str, decimals: int, price_usd: str) -> float:
         return 0.0
 
 
+async def _paginate_by_timestamp(
+    client: httpx.AsyncClient,
+    url: str,
+    query: str,
+    root_key: str,
+) -> AsyncIterator[dict[str, Any]]:
+    """Yield subgraph rows ordered by timestamp desc, without skipping ties.
+
+    The Aave V3 subgraph only supports a single `orderBy` field, so when many
+    events share the same block timestamp a naive `timestamp_lt: cursor`
+    cursor will drop ties straddling page boundaries. Instead we query with
+    `timestamp_lte` and track the ids already yielded at the current boundary
+    timestamp so we can dedupe across pages. When the boundary set is fully
+    drained we step the cursor down by one second.
+    """
+    cursor_ts = 2_000_000_000  # far-future seconds-since-epoch
+    seen_ids_at_cursor: set[str] = set()
+
+    while True:
+        data = await _post_graphql(
+            client, url, query,
+            {"first": _PAGE_SIZE, "cursor": cursor_ts},
+        )
+        rows: list[dict[str, Any]] = data.get(root_key, [])
+        if not rows:
+            return
+
+        fresh = [r for r in rows if r["id"] not in seen_ids_at_cursor]
+        if not fresh:
+            # Entire page is rows we've already yielded at the boundary ts.
+            # The subgraph would keep returning the same window forever
+            # unless we drop below it.
+            cursor_ts -= 1
+            seen_ids_at_cursor.clear()
+            continue
+
+        for row in fresh:
+            yield row
+
+        page_min_ts = min(int(r["timestamp"]) for r in rows)
+        if page_min_ts < cursor_ts:
+            cursor_ts = page_min_ts
+            seen_ids_at_cursor = {
+                r["id"] for r in rows if int(r["timestamp"]) == cursor_ts
+            }
+        else:
+            # Still on the same boundary ts; accumulate seen ids so the next
+            # page skips them.
+            seen_ids_at_cursor.update(r["id"] for r in fresh)
+
+
 async def fetch_liquidated_wallets(
     settings: Settings,
     target_count: int,
@@ -107,30 +159,23 @@ async def fetch_liquidated_wallets(
     their most recent liquidation (descending).
     """
     by_addr: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    # Far-future Int (Aave subgraph timestamps are seconds since epoch).
-    cursor = 2_000_000_000
 
     async with httpx.AsyncClient() as client:
         url = settings.subgraph_url
-        while len(by_addr) < target_count:
-            data = await _post_graphql(
-                client, url, _LIQUIDATION_QUERY,
-                {"first": _PAGE_SIZE, "cursor": cursor},
-            )
-            rows: list[dict[str, Any]] = data.get("liquidationCalls", [])
-            if not rows:
-                log.info("Subgraph returned no more liquidations; stopping pagination")
+        fetched = 0
+        async for row in _paginate_by_timestamp(
+            client, url, _LIQUIDATION_QUERY, "liquidationCalls"
+        ):
+            addr = row["user"]["id"].lower()
+            by_addr[addr].append(row)
+            fetched += 1
+            if fetched % _PAGE_SIZE == 0:
+                log.info(
+                    "liquidations: fetched=%d unique_wallets=%d",
+                    fetched, len(by_addr),
+                )
+            if len(by_addr) >= target_count:
                 break
-
-            for row in rows:
-                addr = row["user"]["id"].lower()
-                by_addr[addr].append(row)
-
-            cursor = int(rows[-1]["timestamp"])
-            log.info(
-                "liquidations: fetched=%d unique_wallets=%d cursor=%s",
-                len(rows), len(by_addr), cursor,
-            )
 
     aggregates: list[LiquidationAggregate] = []
     for addr, events in by_addr.items():
@@ -168,37 +213,27 @@ async def fetch_safe_borrowers(
     so we don't accidentally label a risky wallet as safe.
     """
     by_addr: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    cursor = 2_000_000_000
 
     async with httpx.AsyncClient() as client:
         url = settings.subgraph_url
-        # We need to over-sample because some borrowers will be in the
-        # excluded set. Keep paging until we have enough fresh ones.
-        while True:
-            distinct_safe = sum(1 for a in by_addr if a not in excluded_addresses)
-            if distinct_safe >= target_count:
+        fetched = 0
+        async for row in _paginate_by_timestamp(
+            client, url, _BORROWS_QUERY, "borrows"
+        ):
+            addr = row["user"]["id"].lower()
+            if addr in excluded_addresses:
+                continue
+            by_addr[addr].append(row)
+            fetched += 1
+            if fetched % _PAGE_SIZE == 0:
+                log.info(
+                    "borrows: fetched=%d distinct_safe=%d",
+                    fetched, len(by_addr),
+                )
+            # We need to over-sample because some borrowers will be in the
+            # excluded set. Keep paging until we have enough fresh ones.
+            if len(by_addr) >= target_count:
                 break
-
-            data = await _post_graphql(
-                client, url, _BORROWS_QUERY,
-                {"first": _PAGE_SIZE, "cursor": cursor},
-            )
-            rows: list[dict[str, Any]] = data.get("borrows", [])
-            if not rows:
-                log.info("Subgraph returned no more borrows; stopping pagination")
-                break
-
-            for row in rows:
-                addr = row["user"]["id"].lower()
-                if addr in excluded_addresses:
-                    continue
-                by_addr[addr].append(row)
-
-            cursor = int(rows[-1]["timestamp"])
-            log.info(
-                "borrows: fetched=%d distinct_safe=%d cursor=%s",
-                len(rows), distinct_safe, cursor,
-            )
 
     out: list[SafeBorrower] = []
     for addr, events in by_addr.items():
