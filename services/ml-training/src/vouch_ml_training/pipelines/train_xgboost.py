@@ -20,12 +20,13 @@ import polars as pl
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import (
+    accuracy_score,
     average_precision_score,
     brier_score_loss,
     log_loss,
     roc_auc_score,
 )
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier
 
@@ -146,39 +147,60 @@ def train(settings: Settings | None = None) -> TrainingResult:
             f"for stratified splitting (risky={risky_n}, safe={safe_n}, "
             f"need >= {min_per_class} of each).\n"
             "Re-run the ETL with larger targets, e.g.:\n"
-            "  vouch-ml-training build-dataset --risky-target 500 --safe-target 500\n"
+            "  vouch-ml-training build-dataset --risky 500 --safe 500\n"
             "or check that extract_aave is returning both liquidated and "
             "safe-borrower wallets for the current chain."
         )
 
-    x_train, x_test, y_train, y_test = train_test_split(
-        x, y, test_size=0.2, stratify=y, random_state=42,
-    )
-    x_train, x_val, y_train, y_val = train_test_split(
-        x_train, y_train, test_size=0.2, stratify=y_train, random_state=42,
-    )
+    # 5-fold stratified cross-validation for reliable evaluation.
+    kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    fold_metrics: list[dict[str, float]] = []
 
-    n_pos = int(y_train.sum())
-    n_neg = len(y_train) - n_pos
+    for fold_idx, (train_idx, test_idx) in enumerate(kf.split(x, y)):
+        x_fold_train, x_fold_test = x[train_idx], x[test_idx]
+        y_fold_train, y_fold_test = y[train_idx], y[test_idx]
+
+        n_pos = int(y_fold_train.sum())
+        n_neg = len(y_fold_train) - n_pos
+        spw = (n_neg / n_pos) if n_pos > 0 else 1.0
+        fold_pipe = _build_pipeline(spw)
+        fold_pipe.fit(x_fold_train, y_fold_train)
+
+        p_fold = fold_pipe.predict_proba(x_fold_test)[:, 1]
+        y_fold_pred = (p_fold >= 0.5).astype(int)
+        fold_metrics.append({
+            "accuracy": float(accuracy_score(y_fold_test, y_fold_pred)),
+            "auc": float(roc_auc_score(y_fold_test, p_fold)),
+            "pr_auc": float(average_precision_score(y_fold_test, p_fold)),
+            "log_loss": float(log_loss(y_fold_test, p_fold)),
+            "brier": float(brier_score_loss(y_fold_test, p_fold)),
+        })
+        log.info("fold %d metrics | %s", fold_idx + 1, fold_metrics[-1])
+
+    # Average metrics across folds
+    metrics: dict[str, float] = {}
+    for key in fold_metrics[0]:
+        values = [m[key] for m in fold_metrics]
+        metrics[key] = float(np.mean(values))
+        metrics[f"{key}_std"] = float(np.std(values))
+    metrics["positive_rate"] = float(np.mean(y))
+    log.info("cv metrics (mean) | %s", {k: v for k, v in metrics.items() if not k.endswith("_std")})
+
+    # Train final production model on all data
+    n_pos = int(y.sum())
+    n_neg = len(y) - n_pos
     scale_pos_weight = (n_neg / n_pos) if n_pos > 0 else 1.0
     pipe = _build_pipeline(scale_pos_weight)
+    pipe.fit(x, y)
 
-    pipe.fit(x_train, y_train)
-
-    # Isotonic calibration on the validation set so probabilities are usable
-    # as a credit-score input rather than just a ranking.
-    calibrated = CalibratedClassifierCV(pipe, method="isotonic", cv="prefit")
-    calibrated.fit(x_val, y_val)
-
-    p_test = calibrated.predict_proba(x_test)[:, 1]
-    metrics = {
-        "auc": float(roc_auc_score(y_test, p_test)),
-        "pr_auc": float(average_precision_score(y_test, p_test)),
-        "log_loss": float(log_loss(y_test, p_test)),
-        "brier": float(brier_score_loss(y_test, p_test)),
-        "positive_rate": float(np.mean(y_test)),
-    }
-    log.info("test metrics | %s", metrics)
+    # Calibrate on a held-out portion for probability quality
+    x_cal_train, x_cal_val, y_cal_train, y_cal_val = train_test_split(
+        x, y, test_size=0.2, stratify=y, random_state=42,
+    )
+    cal_pipe = _build_pipeline(scale_pos_weight)
+    cal_pipe.fit(x_cal_train, y_cal_train)
+    calibrated = CalibratedClassifierCV(cal_pipe, method="isotonic", cv="prefit")
+    calibrated.fit(x_cal_val, y_cal_val)
 
     # Persist artifact
     model_version = f"{settings.feature_set_version}-{datetime.now(tz=UTC):%Y%m%dT%H%M%SZ}"
@@ -192,9 +214,8 @@ def train(settings: Settings | None = None) -> TrainingResult:
         "feature_columns": FEATURE_COLUMNS,
         "label_column": LABEL_COLUMN,
         "metrics": metrics,
-        "n_train": len(x_train),
-        "n_val": len(x_val),
-        "n_test": len(x_test),
+        "cv_folds": len(fold_metrics),
+        "n_total": len(x),
         "trained_at": datetime.now(tz=UTC).isoformat(),
     }
     (artifact_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
@@ -204,9 +225,9 @@ def train(settings: Settings | None = None) -> TrainingResult:
         model_version=model_version,
         artifact_dir=artifact_dir,
         metrics=metrics,
-        n_train=len(x_train),
-        n_val=len(x_val),
-        n_test=len(x_test),
+        n_train=len(x),
+        n_val=0,
+        n_test=0,
     )
 
 
