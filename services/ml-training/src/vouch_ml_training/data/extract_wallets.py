@@ -98,6 +98,9 @@ async def _etherscan_call(
     resp = await client.get(settings.etherscan_base_url, params=full_params, timeout=30.0)
     resp.raise_for_status()
     body: dict[str, Any] = resp.json()
+    # Etherscan uses status="0" for all error states, with result as a string message.
+    # Rate-limit errors should be retried. "no transactions found" is a valid empty
+    # result that gets cached. Everything else is a fatal configuration/permission error.
     result = body.get("result")
     if body.get("status") == "0" and isinstance(result, str):
         msg = result.lower()
@@ -106,6 +109,7 @@ async def _etherscan_call(
         if "no transactions found" not in msg:
             raise RuntimeError(f"Etherscan error: {result}")
 
+    # Only cache successful responses and valid "no transactions" results.
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
     with gzip.open(cache_file, "wt", encoding="utf-8") as fh:
         json.dump(body, fh)
