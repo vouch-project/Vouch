@@ -49,6 +49,27 @@ LABEL_COLUMN = "labelIsRisky"
 _ARTIFACT_ROOT = Path(__file__).resolve().parents[1] / "models" / "artifacts"
 
 
+class CalibratedPipeline:
+    """sklearn Pipeline + IsotonicRegression wrapper with a predict_proba interface.
+
+    sklearn >=1.8 removed cv="prefit" from CalibratedClassifierCV. This thin
+    wrapper provides the same predict_proba contract so downstream loading code
+    can call model.predict_proba(X) as expected.
+    """
+
+    def __init__(self, pipeline: Pipeline, calibrator: IsotonicRegression) -> None:
+        self._pipeline = pipeline
+        self._calibrator = calibrator
+
+    def predict_proba(self, x: np.ndarray) -> np.ndarray:
+        raw = self._pipeline.predict_proba(x)[:, 1]
+        cal = self._calibrator.predict(raw)
+        return np.column_stack([1 - cal, cal])
+
+    def predict(self, x: np.ndarray) -> np.ndarray:
+        return (self.predict_proba(x)[:, 1] >= 0.5).astype(int)
+
+
 @dataclass
 class TrainingResult:
     model_version: str
@@ -208,7 +229,7 @@ def train(settings: Settings | None = None) -> TrainingResult:
     model_version = f"{settings.feature_set_version}-{datetime.now(tz=UTC):%Y%m%dT%H%M%SZ}"
     artifact_dir = _ARTIFACT_ROOT / model_version
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    joblib.dump({"pipeline": cal_pipe, "calibrator": isotonic}, artifact_dir / "model.joblib")
+    joblib.dump(CalibratedPipeline(cal_pipe, isotonic), artifact_dir / "model.joblib")
 
     metadata: dict[str, Any] = {
         "model_version": model_version,
