@@ -11,6 +11,7 @@ subgraph caps `skip` at 5000. This also makes incremental pulls trivial
 
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -253,10 +254,82 @@ async def fetch_safe_borrowers(
                 address=addr,
                 borrows_count=len(events),
                 total_borrowed_usd=sum(usd_values),
+                # `first_borrow_at` is provisional — only reflects the events seen
+                # in the recent descending walk above. Overwritten below with the
+                # wallet's true earliest borrow from the subgraph.
                 first_borrow_at=datetime.fromtimestamp(min(timestamps), tz=UTC),
                 last_borrow_at=datetime.fromtimestamp(max(timestamps), tz=UTC),
             )
         )
 
+    # The descending paginated walk above only sees a wallet's *recent* borrows,
+    # so `first_borrow_at` is artificially recent. Fetch each wallet's true
+    # earliest borrow timestamp directly from the subgraph so the downstream
+    # observation-window filter in `transform.build_training_rows` is meaningful.
+    async with httpx.AsyncClient() as client:
+        first_ts = await _fetch_first_borrow_timestamps(
+            client, settings.subgraph_url, [b.address for b in out],
+        )
+    for b in out:
+        ts = first_ts.get(b.address)
+        if ts is not None:
+            b.first_borrow_at = datetime.fromtimestamp(ts, tz=UTC)
+
     out.sort(key=lambda b: (b.last_borrow_at or datetime.min.replace(tzinfo=UTC)), reverse=True)
     return out[:target_count]
+
+
+# Max addresses aliased into a single GraphQL request. Kept modest so the
+# rendered query stays well under typical subgraph payload limits.
+_FIRST_BORROW_BATCH = 25
+# Max concurrent batched requests to the subgraph.
+_FIRST_BORROW_CONCURRENCY = 4
+
+
+async def _fetch_first_borrow_timestamps(
+    client: httpx.AsyncClient,
+    url: str,
+    addresses: list[str],
+) -> dict[str, int]:
+    """Return {address: earliest_borrow_unix_ts} for the given addresses.
+
+    Uses GraphQL field aliases to batch multiple per-address queries into one
+    request, with a small concurrency cap across batches.
+    """
+    if not addresses:
+        return {}
+
+    sem = asyncio.Semaphore(_FIRST_BORROW_CONCURRENCY)
+    batches: list[list[str]] = [
+        addresses[i : i + _FIRST_BORROW_BATCH]
+        for i in range(0, len(addresses), _FIRST_BORROW_BATCH)
+    ]
+
+    async def run_batch(batch: list[str]) -> dict[str, int]:
+        # Build an aliased query: a0, a1, ... each asking for the wallet's
+        # single earliest borrow.
+        fields = "\n".join(
+            f'a{i}: borrows('
+            f'where: {{user: "{addr}"}}, '
+            f"orderBy: timestamp, orderDirection: asc, first: 1"
+            f") {{ timestamp }}"
+            for i, addr in enumerate(batch)
+        )
+        query = f"query FirstBorrows {{\n{fields}\n}}"
+        async with sem:
+            data = await _post_graphql(client, url, query, {})
+        result: dict[str, int] = {}
+        for i, addr in enumerate(batch):
+            rows = data.get(f"a{i}") or []
+            if rows:
+                result[addr] = int(rows[0]["timestamp"])
+        return result
+
+    merged: dict[str, int] = {}
+    for batch_result in await asyncio.gather(*(run_batch(b) for b in batches)):
+        merged.update(batch_result)
+    log.info(
+        "resolved true first_borrow_at for %d/%d safe wallets",
+        len(merged), len(addresses),
+    )
+    return merged
