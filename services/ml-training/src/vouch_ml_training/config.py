@@ -45,8 +45,8 @@ class Settings(BaseSettings):
     supabase_secret_key: str = Field(default="", alias="SUPABASE_SECRET_KEY")
 
     # ETL knobs
-    target_risky_wallets: int = Field(default=750, alias="TARGET_RISKY_WALLETS")
-    target_safe_wallets: int = Field(default=750, alias="TARGET_SAFE_WALLETS")
+    target_risky_wallets: int = Field(default=2000, alias="TARGET_RISKY_WALLETS")
+    target_safe_wallets: int = Field(default=2000, alias="TARGET_SAFE_WALLETS")
     http_concurrency: int = Field(default=4, alias="HTTP_CONCURRENCY")
     etherscan_rps: float = Field(default=4.0, alias="ETHERSCAN_RPS")
     feature_set_version: str = Field(default="cold_start_v1", alias="FEATURE_SET_VERSION")
