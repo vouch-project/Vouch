@@ -98,18 +98,14 @@ async def _etherscan_call(
     resp = await client.get(settings.etherscan_base_url, params=full_params, timeout=30.0)
     resp.raise_for_status()
     body: dict[str, Any] = resp.json()
-    # Etherscan returns status="0" with `result` as a string for both
-    # "rate limited" and "no records found". Distinguish: a rate-limit
-    # message starts with "Max calls" or contains "rate limit" — we
-    # raise so tenacity retries with backoff. Empty results are not an
-    # error, the caller handles them.
     result = body.get("result")
     if body.get("status") == "0" and isinstance(result, str):
         msg = result.lower()
         if "rate limit" in msg or "max calls" in msg or "too many" in msg:
             raise RuntimeError(f"Etherscan rate limited: {result}")
+        if "no transactions found" not in msg:
+            raise RuntimeError(f"Etherscan error: {result}")
 
-    # Only cache successful responses (or "no records").
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
     with gzip.open(cache_file, "wt", encoding="utf-8") as fh:
         json.dump(body, fh)
