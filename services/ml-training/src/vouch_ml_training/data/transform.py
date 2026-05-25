@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from vouch_ml_training.config import Settings
+from vouch_ml_training.logging import get_logger
 from vouch_ml_training.data.types import (
     LiquidationAggregate,
     SafeBorrower,
     TrainingRow,
     WalletEnrichment,
 )
+
+log = get_logger(__name__)
 
 
 def build_training_rows(
@@ -19,12 +22,32 @@ def build_training_rows(
     liquidations: list[LiquidationAggregate],
     safe_borrowers: list[SafeBorrower],
     enrichments: dict[str, WalletEnrichment],
+    observation_window_days: int = 90,
 ) -> list[TrainingRow]:
     """Merge label sources + enrichment into the final training-row schema."""
     snap = snapshot_at or datetime.now(tz=UTC)
+    window = timedelta(days=observation_window_days)
+
+    filtered_liquidations = [
+        liq for liq in liquidations
+        if (snap - liq.last_liquidation_at) <= window
+    ]
+
+    cutoff = snap - window
+    filtered_safe = [
+        safe for safe in safe_borrowers
+        if safe.first_borrow_at is not None and safe.first_borrow_at <= cutoff
+    ]
+
+    log.info(
+        "observation window filter | risky: %d→%d, safe: %d→%d",
+        len(liquidations), len(filtered_liquidations),
+        len(safe_borrowers), len(filtered_safe),
+    )
+
     rows: list[TrainingRow] = []
 
-    for liq in liquidations:
+    for liq in filtered_liquidations:
         enr = enrichments.get(liq.address, WalletEnrichment(address=liq.address))
         rows.append(
             TrainingRow(
@@ -49,7 +72,7 @@ def build_training_rows(
             )
         )
 
-    for safe in safe_borrowers:
+    for safe in filtered_safe:
         enr = enrichments.get(safe.address, WalletEnrichment(address=safe.address))
         rows.append(
             TrainingRow(

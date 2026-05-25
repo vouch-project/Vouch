@@ -24,6 +24,7 @@ class SafeBorrower(BaseModel):
     address: str
     borrows_count: int
     total_borrowed_usd: float
+    first_borrow_at: datetime | None = None
     last_borrow_at: datetime | None = None
 
 

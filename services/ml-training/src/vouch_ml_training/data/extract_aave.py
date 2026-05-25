@@ -253,6 +253,7 @@ async def fetch_safe_borrowers(
                 address=addr,
                 borrows_count=len(events),
                 total_borrowed_usd=sum(usd_values),
+                first_borrow_at=datetime.fromtimestamp(min(timestamps), tz=UTC),
                 last_borrow_at=datetime.fromtimestamp(max(timestamps), tz=UTC),
             )
         )

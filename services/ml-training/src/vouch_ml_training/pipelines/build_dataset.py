@@ -51,6 +51,7 @@ async def run_etl(settings: Settings | None = None) -> int:
     # 4) Transform to TrainingRow
     rows = build_training_rows(
         settings, snapshot_at, liquidations, safe_borrowers, enrichments,
+        observation_window_days=settings.observation_window_days,
     )
     log.info("built %d training rows", len(rows))
 

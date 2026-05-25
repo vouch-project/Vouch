@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     http_concurrency: int = Field(default=4, alias="HTTP_CONCURRENCY")
     etherscan_rps: float = Field(default=4.0, alias="ETHERSCAN_RPS")
     feature_set_version: str = Field(default="cold_start_v1", alias="FEATURE_SET_VERSION")
+    observation_window_days: int = Field(default=90, alias="OBSERVATION_WINDOW_DAYS")
 
     @property
     def subgraph_url(self) -> str:
