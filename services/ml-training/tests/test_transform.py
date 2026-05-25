@@ -28,8 +28,8 @@ def test_build_training_rows_assigns_labels() -> None:
         LiquidationAggregate(
             address="0xaaa",
             liquidation_count=2,
-            first_liquidation_at=datetime(2024, 1, 1, tzinfo=UTC),
-            last_liquidation_at=datetime(2025, 1, 1, tzinfo=UTC),
+            first_liquidation_at=datetime(2026, 5, 1, tzinfo=UTC),
+            last_liquidation_at=datetime(2026, 5, 10, tzinfo=UTC),
             total_principal_usd=10_000.0,
         )
     ]
@@ -38,7 +38,8 @@ def test_build_training_rows_assigns_labels() -> None:
             address="0xbbb",
             borrows_count=4,
             total_borrowed_usd=20_000.0,
-            last_borrow_at=datetime(2025, 6, 1, tzinfo=UTC),
+            first_borrow_at=datetime(2026, 1, 1, tzinfo=UTC),
+            last_borrow_at=datetime(2026, 5, 10, tzinfo=UTC),
         )
     ]
     enrichments = {
@@ -50,7 +51,7 @@ def test_build_training_rows_assigns_labels() -> None:
         ),
     }
 
-    rows = build_training_rows(settings, snap, risky, safe, enrichments)
+    rows = build_training_rows(settings, snap, risky, safe, enrichments, observation_window_days=90)
 
     assert len(rows) == 2
     risky_row = next(r for r in rows if r.address == "0xaaa")
