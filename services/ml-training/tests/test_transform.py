@@ -1,4 +1,4 @@
-"""Smoke tests for the transform stage."""
+"""Tests for the transform stage."""
 
 from __future__ import annotations
 
@@ -61,3 +61,45 @@ def test_build_training_rows_assigns_labels() -> None:
     assert safe_row.label_is_risky is False
     assert safe_row.historical_liquidation_count == 0
     assert safe_row.aave_borrows_count == 4
+
+
+def test_observation_window_excludes_stale_liquidations() -> None:
+    """Wallets liquidated long before the snapshot should be excluded."""
+    settings = _settings()
+    snap = datetime(2026, 5, 20, tzinfo=UTC)
+
+    # Liquidated 200 days before snapshot — features no longer relevant
+    stale_risky = [
+        LiquidationAggregate(
+            address="0xccc",
+            liquidation_count=1,
+            first_liquidation_at=datetime(2025, 11, 1, tzinfo=UTC),
+            last_liquidation_at=datetime(2025, 11, 1, tzinfo=UTC),
+            total_principal_usd=5000.0,
+        )
+    ]
+    enrichments = {"0xccc": WalletEnrichment(address="0xccc")}
+
+    rows = build_training_rows(settings, snap, stale_risky, [], enrichments, observation_window_days=90)
+    assert len(rows) == 0
+
+
+def test_observation_window_excludes_recent_safe_borrowers() -> None:
+    """Safe wallets that haven't had enough time to prove safety are excluded."""
+    settings = _settings()
+    snap = datetime(2026, 5, 20, tzinfo=UTC)
+
+    # First borrowed only 30 days ago — hasn't had full observation window
+    recent_safe = [
+        SafeBorrower(
+            address="0xddd",
+            borrows_count=2,
+            total_borrowed_usd=1000.0,
+            first_borrow_at=datetime(2026, 4, 25, tzinfo=UTC),
+            last_borrow_at=datetime(2026, 5, 10, tzinfo=UTC),
+        )
+    ]
+    enrichments = {"0xddd": WalletEnrichment(address="0xddd")}
+
+    rows = build_training_rows(settings, snap, [], recent_safe, enrichments, observation_window_days=90)
+    assert len(rows) == 0
