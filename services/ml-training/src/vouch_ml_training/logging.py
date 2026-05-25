@@ -20,7 +20,7 @@ def configure_logging(level: int = logging.INFO) -> None:
         handlers=[RichHandler(rich_tracebacks=True, show_path=False)],
     )
     # Quiet 3rd-party libs we don't care about.
-    for noisy in ("httpx", "httpcore", "urllib3", "web3", "websockets"):
+    for noisy in ("httpx", "httpcore", "urllib3", "websockets"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     _CONFIGURED = True
 
