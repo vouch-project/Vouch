@@ -36,6 +36,14 @@ log = get_logger(__name__)
 # Lives at services/ml-training/data/cache/etherscan/<sha1>.json.gz.
 _CACHE_DIR = Path(__file__).resolve().parents[3] / "data" / "cache" / "etherscan"
 
+_STABLECOIN_CONTRACTS: list[tuple[str, int]] = [
+    ("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", 6),   # USDC
+    ("0xdAC17F958D2ee523a2206206994597C13D831ec7", 6),   # USDT
+    ("0x6B175474E89094C44Da98b954EedeAC495271d0F", 18),  # DAI
+]
+
+_BALANCE_OF_SELECTOR = "0x70a08231"
+
 
 class _RateLimiter:
     """Async token bucket; allows at most `rps` calls per second."""
@@ -157,6 +165,29 @@ async def _rpc_batch(
     return out
 
 
+async def _fetch_stablecoin_balance(
+    client: httpx.AsyncClient,
+    settings: Settings,
+    address: str,
+) -> float:
+    """Sum USD-equivalent stablecoin balance across USDC, USDT, DAI."""
+    addr_padded = address.lower().replace("0x", "").zfill(64)
+    calldata = f"{_BALANCE_OF_SELECTOR}{addr_padded}"
+
+    calls: list[tuple[str, list[Any]]] = [
+        ("eth_call", [{"to": contract, "data": calldata}, "latest"])
+        for contract, _ in _STABLECOIN_CONTRACTS
+    ]
+    results = await _rpc_batch(client, settings, calls)
+
+    total_usd = 0.0
+    for raw_hex, (_, decimals) in zip(results, _STABLECOIN_CONTRACTS):
+        if raw_hex and raw_hex != "0x":
+            balance = int(raw_hex, 16) / (10 ** decimals)
+            total_usd += balance
+    return total_usd
+
+
 async def _enrich_one(
     client: httpx.AsyncClient,
     settings: Settings,
@@ -210,14 +241,15 @@ async def _enrich_one(
             total_tx = int(nonce_hex, 16)
             eth_balance = int(balance_hex, 16) / 1e18
 
+            stablecoin_usd = await _fetch_stablecoin_balance(client, settings, address)
+
             return WalletEnrichment(
                 address=address,
                 wallet_age_days=age_days,
                 total_transactions=total_tx,
                 eth_balance=eth_balance,
                 unique_protocols_interacted=unique_contracts,
-                # stablecoin balance left for a future feature pass
-                stablecoin_balance_usd=None,
+                stablecoin_balance_usd=stablecoin_usd,
             )
         except Exception as exc:
             # Best-effort enrichment: a single bad wallet should never sink the run.
