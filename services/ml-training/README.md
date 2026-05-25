@@ -51,7 +51,7 @@ External services:
 
 System:
 
-- **Python 3.11** (3.12+ may work; `xgboost` wheel availability is the limiting factor).
+- **Python 3.11+** (`xgboost` wheel availability may limit newer versions on some platforms).
 - **macOS only:** `brew install libomp` is required before training. XGBoost links to OpenMP at runtime; the ETL itself doesn't need it.
 
 ## Setup
@@ -79,7 +79,7 @@ There's no lockfile today. The `.[dev]` install reads `pyproject.toml` and resol
 ## Run
 
 ```bash
-# 1. Build the dataset (defaults: 750 risky + 750 safe; override with flags)
+# 1. Build the dataset (defaults: 2000 risky + 2000 safe; override with flags)
 vouch-ml-training build-dataset --risky 250 --safe 250
 
 # 2. Snapshot Supabase → parquet
@@ -108,8 +108,8 @@ vouch-ml-training train
 - **Supabase** `public.training_dataset` — labeled wallets + features. Service-role only (RLS on, no public policy). Source of truth.
 - **Parquet snapshots** `data/snapshots/<featureSetVersion>__<UTC timestamp>.parquet` — frozen, versioned, what the trainer reads.
 - **Model artifact** `src/vouch_ml_training/models/artifacts/<version>/`
-  - `model.joblib` — calibrated `Pipeline(SimpleImputer, XGBClassifier)` wrapped in isotonic calibration.
-  - `metadata.json` — feature columns, metrics (AUC, PR-AUC, log-loss, Brier), train/val/test sizes.
+  - `model.joblib` — `CalibratedPipeline` wrapping a `Pipeline(SimpleImputer, XGBClassifier)` + `IsotonicRegression` calibrator. Call `model.predict_proba(X)` to get calibrated probabilities.
+  - `metadata.json` — feature columns, mean CV metrics (AUC, accuracy, PR-AUC, log-loss, Brier ± std), `cv_folds`, `n_total`.
 
 `apps/ml-engine` is the eventual consumer of `model.joblib`.
 
@@ -122,8 +122,6 @@ vouch-ml-training train
 ## What's next
 
 - Add `aaveAvgHealthFactorAtBorrow` and `aaveTimeSinceLastBorrowDays` features (subgraph already has the data).
-- Add stablecoin balance via Alchemy `alchemy_getTokenBalances` (left as a `None` column today).
 - Add a `training_runs` table to track model version → metrics → dataset hash for full lineage.
-- Move from "ever liquidated" to a time-bounded label (e.g. liquidated within 90 days of snapshot) to avoid leakage.
 - Backfill with Vouch's own loan outcomes (`loans` table) once the protocol has real history — that's when the real model starts.
 - Optional: pin transitive deps via a lockfile (`pip-tools` or `uv pip compile`).
