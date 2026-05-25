@@ -17,8 +17,8 @@ from typing import Any
 import joblib
 import numpy as np
 import polars as pl
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.impute import SimpleImputer
+from sklearn.isotonic import IsotonicRegression
 from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
@@ -193,20 +193,22 @@ def train(settings: Settings | None = None) -> TrainingResult:
     pipe = _build_pipeline(scale_pos_weight)
     pipe.fit(x, y)
 
-    # Calibrate on a held-out portion for probability quality
+    # Calibrate on a held-out portion for probability quality.
+    # sklearn >=1.8 removed cv="prefit"; use IsotonicRegression directly.
     x_cal_train, x_cal_val, y_cal_train, y_cal_val = train_test_split(
         x, y, test_size=0.2, stratify=y, random_state=42,
     )
     cal_pipe = _build_pipeline(scale_pos_weight)
     cal_pipe.fit(x_cal_train, y_cal_train)
-    calibrated = CalibratedClassifierCV(cal_pipe, method="isotonic", cv="prefit")
-    calibrated.fit(x_cal_val, y_cal_val)
+    raw_proba_val = cal_pipe.predict_proba(x_cal_val)[:, 1]
+    isotonic = IsotonicRegression(out_of_bounds="clip")
+    isotonic.fit(raw_proba_val, y_cal_val)
 
     # Persist artifact
     model_version = f"{settings.feature_set_version}-{datetime.now(tz=UTC):%Y%m%dT%H%M%SZ}"
     artifact_dir = _ARTIFACT_ROOT / model_version
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    joblib.dump(calibrated, artifact_dir / "model.joblib")
+    joblib.dump({"pipeline": cal_pipe, "calibrator": isotonic}, artifact_dir / "model.joblib")
 
     metadata: dict[str, Any] = {
         "model_version": model_version,
