@@ -142,12 +142,21 @@ def _score(artifact_dir: Path, address: str) -> dict[str, Any]:
     # The imputer inside the pipeline handles NaNs (median strategy).
     proba_risky = float(model.predict_proba(x)[0, 1])
 
+    # Also expose the *uncalibrated* XGB probability for diagnostics.
+    # With tiny training sets the isotonic calibrator clips everything to
+    # 0.0/1.0; comparing raw vs calibrated tells you which layer is to blame.
+    raw_proba_risky: float | None = None
+    inner_pipeline = getattr(model, "_pipeline", None)
+    if inner_pipeline is not None:
+        raw_proba_risky = float(inner_pipeline.predict_proba(x)[0, 1])
+
     return {
         "address": address.lower(),
         "model_version": metadata["model_version"],
         "feature_set_version": metadata["feature_set_version"],
         "features": dict(zip(names, values, strict=True)),
         "risk_probability": proba_risky,
+        "raw_xgb_probability": raw_proba_risky,
         "predicted_label": "risky" if proba_risky >= 0.5 else "safe",
     }
 
