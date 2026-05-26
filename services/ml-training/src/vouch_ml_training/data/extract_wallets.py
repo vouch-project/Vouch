@@ -262,9 +262,50 @@ async def enrich_wallets(
     addresses: list[str],
 ) -> list[WalletEnrichment]:
     """Enrich a list of addresses with on-chain metadata, in parallel."""
+    total = len(addresses)
+    log.info(
+        "enrichment start | wallets=%d concurrency=%d etherscan_rps=%.2f",
+        total, settings.http_concurrency, settings.etherscan_rps,
+    )
     limiter = _RateLimiter(settings.etherscan_rps)
     semaphore = asyncio.Semaphore(settings.http_concurrency)
+
+    # Log progress every ~5% (min 10, max 100) so 1k+ wallet runs aren't silent.
+    log_every = max(10, min(100, total // 20 or 1))
+    done = 0
+    failures = 0
+    start = time.monotonic()
+    results: list[WalletEnrichment] = [None] * total  # type: ignore[list-item]
+
+    async def _run(idx: int, addr: str, client: httpx.AsyncClient) -> None:
+        nonlocal done, failures
+        enrichment = await _enrich_one(client, settings, addr, limiter, semaphore)
+        results[idx] = enrichment
+        done += 1
+        # WalletEnrichment with all-None on-chain fields means _enrich_one
+        # hit the except branch.
+        if (
+            enrichment.wallet_age_days is None
+            and enrichment.total_transactions is None
+            and enrichment.eth_balance is None
+        ):
+            failures += 1
+        if done % log_every == 0 or done == total:
+            elapsed = time.monotonic() - start
+            rate = done / elapsed if elapsed > 0 else 0.0
+            remaining = (total - done) / rate if rate > 0 else 0.0
+            log.info(
+                "enrichment progress %d/%d (%.1f%%) | failures=%d | %.1f wallets/s | eta=%.0fs",
+                done, total, 100.0 * done / total, failures, rate, remaining,
+            )
+
     async with httpx.AsyncClient() as client:
-        return await asyncio.gather(
-            *[_enrich_one(client, settings, a, limiter, semaphore) for a in addresses]
+        await asyncio.gather(
+            *[_run(i, a, client) for i, a in enumerate(addresses)]
         )
+
+    log.info(
+        "enrichment done | wallets=%d failures=%d elapsed=%.1fs",
+        total, failures, time.monotonic() - start,
+    )
+    return results

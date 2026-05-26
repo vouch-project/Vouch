@@ -305,7 +305,14 @@ async def _fetch_first_borrow_timestamps(
         for i in range(0, len(addresses), _FIRST_BORROW_BATCH)
     ]
 
+    log.info(
+        "resolving true first_borrow_at for %d safe wallets in %d batches (size=%d, concurrency=%d)",
+        len(addresses), len(batches), _FIRST_BORROW_BATCH, _FIRST_BORROW_CONCURRENCY,
+    )
+    completed = 0
+
     async def run_batch(batch: list[str]) -> dict[str, int]:
+        nonlocal completed
         # Build an aliased query: a0, a1, ... each asking for the wallet's
         # single earliest borrow.
         fields = "\n".join(
@@ -323,6 +330,11 @@ async def _fetch_first_borrow_timestamps(
             rows = data.get(f"a{i}") or []
             if rows:
                 result[addr] = int(rows[0]["timestamp"])
+        completed += 1
+        if completed % 5 == 0 or completed == len(batches):
+            log.info(
+                "first_borrow batches %d/%d done", completed, len(batches),
+            )
         return result
 
     merged: dict[str, int] = {}

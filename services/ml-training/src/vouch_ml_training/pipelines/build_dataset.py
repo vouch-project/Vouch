@@ -32,10 +32,14 @@ async def run_etl(settings: Settings | None = None) -> int:
     )
 
     # 1) Risky class — liquidated borrowers
+    log.info("step 1/5: fetching liquidated wallets from Aave subgraph (target=%d)",
+             settings.target_risky_wallets)
     liquidations = await fetch_liquidated_wallets(settings, settings.target_risky_wallets)
     log.info("fetched %d liquidated wallets", len(liquidations))
 
     # 2) Safe class — borrowers never in the liquidated set
+    log.info("step 2/5: fetching safe (never-liquidated) borrowers (target=%d)",
+             settings.target_safe_wallets)
     risky_addresses = {a.address for a in liquidations}
     safe_borrowers = await fetch_safe_borrowers(
         settings, settings.target_safe_wallets, risky_addresses,
@@ -44,18 +48,31 @@ async def run_etl(settings: Settings | None = None) -> int:
 
     # 3) Enrichment for every wallet on both sides
     all_addresses = sorted({*risky_addresses, *(s.address for s in safe_borrowers)})
+    log.info(
+        "step 3/5: enriching %d unique wallets (risky=%d + safe=%d, dedup overlap=%d)",
+        len(all_addresses), len(risky_addresses), len(safe_borrowers),
+        len(risky_addresses) + len(safe_borrowers) - len(all_addresses),
+    )
     enrichment_list = await enrich_wallets(settings, all_addresses)
     enrichments: dict[str, WalletEnrichment] = {e.address: e for e in enrichment_list}
     log.info("enriched %d wallets", len(enrichments))
 
     # 4) Transform to TrainingRow
+    log.info("step 4/5: building training rows (observation_window_days=%d)",
+             settings.observation_window_days)
     rows = build_training_rows(
         settings, snapshot_at, liquidations, safe_borrowers, enrichments,
         observation_window_days=settings.observation_window_days,
     )
-    log.info("built %d training rows", len(rows))
+    log.info(
+        "built %d training rows | risky=%d safe=%d",
+        len(rows),
+        sum(1 for r in rows if r.label_is_risky),
+        sum(1 for r in rows if not r.label_is_risky),
+    )
 
     # 5) Load to Supabase
+    log.info("step 5/5: upserting %d rows to Supabase", len(rows))
     written = upsert_training_rows(settings, rows)
     log.info("ETL done | rows_upserted=%d", written)
     return written
