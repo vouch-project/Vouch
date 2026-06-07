@@ -27,6 +27,12 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // V3 additions — appended to preserve storage layout
         address requestedPrincipalToken;  // token borrower wants to receive
         uint256 requestedPrincipalAmount; // amount borrower wants to receive
+        // V4 additions — appended to preserve storage layout
+        uint16 interestRateBps;      // simple interest rate in basis points (e.g. 500 = 5%)
+        uint256 durationSeconds;     // loan term in seconds (0 = no deadline)
+        bool repaid;                 // true once the loan has been fully repaid
+        uint256 amountRepaid;        // cumulative debt repaid so far (principal token units)
+        uint256 collateralReleased;  // cumulative collateral already returned to borrower
     }
 
     // --- State Variables ---
@@ -54,6 +60,26 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         address indexed lender,
         address indexed borrower,
         uint256 principalAmount,
+        uint256 timestamp
+    );
+
+    event LoanRepaid(
+        uint256 indexed loanId,
+        address indexed borrower,
+        address indexed lender,
+        uint256 principalAmount,
+        uint256 interestAmount,
+        uint256 totalRepaid,
+        uint256 timestamp
+    );
+
+    event LoanPartiallyRepaid(
+        uint256 indexed loanId,
+        address indexed borrower,
+        uint256 paymentAmount,
+        uint256 collateralReleased,
+        uint256 totalRepaidSoFar,
+        uint256 totalDue,
         uint256 timestamp
     );
 
@@ -86,11 +112,19 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     /// @notice Create a new loan by depositing ETH collateral
-    /// @param principalToken  The token the borrower wants to receive (address(0) = native ETH)
-    /// @param principalAmount The amount the borrower wants to receive
-    function createLoan(address principalToken, uint256 principalAmount) external payable {
+    /// @param principalToken   The token the borrower wants to receive (address(0) = native ETH)
+    /// @param principalAmount  The amount the borrower wants to receive
+    /// @param interestRateBps  Simple interest rate in basis points (e.g. 500 = 5%); 0 = interest-free
+    /// @param durationSeconds  Loan term in seconds; 0 = no deadline
+    function createLoan(
+        address principalToken,
+        uint256 principalAmount,
+        uint16 interestRateBps,
+        uint256 durationSeconds
+    ) external payable {
         require(msg.value > 0, "Collateral must be > 0");
         require(principalAmount > 0, "Principal amount must be > 0");
+        require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
 
         // Collateral is tracked separately from withdrawable deposits.
         lockedEthCollateral[msg.sender] += msg.value;
@@ -107,7 +141,12 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             funded: false,
             fundedAt: 0,
             requestedPrincipalToken: principalToken,
-            requestedPrincipalAmount: principalAmount
+            requestedPrincipalAmount: principalAmount,
+            interestRateBps: interestRateBps,
+            durationSeconds: durationSeconds,
+            repaid: false,
+            amountRepaid: 0,
+            collateralReleased: 0
         });
 
         emit LoanCreated(nextLoanId, msg.sender, address(0), msg.value, principalToken, principalAmount, block.timestamp);
@@ -115,14 +154,24 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     /// @notice Create a new loan by depositing ERC20 collateral
-    /// @param token           The ERC20 token to use as collateral
-    /// @param amount          The amount of collateral to deposit
-    /// @param principalToken  The token the borrower wants to receive (address(0) = native ETH)
-    /// @param principalAmount The amount the borrower wants to receive
-    function createLoanWithERC20(address token, uint256 amount, address principalToken, uint256 principalAmount) external {
+    /// @param token            The ERC20 token to use as collateral
+    /// @param amount           The amount of collateral to deposit
+    /// @param principalToken   The token the borrower wants to receive (address(0) = native ETH)
+    /// @param principalAmount  The amount the borrower wants to receive
+    /// @param interestRateBps  Simple interest rate in basis points (e.g. 500 = 5%); 0 = interest-free
+    /// @param durationSeconds  Loan term in seconds; 0 = no deadline
+    function createLoanWithERC20(
+        address token,
+        uint256 amount,
+        address principalToken,
+        uint256 principalAmount,
+        uint16 interestRateBps,
+        uint256 durationSeconds
+    ) external {
         require(amount > 0, "Collateral must be > 0");
         require(token != address(0), "Invalid token address");
         require(principalAmount > 0, "Principal amount must be > 0");
+        require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
 
         // Transfer tokens from user to this vault (SafeERC20 handles non-compliant tokens)
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
@@ -139,7 +188,12 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             funded: false,
             fundedAt: 0,
             requestedPrincipalToken: principalToken,
-            requestedPrincipalAmount: principalAmount
+            requestedPrincipalAmount: principalAmount,
+            interestRateBps: interestRateBps,
+            durationSeconds: durationSeconds,
+            repaid: false,
+            amountRepaid: 0,
+            collateralReleased: 0
         });
 
         emit LoanCreated(nextLoanId, msg.sender, token, amount, principalToken, principalAmount, block.timestamp);
@@ -158,8 +212,120 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         emit Withdrawn(msg.sender, amount);
     }
 
-    function releaseLoanCollateral(uint256 /*loanId*/) external pure {
-        revert("Collateral release disabled");
+    /**
+     * @notice Repay some or all of a funded ETH-principal loan.
+     * @dev    Accepts any msg.value between 1 wei and the remaining balance (totalDue - amountRepaid).
+     *         Each payment proportionally releases collateral: floor(collateralAmount * payment / totalDue).
+     *         On the final payment, any dust left from rounding is also returned so all collateral
+     *         is eventually recovered. Interest is a flat rate on the original principal.
+     * @param loanId The ID of the loan to repay.
+     */
+    function repayLoan(uint256 loanId) external payable {
+        Loan storage loan = loans[loanId];
+        require(!loan.repaid, "Loan already repaid");
+        require(loan.active, "Loan is not active");
+        require(loan.funded, "Loan is not funded");
+        require(msg.sender == loan.borrower, "Only borrower can repay");
+        require(loan.requestedPrincipalToken == address(0), "Loan has ERC20 principal; use repayLoanWithERC20");
+        require(msg.value > 0, "Payment must be > 0");
+
+        uint256 totalDue = loan.principalAmount + (loan.principalAmount * loan.interestRateBps) / 10000;
+        uint256 remaining = totalDue - loan.amountRepaid;
+        require(msg.value <= remaining, "Payment exceeds amount owed");
+
+        loan.amountRepaid += msg.value;
+        bool fullRepayment = loan.amountRepaid == totalDue;
+
+        // On the final payment return all remaining collateral to eliminate rounding dust;
+        // otherwise release proportionally.
+        uint256 collateralToRelease = fullRepayment
+            ? loan.collateralAmount - loan.collateralReleased
+            : (loan.collateralAmount * msg.value) / totalDue;
+
+        loan.collateralReleased += collateralToRelease;
+
+        if (fullRepayment) {
+            loan.repaid = true;
+            loan.active = false;
+            loan.collateralLocked = false;
+        }
+
+        if (loan.collateralToken == address(0)) {
+            lockedEthCollateral[loan.borrower] -= collateralToRelease;
+        }
+
+        // State fully updated — now do external calls
+        (bool lenderOk, ) = payable(loan.lender).call{value: msg.value}("");
+        require(lenderOk, "ETH transfer to lender failed");
+
+        if (collateralToRelease > 0) {
+            (bool borrowerOk, ) = payable(loan.borrower).call{value: collateralToRelease}("");
+            require(borrowerOk, "ETH collateral return failed");
+        }
+
+        if (fullRepayment) {
+            uint256 interest = (loan.principalAmount * loan.interestRateBps) / 10000;
+            emit LoanRepaid(loanId, loan.borrower, loan.lender, loan.principalAmount, interest, totalDue, block.timestamp);
+        } else {
+            emit LoanPartiallyRepaid(loanId, loan.borrower, msg.value, collateralToRelease, loan.amountRepaid, totalDue, block.timestamp);
+        }
+    }
+
+    /**
+     * @notice Repay some or all of a funded ERC20-principal loan.
+     * @dev    The borrower must approve this contract for at least `amount` of the principal token
+     *         before calling. Collateral is released proportionally each payment and returned in its
+     *         original form (ETH or ERC20). On the final payment, any rounding dust is also returned.
+     * @param loanId  The ID of the loan to repay.
+     * @param amount  The token amount to repay this call (must be > 0 and <= remaining balance).
+     */
+    function repayLoanWithERC20(uint256 loanId, uint256 amount) external {
+        Loan storage loan = loans[loanId];
+        require(!loan.repaid, "Loan already repaid");
+        require(loan.active, "Loan is not active");
+        require(loan.funded, "Loan is not funded");
+        require(msg.sender == loan.borrower, "Only borrower can repay");
+        require(loan.requestedPrincipalToken != address(0), "Loan has ETH principal; use repayLoan");
+        require(amount > 0, "Payment must be > 0");
+
+        uint256 totalDue = loan.principalAmount + (loan.principalAmount * loan.interestRateBps) / 10000;
+        uint256 remaining = totalDue - loan.amountRepaid;
+        require(amount <= remaining, "Payment exceeds amount owed");
+
+        loan.amountRepaid += amount;
+        bool fullRepayment = loan.amountRepaid == totalDue;
+
+        uint256 collateralToRelease = fullRepayment
+            ? loan.collateralAmount - loan.collateralReleased
+            : (loan.collateralAmount * amount) / totalDue;
+
+        loan.collateralReleased += collateralToRelease;
+
+        if (fullRepayment) {
+            loan.repaid = true;
+            loan.active = false;
+            loan.collateralLocked = false;
+        }
+
+        // Pull payment tokens from borrower and forward to lender
+        IERC20(loan.requestedPrincipalToken).safeTransferFrom(msg.sender, loan.lender, amount);
+
+        if (collateralToRelease > 0) {
+            if (loan.collateralToken == address(0)) {
+                lockedEthCollateral[loan.borrower] -= collateralToRelease;
+                (bool ok, ) = payable(loan.borrower).call{value: collateralToRelease}("");
+                require(ok, "ETH collateral return failed");
+            } else {
+                IERC20(loan.collateralToken).safeTransfer(loan.borrower, collateralToRelease);
+            }
+        }
+
+        if (fullRepayment) {
+            uint256 interest = (loan.principalAmount * loan.interestRateBps) / 10000;
+            emit LoanRepaid(loanId, loan.borrower, loan.lender, loan.principalAmount, interest, totalDue, block.timestamp);
+        } else {
+            emit LoanPartiallyRepaid(loanId, loan.borrower, amount, collateralToRelease, loan.amountRepaid, totalDue, block.timestamp);
+        }
     }
 
     /**
@@ -251,19 +417,49 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     function getLoan(uint256 loanId) external view returns (
-        address borrower, 
-        address collateralToken, 
-        uint256 collateralAmount, 
-        uint256 createdAt, 
+        address borrower,
+        address collateralToken,
+        uint256 collateralAmount,
+        uint256 createdAt,
         bool active
     ) {
         Loan memory loan = loans[loanId];
         return (
-            loan.borrower, 
-            loan.collateralToken, 
-            loan.collateralAmount, 
-            loan.createdAt, 
+            loan.borrower,
+            loan.collateralToken,
+            loan.collateralAmount,
+            loan.createdAt,
             loan.active
+        );
+    }
+
+    /**
+     * @notice Returns repayment-related details for a loan.
+     * @return interestRateBps  Agreed interest rate in basis points.
+     * @return durationSeconds  Agreed loan duration in seconds (0 = no deadline).
+     * @return repaid           Whether the loan has been fully repaid.
+     * @return totalDue         Principal + interest owed (0 if not funded).
+     * @return amountRepaid     Cumulative amount repaid so far.
+     * @return remaining        Amount still outstanding.
+     */
+    function getRepaymentDetails(uint256 loanId) external view returns (
+        uint16 interestRateBps,
+        uint256 durationSeconds,
+        bool repaid,
+        uint256 totalDue,
+        uint256 amountRepaid,
+        uint256 remaining
+    ) {
+        Loan memory loan = loans[loanId];
+        uint256 interest = (loan.principalAmount * loan.interestRateBps) / 10000;
+        uint256 due = loan.funded ? loan.principalAmount + interest : 0;
+        return (
+            loan.interestRateBps,
+            loan.durationSeconds,
+            loan.repaid,
+            due,
+            loan.amountRepaid,
+            due > loan.amountRepaid ? due - loan.amountRepaid : 0
         );
     }
 
