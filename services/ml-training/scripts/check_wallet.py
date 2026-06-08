@@ -48,6 +48,21 @@ query UserBorrows($user: String!, $first: Int!, $skip: Int!) {
     amount
     assetPriceUSD
     reserve { decimals symbol }
+    healthFactor
+  }
+}
+"""
+
+_USER_REPAYS_QUERY = """
+query UserRepays($user: String!, $first: Int!, $skip: Int!) {
+  repays(
+    first: $first
+    skip: $skip
+    where: { user: $user }
+    orderBy: timestamp
+    orderDirection: asc
+  ) {
+    id
   }
 }
 """
@@ -67,12 +82,15 @@ def _find_latest_artifact() -> Path:
     return sorted(candidates)[-1]
 
 
-async def _fetch_user_aave_stats(address: str) -> tuple[int, float]:
-    """Return (borrows_count, total_borrowed_usd) for one user from Aave V3."""
+async def _fetch_user_aave_stats(
+    address: str,
+) -> tuple[int, float, float | None, float | None]:
+    """Return (borrows_count, total_borrowed_usd, avg_health_factor, repay_ratio)."""
     settings = get_settings()
     addr = address.lower()
     total_count = 0
     total_usd = 0.0
+    health_factors: list[float] = []
     page_size = 1000
 
     async with httpx.AsyncClient() as client:
@@ -94,6 +112,12 @@ async def _fetch_user_aave_stats(address: str) -> tuple[int, float]:
                     int(r["reserve"]["decimals"]),
                     r["assetPriceUSD"],
                 )
+                raw_hf = r.get("healthFactor")
+                if raw_hf:
+                    try:
+                        health_factors.append(float(raw_hf) / 1e27)
+                    except (ValueError, TypeError):
+                        pass
             if len(rows) < page_size:
                 break
             skip += page_size
@@ -104,7 +128,33 @@ async def _fetch_user_aave_stats(address: str) -> tuple[int, float]:
                 )
                 break
 
-    return total_count, total_usd
+        # Fetch repay count
+        repay_count = 0
+        skip = 0
+        while True:
+            data = await _post_graphql(
+                client,
+                settings.subgraph_url,
+                _USER_REPAYS_QUERY,
+                {"user": addr, "first": page_size, "skip": skip},
+            )
+            rows = data.get("repays", [])
+            if not rows:
+                break
+            repay_count += len(rows)
+            if len(rows) < page_size:
+                break
+            skip += page_size
+            if skip >= 5000:
+                log.warning(
+                    "user has >5000 Aave repays; truncating at subgraph skip cap"
+                )
+                break
+
+    avg_hf = sum(health_factors) / len(health_factors) if health_factors else None
+    repay_ratio = min(repay_count / total_count, 1.0) if total_count > 0 else None
+
+    return total_count, total_usd, avg_hf, repay_ratio
 
 
 async def _build_features(address: str) -> tuple[list[str], list[float | None]]:
@@ -112,7 +162,12 @@ async def _build_features(address: str) -> tuple[list[str], list[float | None]]:
     enrichments = await enrich_wallets(settings, [address])
     enr = enrichments[0]
 
-    aave_count, aave_usd = await _fetch_user_aave_stats(address)
+    aave_count, aave_usd, avg_hf, repay_ratio = await _fetch_user_aave_stats(address)
+
+    # For single-wallet scoring we don't have last_borrow_at readily available,
+    # so days_since_last_borrow is computed as 0 (scoring is happening now).
+    # A more precise value would require an extra subgraph query.
+    days_since_last_borrow = 0
 
     # Order MUST match metadata.json["feature_columns"] from the artifact.
     features: dict[str, float | None] = {
@@ -123,6 +178,9 @@ async def _build_features(address: str) -> tuple[list[str], list[float | None]]:
         "ethBalance": enr.eth_balance,
         "stablecoinBalanceUsd": enr.stablecoin_balance_usd,
         "uniqueProtocolsInteracted": enr.unique_protocols_interacted,
+        "aaveDaysSinceLastBorrow": days_since_last_borrow,
+        "aaveAvgHealthFactorAtBorrow": avg_hf,
+        "aaveRepayRatio": repay_ratio,
     }
     return list(features.keys()), list(features.values())
 
