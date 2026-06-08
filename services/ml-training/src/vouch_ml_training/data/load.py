@@ -43,6 +43,9 @@ def _row_to_db(row: TrainingRow) -> dict[str, Any]:
         "ethBalance": row.eth_balance,
         "stablecoinBalanceUsd": row.stablecoin_balance_usd,
         "uniqueProtocolsInteracted": row.unique_protocols_interacted,
+        "aaveDaysSinceLastBorrow": row.aave_days_since_last_borrow,
+        "aaveAvgHealthFactorAtBorrow": row.aave_avg_health_factor_at_borrow,
+        "aaveRepayRatio": row.aave_repay_ratio,
         "rawFeatures": row.raw_features,
         "featureSetVersion": row.feature_set_version,
     }
