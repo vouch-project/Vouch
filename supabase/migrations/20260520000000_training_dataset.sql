@@ -32,7 +32,6 @@ CREATE TABLE IF NOT EXISTS training_dataset (
     "stablecoinBalanceUsd" numeric(30, 2),
     "uniqueProtocolsInteracted" integer,
     "aaveDaysSinceLastBorrow"       integer,
-    "aaveAvgHealthFactorAtBorrow"   numeric(30, 10),
     "aaveRepayRatio"                numeric(10, 6),
     -- Escape hatch for ad-hoc features that haven't earned a column yet
     "rawFeatures" jsonb NOT NULL DEFAULT '{}'::jsonb,

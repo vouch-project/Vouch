@@ -106,7 +106,7 @@ def test_observation_window_excludes_recent_safe_borrowers() -> None:
 
 
 def test_new_aave_fields_present_on_training_rows() -> None:
-    """TrainingRow carries the three new Aave feature fields."""
+    """TrainingRow carries the two new Aave feature fields."""
     settings = _settings()
     snap = datetime(2026, 5, 20, tzinfo=UTC)
 
@@ -127,7 +127,6 @@ def test_new_aave_fields_present_on_training_rows() -> None:
             total_borrowed_usd=20_000.0,
             first_borrow_at=datetime(2026, 1, 1, tzinfo=UTC),
             last_borrow_at=datetime(2026, 5, 10, tzinfo=UTC),
-            aave_avg_health_factor_at_borrow=1.5,
             aave_repay_ratio=0.75,
         )
     ]
@@ -143,8 +142,6 @@ def test_new_aave_fields_present_on_training_rows() -> None:
 
     assert risky_row.aave_days_since_last_borrow == 10  # snap - last_liquidation_at
     assert risky_row.aave_repay_ratio == 0.8
-    assert risky_row.aave_avg_health_factor_at_borrow is None  # not available for risky
 
     assert safe_row.aave_days_since_last_borrow == 10  # snap - last_borrow_at
-    assert safe_row.aave_avg_health_factor_at_borrow == 1.5
     assert safe_row.aave_repay_ratio == 0.75

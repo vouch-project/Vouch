@@ -128,7 +128,7 @@ Output includes `risk_probability` (calibrated), `raw_xgb_probability` (uncalibr
 - **Parquet snapshots** `data/snapshots/<featureSetVersion>__<UTC timestamp>.parquet` — frozen, versioned, what the trainer reads.
 - **Model artifact** `src/vouch_ml_training/models/artifacts/<version>/`
   - `model.joblib` — `CalibratedPipeline` wrapping a `Pipeline(SimpleImputer, XGBClassifier)` + `IsotonicRegression` calibrator. Call `model.predict_proba(X)` to get calibrated probabilities.
-  - `metadata.json` — feature columns (walletAgeDays, totalTransactions, aaveBorrowsCount, aaveTotalBorrowedUsd, ethBalance, stablecoinBalanceUsd, uniqueProtocolsInteracted, aaveDaysSinceLastBorrow, aaveAvgHealthFactorAtBorrow, aaveRepayRatio), mean CV metrics (AUC, accuracy, PR-AUC, log-loss, Brier ± std), `cv_folds`, `n_total`.
+  - `metadata.json` — feature columns (walletAgeDays, totalTransactions, aaveBorrowsCount, aaveTotalBorrowedUsd, ethBalance, stablecoinBalanceUsd, uniqueProtocolsInteracted, aaveDaysSinceLastBorrow, aaveRepayRatio), mean CV metrics (AUC, accuracy, PR-AUC, log-loss, Brier ± std), `cv_folds`, `n_total`.
 
 `apps/ml-engine` is the eventual consumer of `model.joblib`.
 

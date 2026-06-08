@@ -2,11 +2,15 @@
 
 ## Goal
 
-Add three new Aave-derived features to the cold-start ML training pipeline:
-`aaveDaysSinceLastBorrow`, `aaveAvgHealthFactorAtBorrow`, `aaveRepayRatio`.
-All three come from the Aave V3 subgraph using the existing pagination infrastructure.
+Add two new Aave-derived features to the cold-start ML training pipeline:
+`aaveDaysSinceLastBorrow`, `aaveRepayRatio`.
+Both come from the Aave V3 subgraph using the existing pagination infrastructure.
 No version bump — the existing migration and `cold_start_v1` are edited in place since
 this PR hasn't merged to main yet.
+
+`aaveAvgHealthFactorAtBorrow` was originally planned but dropped: the Aave V3 subgraph's
+`Borrow` type does not expose a `healthFactor` field (it's a live account state, not stored
+per event). The DB column was removed.
 
 ## Architecture
 
@@ -26,11 +30,7 @@ with the trained model's feature vector.
 | Feature | Type | Source | Both classes? |
 |---------|------|--------|---------------|
 | `aaveDaysSinceLastBorrow` | `int` | `(snapshot_at - last_borrow_at).days` | Yes — risky uses `last_liquidation_at` as proxy |
-| `aaveAvgHealthFactorAtBorrow` | `float` | Mean of `healthFactor` fields from `borrows` events (ray units ÷ 1e27) | Safe only — liquidation query doesn't include borrow events; `None` for risky class |
 | `aaveRepayRatio` | `float` | `repays_count / borrows_count`, capped at 1.0 | Both — new `repays` subgraph query, same pagination pattern |
-
-`SimpleImputer(strategy="median")` in the training pipeline already handles `None`/NaN,
-so `aaveAvgHealthFactorAtBorrow` being absent for the risky class is fine.
 
 ## File Changes
 
