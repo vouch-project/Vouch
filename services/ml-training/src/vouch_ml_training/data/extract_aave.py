@@ -235,6 +235,18 @@ async def fetch_liquidated_wallets(
             )
         )
 
+    # Fetch repay + borrow counts for all liquidated wallets via batched queries.
+    async with httpx.AsyncClient() as client:
+        rb_counts = await _fetch_wallet_repay_and_borrow_counts(
+            client, settings.subgraph_url, [a.address for a in aggregates],
+        )
+    for agg in aggregates:
+        repay_n, borrow_n = rb_counts.get(agg.address, (0, 0))
+        agg.aave_repay_ratio = _compute_repay_ratio(
+            repay_count=repay_n,
+            borrow_count=borrow_n,
+        )
+
     aggregates.sort(key=lambda a: a.last_liquidation_at, reverse=True)
     return aggregates[:target_count]
 
@@ -404,4 +416,55 @@ async def _fetch_first_borrow_timestamps(
         "resolved true first_borrow_at for %d/%d safe wallets",
         len(merged), len(addresses),
     )
+    return merged
+
+
+_REPAY_BORROW_BATCH = 25
+_REPAY_BORROW_CONCURRENCY = 4
+
+
+async def _fetch_wallet_repay_and_borrow_counts(
+    client: httpx.AsyncClient,
+    url: str,
+    addresses: list[str],
+) -> dict[str, tuple[int, int]]:
+    """Return {address: (repay_count, borrow_count)} via batched aliased queries.
+
+    Uses the same GraphQL alias batching pattern as _fetch_first_borrow_timestamps.
+    Each alias fetches the total count of repay and borrow events for one address.
+    """
+    if not addresses:
+        return {}
+
+    sem = asyncio.Semaphore(_REPAY_BORROW_CONCURRENCY)
+    batches: list[list[str]] = [
+        addresses[i : i + _REPAY_BORROW_BATCH]
+        for i in range(0, len(addresses), _REPAY_BORROW_BATCH)
+    ]
+
+    log.info(
+        "fetching repay+borrow counts for %d liquidated wallets in %d batches",
+        len(addresses), len(batches),
+    )
+
+    async def run_batch(batch: list[str]) -> dict[str, tuple[int, int]]:
+        # Build aliased fields: r0/b0, r1/b1, ... for repays/borrows per address
+        fields = "\n".join(
+            f'r{i}: repays(where: {{user: "{addr}"}}, first: 1000) {{ id }}\n'
+            f'b{i}: borrows(where: {{user: "{addr}"}}, first: 1000) {{ id }}'
+            for i, addr in enumerate(batch)
+        )
+        query = f"query RepayBorrowCounts {{\n{fields}\n}}"
+        async with sem:
+            data = await _post_graphql(client, url, query, {})
+        result: dict[str, tuple[int, int]] = {}
+        for i, addr in enumerate(batch):
+            repays = data.get(f"r{i}") or []
+            borrows = data.get(f"b{i}") or []
+            result[addr] = (len(repays), len(borrows))
+        return result
+
+    merged: dict[str, tuple[int, int]] = {}
+    for batch_result in await asyncio.gather(*(run_batch(b) for b in batches)):
+        merged.update(batch_result)
     return merged
