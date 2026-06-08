@@ -156,6 +156,18 @@ same guard against the 5000 skip cap).
 - New test `test_extract_aave_aggregations`: unit test the repay ratio computation and health
   factor averaging logic with synthetic event data (no network calls).
 
+## What's next (out of scope for this spec)
+
+**Medium effort — RPC calls, no new subgraph queries:**
+- `nftHoldings` — NFT count via `eth_call` to common ERC-721 contracts or an NFT indexer. Proxy for wealth/sophistication.
+- `defiProtocolCount` — deeper than `uniqueProtocolsInteracted` (which counts unique contract addresses). Could count interactions with known protocol registries.
+
+**Requires Vouch protocol history (future):**
+- `vouchLoanRepaymentHistory` — direct repayment outcomes from the `loans` table. This is the highest-signal feature possible and is what will make the model genuinely useful beyond cold-start. Not available until the protocol has real loan history.
+
+**Sequence models (longer-term):**
+- Raw transaction sequences fed into an LSTM or Transformer. High complexity for uncertain gain at this stage — only worth pursuing once there are enough labeled Vouch loan outcomes to justify the architecture change.
+
 ## Data flow summary
 
 ```
