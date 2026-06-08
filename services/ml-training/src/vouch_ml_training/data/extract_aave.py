@@ -61,7 +61,6 @@ query Borrows($first: Int!, $cursor: Int!) {
     amount
     assetPriceUSD
     reserve { decimals symbol }
-    healthFactor
   }
 }
 """

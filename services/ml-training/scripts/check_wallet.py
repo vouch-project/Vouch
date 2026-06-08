@@ -48,7 +48,6 @@ query UserBorrows($user: String!, $first: Int!, $skip: Int!) {
     amount
     assetPriceUSD
     reserve { decimals symbol }
-    healthFactor
   }
 }
 """
@@ -84,13 +83,12 @@ def _find_latest_artifact() -> Path:
 
 async def _fetch_user_aave_stats(
     address: str,
-) -> tuple[int, float, float | None, float | None]:
-    """Return (borrows_count, total_borrowed_usd, avg_health_factor, repay_ratio)."""
+) -> tuple[int, float, float | None]:
+    """Return (borrows_count, total_borrowed_usd, repay_ratio)."""
     settings = get_settings()
     addr = address.lower()
     total_count = 0
     total_usd = 0.0
-    health_factors: list[float] = []
     page_size = 1000
 
     async with httpx.AsyncClient() as client:
@@ -112,12 +110,6 @@ async def _fetch_user_aave_stats(
                     int(r["reserve"]["decimals"]),
                     r["assetPriceUSD"],
                 )
-                raw_hf = r.get("healthFactor")
-                if raw_hf:
-                    try:
-                        health_factors.append(float(raw_hf) / 1e27)
-                    except (ValueError, TypeError):
-                        pass
             if len(rows) < page_size:
                 break
             skip += page_size
@@ -151,10 +143,9 @@ async def _fetch_user_aave_stats(
                 )
                 break
 
-    avg_hf = sum(health_factors) / len(health_factors) if health_factors else None
     repay_ratio = min(repay_count / total_count, 1.0) if total_count > 0 else None
 
-    return total_count, total_usd, avg_hf, repay_ratio
+    return total_count, total_usd, repay_ratio
 
 
 async def _build_features(address: str) -> tuple[list[str], list[float | None]]:
@@ -162,7 +153,7 @@ async def _build_features(address: str) -> tuple[list[str], list[float | None]]:
     enrichments = await enrich_wallets(settings, [address])
     enr = enrichments[0]
 
-    aave_count, aave_usd, avg_hf, repay_ratio = await _fetch_user_aave_stats(address)
+    aave_count, aave_usd, repay_ratio = await _fetch_user_aave_stats(address)
 
     # For single-wallet scoring we don't have last_borrow_at readily available,
     # so days_since_last_borrow is computed as 0 (scoring is happening now).
@@ -179,7 +170,6 @@ async def _build_features(address: str) -> tuple[list[str], list[float | None]]:
         "stablecoinBalanceUsd": enr.stablecoin_balance_usd,
         "uniqueProtocolsInteracted": enr.unique_protocols_interacted,
         "aaveDaysSinceLastBorrow": days_since_last_borrow,
-        "aaveAvgHealthFactorAtBorrow": avg_hf,
         "aaveRepayRatio": repay_ratio,
     }
     return list(features.keys()), list(features.values())
