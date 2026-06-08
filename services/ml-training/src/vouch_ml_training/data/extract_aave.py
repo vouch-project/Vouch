@@ -66,6 +66,21 @@ query Borrows($first: Int!, $cursor: Int!) {
 }
 """
 
+_REPAYS_QUERY = """
+query Repays($first: Int!, $cursor: Int!) {
+  repays(
+    first: $first
+    where: { timestamp_lte: $cursor }
+    orderBy: timestamp
+    orderDirection: desc
+  ) {
+    id
+    timestamp
+    user { id }
+  }
+}
+"""
+
 
 @retry(
     stop=stop_after_attempt(5),
@@ -296,6 +311,29 @@ async def fetch_safe_borrowers(
         ts = first_ts.get(b.address)
         if ts is not None:
             b.first_borrow_at = datetime.fromtimestamp(ts, tz=UTC)
+
+    # Count repays per wallet from a descending paginated pass, restricted to
+    # the safe-borrower address set. Same pattern as the borrows pass above.
+    safe_addrs = {b.address for b in out}
+    repay_counts: dict[str, int] = defaultdict(int)
+    async with httpx.AsyncClient() as client:
+        async for row in _paginate_by_timestamp(
+            client, settings.subgraph_url, _REPAYS_QUERY, "repays"
+        ):
+            addr = row["user"]["id"].lower()
+            if addr in safe_addrs:
+                repay_counts[addr] += 1
+            # Stop once we've seen a repay event for every safe borrower at least
+            # once, or once we've exhausted the stream (the loop exits naturally).
+            # In practice, not all wallets will have repays — we accept partial data.
+            if len(repay_counts) >= len(safe_addrs):
+                break
+
+    for b in out:
+        b.aave_repay_ratio = _compute_repay_ratio(
+            repay_count=repay_counts.get(b.address, 0),
+            borrow_count=b.borrows_count,
+        )
 
     out.sort(key=lambda b: (b.last_borrow_at or datetime.min.replace(tzinfo=UTC)), reverse=True)
     return out[:target_count]
