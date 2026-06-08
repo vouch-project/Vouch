@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,7 @@ query UserBorrows($user: String!, $first: Int!, $skip: Int!) {
     orderDirection: asc
   ) {
     id
+    timestamp
     amount
     assetPriceUSD
     reserve { decimals symbol }
@@ -83,12 +85,13 @@ def _find_latest_artifact() -> Path:
 
 async def _fetch_user_aave_stats(
     address: str,
-) -> tuple[int, float, float | None]:
-    """Return (borrows_count, total_borrowed_usd, repay_ratio)."""
+) -> tuple[int, float, float | None, int | None]:
+    """Return (borrows_count, total_borrowed_usd, repay_ratio, last_borrow_timestamp)."""
     settings = get_settings()
     addr = address.lower()
     total_count = 0
     total_usd = 0.0
+    last_borrow_ts: int | None = None
     page_size = 1000
 
     async with httpx.AsyncClient() as client:
@@ -110,6 +113,9 @@ async def _fetch_user_aave_stats(
                     int(r["reserve"]["decimals"]),
                     r["assetPriceUSD"],
                 )
+                ts = int(r["timestamp"])
+                if last_borrow_ts is None or ts > last_borrow_ts:
+                    last_borrow_ts = ts
             if len(rows) < page_size:
                 break
             skip += page_size
@@ -145,7 +151,7 @@ async def _fetch_user_aave_stats(
 
     repay_ratio = min(repay_count / total_count, 1.0) if total_count > 0 else None
 
-    return total_count, total_usd, repay_ratio
+    return total_count, total_usd, repay_ratio, last_borrow_ts
 
 
 async def _build_features(address: str) -> tuple[list[str], list[float | None]]:
@@ -153,12 +159,11 @@ async def _build_features(address: str) -> tuple[list[str], list[float | None]]:
     enrichments = await enrich_wallets(settings, [address])
     enr = enrichments[0]
 
-    aave_count, aave_usd, repay_ratio = await _fetch_user_aave_stats(address)
+    aave_count, aave_usd, repay_ratio, last_borrow_ts = await _fetch_user_aave_stats(address)
 
-    # For single-wallet scoring we don't have last_borrow_at readily available,
-    # so days_since_last_borrow is computed as 0 (scoring is happening now).
-    # A more precise value would require an extra subgraph query.
-    days_since_last_borrow = 0
+    days_since_last_borrow: int | None = None
+    if last_borrow_ts is not None:
+        days_since_last_borrow = max(0, (int(time.time()) - last_borrow_ts) // 86400)
 
     # Order MUST match metadata.json["feature_columns"] from the artifact.
     features: dict[str, float | None] = {
