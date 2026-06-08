@@ -3,6 +3,8 @@ import { asAddress } from '@vouch/database-types';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { FundLoanDto } from './dto/fund-loan.dto';
+import { PartialRepayLoanDto } from './dto/partial-repay-loan.dto';
+import { RepayLoanDto } from './dto/repay-loan.dto';
 
 @Injectable()
 export class LoansService {
@@ -68,6 +70,74 @@ export class LoansService {
         p_block_hash: blockHash,
         p_log_index: logIndex,
         p_funded_at: fundedAt.toISOString(),
+      },
+    );
+
+    if (error) throw error;
+  }
+
+  async repay({
+    onChainLoanId,
+    networkId,
+    contractAddress,
+    borrowerAddress,
+    lenderAddress,
+    principalAmount,
+    interestAmount,
+    totalRepaid,
+    txHash,
+    blockNumber,
+    blockHash,
+    logIndex,
+    repaidAt,
+  }: RepayLoanDto) {
+    const { error } = await this.supabaseService.client.rpc(
+      'repay_loan_with_transaction',
+      {
+        p_network_id: networkId,
+        p_contract_address: asAddress(contractAddress),
+        p_on_chain_loan_id: onChainLoanId.toString(),
+        p_borrower_address: asAddress(borrowerAddress),
+        p_lender_address: asAddress(lenderAddress),
+        p_principal_amount: principalAmount.toString(),
+        p_interest_amount: interestAmount.toString(),
+        p_total_repaid: totalRepaid.toString(),
+        p_tx_hash: txHash,
+        p_block_number: blockNumber.toString(),
+        p_block_hash: blockHash,
+        p_log_index: logIndex,
+        p_repaid_at: repaidAt.toISOString(),
+      },
+    );
+
+    if (error) throw error;
+  }
+
+  async partialRepay({
+    onChainLoanId,
+    networkId,
+    contractAddress,
+    borrowerAddress,
+    paymentAmount,
+    txHash,
+    blockNumber,
+    blockHash,
+    logIndex,
+    paidAt,
+  }: PartialRepayLoanDto) {
+    const { error } = await this.supabaseService.client.rpc(
+      'record_partial_repayment',
+      {
+        p_network_id: networkId,
+        p_contract_address: asAddress(contractAddress),
+        p_on_chain_loan_id: onChainLoanId.toString(),
+        p_borrower_address: asAddress(borrowerAddress),
+        p_payment_amount: paymentAmount.toString(),
+        p_tx_hash: txHash,
+        p_block_number: blockNumber.toString(),
+        p_block_hash: blockHash,
+        p_log_index: logIndex,
+        p_paid_at: paidAt.toISOString(),
       },
     );
 

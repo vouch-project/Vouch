@@ -79,8 +79,9 @@ export class BlockchainListenerService implements OnModuleInit {
     config: ChainConfig,
   ) {
     this.logger.log(
-      `Listening for LoanCreated events on chain ${network.chainId} (${network.name})...`,
+      `Listening for events on chain ${network.chainId} (${network.name})...`,
     );
+
     void contract.on(
       'LoanCreated',
       (
@@ -123,6 +124,57 @@ export class BlockchainListenerService implements OnModuleInit {
           lender,
           borrower,
           principalAmount,
+          timestamp,
+          eventLog,
+          network,
+          config.contractAddress,
+        );
+      },
+    );
+
+    void contract.on(
+      'LoanRepaid',
+      (
+        loanId: bigint,
+        borrower: string,
+        lender: string,
+        principalAmount: bigint,
+        interestAmount: bigint,
+        totalRepaid: bigint,
+        timestamp: bigint,
+        { log: eventLog }: ethers.ContractEventPayload,
+      ) => {
+        void this.handleLoanRepaid(
+          loanId,
+          borrower,
+          lender,
+          principalAmount,
+          interestAmount,
+          totalRepaid,
+          timestamp,
+          eventLog,
+          network,
+          config.contractAddress,
+        );
+      },
+    );
+
+    void contract.on(
+      'LoanPartiallyRepaid',
+      (
+        loanId: bigint,
+        borrower: string,
+        paymentAmount: bigint,
+        _collateralReleased: bigint,
+        _totalRepaidSoFar: bigint,
+        _totalDue: bigint,
+        timestamp: bigint,
+        { log: eventLog }: ethers.ContractEventPayload,
+      ) => {
+        void this.handleLoanPartiallyRepaid(
+          loanId,
+          borrower,
+          paymentAmount,
           timestamp,
           eventLog,
           network,
@@ -202,6 +254,83 @@ export class BlockchainListenerService implements OnModuleInit {
       this.logger.log(`Loan ${loanId.toString()} funded by ${lender}`);
     } catch (error) {
       this.logger.error('Failed to update funded loan in DB', error);
+    }
+  }
+
+  private async handleLoanPartiallyRepaid(
+    loanId: bigint,
+    borrower: string,
+    paymentAmount: bigint,
+    timestamp: bigint,
+    {
+      transactionHash,
+      blockNumber,
+      blockHash,
+      index: logIndex,
+    }: ethers.EventLog,
+    network: ethers.Network,
+    contractAddress: string,
+  ) {
+    try {
+      await this.loanService.partialRepay({
+        onChainLoanId: loanId,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        borrowerAddress: borrower,
+        paymentAmount,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        paidAt: new Date(Number(timestamp) * 1000),
+      });
+      this.logger.log(
+        `Loan ${loanId.toString()} partial repayment of ${paymentAmount.toString()} by ${borrower}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to record partial repayment for loan ${loanId.toString()}`,
+        error,
+      );
+    }
+  }
+
+  private async handleLoanRepaid(
+    loanId: bigint,
+    borrower: string,
+    lender: string,
+    principalAmount: bigint,
+    interestAmount: bigint,
+    totalRepaid: bigint,
+    timestamp: bigint,
+    {
+      transactionHash,
+      blockNumber,
+      blockHash,
+      index: logIndex,
+    }: ethers.EventLog,
+    network: ethers.Network,
+    contractAddress: string,
+  ) {
+    try {
+      await this.loanService.repay({
+        onChainLoanId: loanId,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        borrowerAddress: borrower,
+        lenderAddress: lender,
+        principalAmount,
+        interestAmount,
+        totalRepaid,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        repaidAt: new Date(Number(timestamp) * 1000),
+      });
+      this.logger.log(`Loan ${loanId.toString()} repaid by ${borrower}`);
+    } catch (error) {
+      this.logger.error(`Failed to mark loan ${loanId.toString()} as repaid in DB`, error);
     }
   }
 }
