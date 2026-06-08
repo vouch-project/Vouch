@@ -61,6 +61,7 @@ query Borrows($first: Int!, $cursor: Int!) {
     amount
     assetPriceUSD
     reserve { decimals symbol }
+    healthFactor
   }
 }
 """
@@ -97,6 +98,26 @@ def _to_usd(amount_raw: str, decimals: int, price_usd: str) -> float:
         return amount * price
     except (ValueError, ZeroDivisionError):
         return 0.0
+
+
+def _compute_avg_health_factor(events: list[dict[str, Any]]) -> float | None:
+    """Average healthFactor across borrow events, converting from ray units (1e27)."""
+    values = []
+    for e in events:
+        raw = e.get("healthFactor")
+        if raw:
+            try:
+                values.append(float(raw) / 1e27)
+            except (ValueError, TypeError):
+                pass
+    return sum(values) / len(values) if values else None
+
+
+def _compute_repay_ratio(repay_count: int, borrow_count: int) -> float | None:
+    """Repays / borrows, capped at 1.0. None if borrow_count is 0."""
+    if borrow_count == 0:
+        return None
+    return min(repay_count / borrow_count, 1.0)
 
 
 async def _paginate_by_timestamp(
@@ -259,6 +280,7 @@ async def fetch_safe_borrowers(
                 # wallet's true earliest borrow from the subgraph.
                 first_borrow_at=datetime.fromtimestamp(min(timestamps), tz=UTC),
                 last_borrow_at=datetime.fromtimestamp(max(timestamps), tz=UTC),
+                aave_avg_health_factor_at_borrow=_compute_avg_health_factor(events),
             )
         )
 
