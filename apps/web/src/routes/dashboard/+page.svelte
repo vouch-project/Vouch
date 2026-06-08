@@ -3,13 +3,14 @@
   import LoanRepayCard from '$lib/components/ui/LoanRepayCard.svelte';
   import * as Tabs from '$lib/components/ui/tabs';
   import { supabase } from '$lib/supabase';
-  import type { LoanWithTokens } from '$lib/types';
+  import type { LoanFull } from '$lib/types';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { LayoutDashboard, RefreshCw, WalletMinimal } from '@lucide/svelte';
   import type { Address } from '@vouch/database-types';
+  import { ethers } from 'ethers';
 
   // ── Data fetching ─────────────────────────────────────────────────────────
-  let loans = $state<LoanWithTokens[]>([]);
+  let loans = $state<LoanFull[]>([]);
   let loading = $state(false);
   let fetchError = $state('');
 
@@ -24,10 +25,11 @@
         `
         *,
         collateralToken:tokens!loans_collateralTokenId_fkey(*),
-        principalToken:tokens!loans_principalTokenId_fkey(*)
+        principalToken:tokens!loans_principalTokenId_fkey(*),
+        repaymentTransactions:transactions!transactions_loanId_fkey(id, amount, txTimestamp, txHash)
       `,
       )
-      .eq('borrowerAddress', wallet.address.toLowerCase() as Address)
+      .eq('borrowerAddress', ethers.getAddress(wallet.address) as Address)
       .order('createdAt', { ascending: false });
 
     loading = false;
@@ -35,10 +37,9 @@
       fetchError = error.message;
       return;
     }
-    loans = (data ?? []) as unknown as LoanWithTokens[];
+    loans = (data ?? []) as unknown as LoanFull[];
   };
 
-  // Refetch whenever the wallet connects or changes
   $effect(() => {
     void fetchLoans();
   });
@@ -56,10 +57,7 @@
   const activeCnt = $derived(loans.filter((l) => l.status === 'active' || l.status === 'pending').length);
   const repaidCnt = $derived(loans.filter((l) => l.status === 'repaid').length);
 
-  // When a loan is fully repaid on-chain, refetch to sync DB status
-  const handleRepaid = () => {
-    void fetchLoans();
-  };
+  const handleRepaid = () => void fetchLoans();
 </script>
 
 <svelte:head>
@@ -81,8 +79,8 @@
 
     {#if wallet.isConnected}
       <button
-        class="p-2 rounded-full hover:bg-muted/60 transition-colors text-muted-foreground hover:text-foreground"
         aria-label="Refresh loans"
+        class="p-2 rounded-full hover:bg-muted/60 transition-colors text-muted-foreground hover:text-foreground"
         disabled={loading}
         onclick={fetchLoans}
         type="button"
@@ -92,7 +90,6 @@
     {/if}
   </div>
 
-  <!-- Not connected -->
   {#if !wallet.isConnected}
     <div class="flex flex-col items-center justify-center py-20 space-y-4 text-center">
       <div class="h-16 w-16 bg-muted rounded-2xl flex items-center justify-center">
@@ -106,22 +103,23 @@
   {:else}
     <!-- Stats row -->
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      {#each [{ label: 'Total loans', value: loans.length }, { label: 'Active', value: activeCnt }, { label: 'Repaid', value: repaidCnt }, { label: 'Liquidated', value: loans.filter((l) => l.status === 'liquidated').length }] as stat (stat.label)}
+      {#each [
+        { label: 'Total loans', value: loans.length },
+        { label: 'Active', value: activeCnt },
+        { label: 'Repaid', value: repaidCnt },
+        { label: 'Liquidated', value: loans.filter((l) => l.status === 'liquidated').length },
+      ] as stat (stat.label)}
         <div class="rounded-xl border border-border/50 bg-card/60 backdrop-blur-sm px-4 py-3">
           <p class="text-xs text-muted-foreground">{stat.label}</p>
-          <p class="text-2xl font-black mt-0.5">
-            {loading ? '—' : stat.value}
-          </p>
+          <p class="text-2xl font-black mt-0.5">{loading ? '—' : stat.value}</p>
         </div>
       {/each}
     </div>
 
-    <!-- Error -->
     {#if fetchError}
       <p class="text-sm text-destructive">{fetchError}</p>
     {/if}
 
-    <!-- Tabs + loan list -->
     <Tabs.Root bind:value={filter}>
       <Tabs.List class="mb-4">
         <Tabs.Trigger value="active">
@@ -141,7 +139,6 @@
 
       <Tabs.Content value={filter}>
         {#if loading}
-          <!-- Skeleton cards -->
           <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {#each [1, 2, 3] as key (key)}
               <div class="rounded-xl border border-border/40 bg-card/60 p-5 space-y-3 animate-pulse">

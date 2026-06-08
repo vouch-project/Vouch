@@ -1,57 +1,72 @@
 <script lang="ts">
   import { ethers } from 'ethers';
-  import { AlertCircle, CheckCircle2, Clock, Coins, Hourglass, TrendingUp } from '@lucide/svelte';
+  import { AlertCircle, CheckCircle2, Clock, Coins, ExternalLink, Hourglass, TrendingUp } from '@lucide/svelte';
   import * as Card from '$lib/components/ui/card';
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
   import { cn } from '$lib/utils';
   import { formatUint256 } from '$lib/formatUint256';
   import { repayLoan, repayLoanWithERC20, getRepaymentDetails, type RepaymentDetails } from '$lib/wallet/vouchVault';
-  import type { LoanWithTokens } from '$lib/types';
+  import type { LoanFull } from '$lib/types';
 
   type Props = {
-    loan: LoanWithTokens;
+    loan: LoanFull;
     onRepaid?: () => void;
   };
 
   let { loan, onRepaid }: Props = $props();
 
-  // ── Repayment state ──────────────────────────────────────────────────────
-  let repaymentDetails = $state<RepaymentDetails | null>(null);
-  let loadError = $state('');
-  let paymentInput = $state('');
-  let txStatus = $state<'idle' | 'approving' | 'confirming' | 'success' | 'error'>('idle');
-  let txError = $state('');
-  let showPaymentInput = $state(false);
-
   const isEthPrincipal = $derived(
     !loan.principalToken?.address || loan.principalToken.address === ethers.ZeroAddress,
   );
-
   const principalDecimals = $derived(loan.principalToken?.decimals ?? 18);
   const principalSymbol = $derived(loan.principalToken?.symbol ?? 'ETH');
 
-  // Load repayment details from chain on mount
+  // ── DB-derived repayment progress ─────────────────────────────────────────
+  const amountRepaidFromDB = $derived(
+    loan.repaymentTransactions.reduce((sum, tx) => sum + BigInt(tx.amount ?? 0), 0n),
+  );
+
+  const principalRaw = $derived(BigInt(loan.principalAmount ?? '0'));
+  const interestRateDecimal = $derived(loan.interestRate ?? 0) as number;
+  const totalDueFromDB = $derived(
+    principalRaw + BigInt(Math.round(Number(principalRaw) * interestRateDecimal)),
+  );
+  const remainingFromDB = $derived(
+    totalDueFromDB > amountRepaidFromDB ? totalDueFromDB - amountRepaidFromDB : 0n,
+  );
+
+  // ── Chain hydration (active loans only) ───────────────────────────────────
+  // For active loans we also fetch exact on-chain state so the repay form has
+  // the precise remaining balance. Repaid / pending loans skip this entirely.
+  let chainDetails = $state<RepaymentDetails | null>(null);
+  let chainError = $state('');
+
+  // Chain state is authoritative once loaded; DB status is the initial fallback
+  // while the blockchain listener hasn't yet written the update.
+  const isRepaid = $derived(chainDetails?.repaid ?? loan.status === 'repaid');
+  const isActive = $derived(!isRepaid && loan.status === 'active');
+  const isPending = $derived(!isRepaid && loan.status === 'pending');
+
+  const progressPctFromDB = $derived(
+    totalDueFromDB > 0n ? Number((amountRepaidFromDB * 100n) / totalDueFromDB) : isRepaid ? 100 : 0,
+  );
+
   $effect(() => {
-    if (loan.onChainLoanId === null) return;
+    if (!isActive || loan.onChainLoanId === null) return;
     getRepaymentDetails(BigInt(loan.onChainLoanId))
-      .then((d) => {
-        repaymentDetails = d;
-      })
-      .catch((e) => {
-        loadError = (e as Error).message;
-      });
+      .then((d) => { chainDetails = d; })
+      .catch((e) => { chainError = (e as Error).message; });
   });
 
-  // ── Due date helpers ──────────────────────────────────────────────────────
+  // ── Due date (from DB field, fallback to chain duration) ──────────────────
   const dueDate = $derived.by(() => {
-    if (!repaymentDetails || repaymentDetails.durationSeconds === 0n) return null;
-    if (!loan.fundedAt) return null;
-    const fundedMs = new Date(loan.fundedAt).getTime();
-    return new Date(fundedMs + Number(repaymentDetails.durationSeconds) * 1000);
+    if (loan.dueAt) return new Date(loan.dueAt);
+    if (!chainDetails || chainDetails.durationSeconds === 0n || !loan.fundedAt) return null;
+    return new Date(new Date(loan.fundedAt).getTime() + Number(chainDetails.durationSeconds) * 1000);
   });
 
-  const isOverdue = $derived(dueDate ? dueDate < new Date() : false);
+  const isOverdue = $derived(!isRepaid && dueDate ? dueDate < new Date() : false);
 
   const dueDateLabel = $derived.by(() => {
     if (!dueDate) return 'No deadline';
@@ -62,55 +77,38 @@
     return `Due in ${days}d`;
   });
 
-  // ── Progress bar ─────────────────────────────────────────────────────────
-  const progressPct = $derived.by(() => {
-    if (!repaymentDetails || repaymentDetails.totalDue === 0n) return 0;
-    return Number((repaymentDetails.amountRepaid * 100n) / repaymentDetails.totalDue);
-  });
-
-  // ── Payment helpers ───────────────────────────────────────────────────────
-  const remainingFormatted = $derived(
-    repaymentDetails ? formatUint256(repaymentDetails.remaining.toString(), principalDecimals) : '—',
+  // ── Displayed values: prefer chain data if loaded, otherwise DB ───────────
+  const displayProgressPct = $derived(
+    chainDetails ? Number((chainDetails.amountRepaid * 100n) / (chainDetails.totalDue || 1n)) : progressPctFromDB,
   );
-
-  const totalDueFormatted = $derived(
-    repaymentDetails ? formatUint256(repaymentDetails.totalDue.toString(), principalDecimals) : '—',
+  const displayRemaining = $derived(chainDetails ? chainDetails.remaining : remainingFromDB);
+  const displayTotalDue = $derived(chainDetails ? chainDetails.totalDue : totalDueFromDB);
+  const displayAmountRepaid = $derived(chainDetails ? chainDetails.amountRepaid : amountRepaidFromDB);
+  const displayInterestRateBps = $derived(
+    chainDetails ? chainDetails.interestRateBps : Math.round(interestRateDecimal * 10000),
   );
+  const interestAmount = $derived(displayTotalDue - principalRaw);
 
-  const amountRepaidFormatted = $derived(
-    repaymentDetails ? formatUint256(repaymentDetails.amountRepaid.toString(), principalDecimals) : '—',
-  );
+  // ── Payment form ──────────────────────────────────────────────────────────
+  let paymentInput = $state('');
+  let txStatus = $state<'idle' | 'approving' | 'confirming' | 'success' | 'error'>('idle');
+  let txError = $state('');
+  let showPaymentInput = $state(false);
 
-  const interestFormatted = $derived.by(() => {
-    if (!repaymentDetails || !loan.principalAmount) return '—';
-    const principal = BigInt(loan.principalAmount);
-    const interest = repaymentDetails.totalDue - principal;
-    return formatUint256(interest.toString(), principalDecimals);
-  });
-
-  // Parse payment input to raw bigint
   const paymentRaw = $derived.by(() => {
     if (!paymentInput.trim()) return 0n;
-    try {
-      return ethers.parseUnits(paymentInput, principalDecimals);
-    } catch {
-      return 0n;
-    }
+    try { return ethers.parseUnits(paymentInput, principalDecimals); }
+    catch { return 0n; }
   });
 
-  const paymentExceedsRemaining = $derived(
-    repaymentDetails ? paymentRaw > repaymentDetails.remaining : false,
-  );
+  const paymentExceedsRemaining = $derived(paymentRaw > displayRemaining);
 
   const setFullPayment = () => {
-    if (!repaymentDetails) return;
-    paymentInput = ethers.formatUnits(repaymentDetails.remaining, principalDecimals);
+    paymentInput = ethers.formatUnits(displayRemaining, principalDecimals);
   };
 
-  // ── Repay action ──────────────────────────────────────────────────────────
   const handleRepay = async () => {
-    if (!repaymentDetails || paymentRaw === 0n || paymentExceedsRemaining) return;
-    if (loan.onChainLoanId === null) return;
+    if (paymentRaw === 0n || paymentExceedsRemaining || loan.onChainLoanId === null) return;
 
     txStatus = 'confirming';
     txError = '';
@@ -120,21 +118,16 @@
         await repayLoan(BigInt(loan.onChainLoanId), paymentRaw);
       } else {
         txStatus = 'approving';
-        await repayLoanWithERC20(
-          BigInt(loan.onChainLoanId),
-          paymentRaw,
-          loan.principalToken!.address,
-        );
+        await repayLoanWithERC20(BigInt(loan.onChainLoanId), paymentRaw, loan.principalToken!.address);
       }
 
       txStatus = 'success';
       paymentInput = '';
       showPaymentInput = false;
 
-      // Refresh repayment details from chain
+      // Refresh chain state after payment
       const updated = await getRepaymentDetails(BigInt(loan.onChainLoanId));
-      repaymentDetails = updated;
-
+      chainDetails = updated;
       if (updated.repaid) onRepaid?.();
     } catch (e: unknown) {
       txStatus = 'error';
@@ -146,28 +139,34 @@
     }
   };
 
-  const statusLabel = $derived.by(() => {
-    if (txStatus === 'approving') return 'Approving token…';
-    if (txStatus === 'confirming') return 'Confirm in wallet…';
-    return '';
-  });
+  const txStatusLabel = $derived(
+    txStatus === 'approving' ? 'Approving token…' :
+    txStatus === 'confirming' ? 'Confirm in wallet…' : '',
+  );
+
+  // Latest repayment tx for the history link
+  const latestTx = $derived(
+    [...loan.repaymentTransactions].sort(
+      (a, b) => new Date(b.txTimestamp).getTime() - new Date(a.txTimestamp).getTime(),
+    )[0] ?? null,
+  );
 </script>
 
 <Card.Root
   class={cn(
     'bg-card/60 backdrop-blur-sm border-border/50 overflow-hidden transition-all duration-300',
     isOverdue && 'border-destructive/40',
-    repaymentDetails?.repaid && 'opacity-60',
+    isRepaid && 'opacity-70',
   )}
 >
-  <!-- Top accent bar: progress -->
+  <!-- Progress accent bar -->
   <div class="h-1 w-full bg-muted">
     <div
       class={cn(
         'h-full transition-all duration-500',
-        progressPct === 100 ? 'bg-primary' : isOverdue ? 'bg-destructive' : 'bg-primary/70',
+        displayProgressPct === 100 ? 'bg-primary' : isOverdue ? 'bg-destructive' : 'bg-primary/70',
       )}
-      style:width="{progressPct}%"
+      style:width="{displayProgressPct}%"
     ></div>
   </div>
 
@@ -187,16 +186,20 @@
       </div>
 
       <div class="flex flex-wrap gap-1 justify-end">
-        {#if repaymentDetails?.repaid}
-          <Badge variant="outline" class="text-primary border-primary/40 text-xs gap-1">
+        {#if isRepaid}
+          <Badge class="text-primary border-primary/40 text-xs gap-1" variant="outline">
             <CheckCircle2 class="h-3 w-3" /> Repaid
           </Badge>
         {:else if isOverdue}
-          <Badge variant="destructive" class="text-xs gap-1">
+          <Badge class="text-xs gap-1" variant="destructive">
             <AlertCircle class="h-3 w-3" /> Overdue
           </Badge>
+        {:else if isPending}
+          <Badge class="text-xs gap-1" variant="secondary">
+            <Clock class="h-3 w-3" /> Pending
+          </Badge>
         {:else}
-          <Badge variant="secondary" class="text-xs gap-1">
+          <Badge class="text-xs gap-1" variant="secondary">
             <Clock class="h-3 w-3" /> Active
           </Badge>
         {/if}
@@ -205,77 +208,94 @@
   </Card.Header>
 
   <Card.Content class="space-y-4">
-    {#if loadError}
-      <p class="text-xs text-destructive">{loadError}</p>
-    {:else if !repaymentDetails}
-      <!-- Skeleton -->
-      <div class="space-y-2">
-        {#each [1, 2, 3] as _}
-          <div class="h-4 bg-muted animate-pulse rounded"></div>
-        {/each}
+    <!-- Stats grid — always shown from DB data immediately -->
+    <div class="grid grid-cols-2 gap-3 text-sm">
+      <div class="space-y-0.5">
+        <p class="text-xs text-muted-foreground flex items-center gap-1">
+          <Coins class="h-3 w-3" /> Principal
+        </p>
+        <p class="font-semibold">
+          {formatUint256(loan.principalAmount ?? '0', principalDecimals)}
+          {principalSymbol}
+        </p>
       </div>
-    {:else}
-      <!-- Stats grid -->
-      <div class="grid grid-cols-2 gap-3 text-sm">
-        <div class="space-y-0.5">
-          <p class="text-xs text-muted-foreground flex items-center gap-1">
-            <Coins class="h-3 w-3" /> Principal
-          </p>
-          <p class="font-semibold">
-            {formatUint256(loan.principalAmount ?? '0', principalDecimals)}
-            {principalSymbol}
-          </p>
-        </div>
 
-        <div class="space-y-0.5">
-          <p class="text-xs text-muted-foreground flex items-center gap-1">
-            <TrendingUp class="h-3 w-3" /> Interest
-          </p>
-          <p class="font-semibold">
-            {interestFormatted} {principalSymbol}
-            <span class="text-muted-foreground text-xs font-normal">
-              ({(repaymentDetails.interestRateBps / 100).toFixed(2)}%)
-            </span>
-          </p>
-        </div>
+      <div class="space-y-0.5">
+        <p class="text-xs text-muted-foreground flex items-center gap-1">
+          <TrendingUp class="h-3 w-3" /> Interest
+        </p>
+        <p class="font-semibold">
+          {formatUint256(interestAmount.toString(), principalDecimals)}
+          {principalSymbol}
+          <span class="text-muted-foreground text-xs font-normal">
+            ({(displayInterestRateBps / 100).toFixed(2)}%)
+          </span>
+        </p>
+      </div>
 
-        <div class="space-y-0.5">
-          <p class="text-xs text-muted-foreground flex items-center gap-1">
-            <Hourglass class="h-3 w-3" /> Due date
-          </p>
-          <p class={cn('font-semibold text-sm', isOverdue && 'text-destructive')}>
+      <div class="space-y-0.5">
+        <p class="text-xs text-muted-foreground flex items-center gap-1">
+          <Hourglass class="h-3 w-3" /> Due date
+        </p>
+        <p class={cn('font-semibold text-sm', isOverdue && 'text-destructive')}>
+          {#if isRepaid && loan.repaidAt}
+            Repaid {new Date(loan.repaidAt).toLocaleDateString()}
+          {:else}
             {dueDateLabel}
-          </p>
-        </div>
-
-        <div class="space-y-0.5">
-          <p class="text-xs text-muted-foreground">Repaid so far</p>
-          <p class="font-semibold">
-            {amountRepaidFormatted} / {totalDueFormatted}
-            {principalSymbol}
-          </p>
-        </div>
+          {/if}
+        </p>
       </div>
 
-      <!-- Progress bar -->
-      <div class="space-y-1">
-        <div class="flex justify-between text-xs text-muted-foreground">
-          <span>Repayment progress</span>
-          <span>{progressPct}%</span>
-        </div>
-        <div class="h-2 w-full bg-muted rounded-full overflow-hidden">
-          <div
-            class={cn(
-              'h-full rounded-full transition-all duration-500',
-              progressPct === 100 ? 'bg-primary' : isOverdue ? 'bg-destructive' : 'bg-primary/70',
-            )}
-            style:width="{progressPct}%"
-          ></div>
-        </div>
+      <div class="space-y-0.5">
+        <p class="text-xs text-muted-foreground">Repaid so far</p>
+        <p class="font-semibold">
+          {formatUint256(displayAmountRepaid.toString(), principalDecimals)}
+          /
+          {formatUint256(displayTotalDue.toString(), principalDecimals)}
+          {principalSymbol}
+        </p>
       </div>
+    </div>
 
-      <!-- Amount due highlight -->
-      {#if !repaymentDetails.repaid}
+    <!-- Repayment progress bar -->
+    <div class="space-y-1">
+      <div class="flex justify-between text-xs text-muted-foreground">
+        <span>Repayment progress</span>
+        <span>{displayProgressPct}%</span>
+      </div>
+      <div class="h-2 w-full bg-muted rounded-full overflow-hidden">
+        <div
+          class={cn(
+            'h-full rounded-full transition-all duration-500',
+            displayProgressPct === 100 ? 'bg-primary' : isOverdue ? 'bg-destructive' : 'bg-primary/70',
+          )}
+          style:width="{displayProgressPct}%"
+        ></div>
+      </div>
+    </div>
+
+    <!-- Partial payment history count -->
+    {#if loan.repaymentTransactions.length > 0}
+      <div class="flex items-center justify-between text-xs text-muted-foreground">
+        <span>{loan.repaymentTransactions.length} payment{loan.repaymentTransactions.length > 1 ? 's' : ''} recorded</span>
+        {#if latestTx}
+          <a
+            class="flex items-center gap-1 hover:text-foreground transition-colors"
+            href="https://etherscan.io/tx/{latestTx.txHash}"
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            Latest tx <ExternalLink class="h-3 w-3" />
+          </a>
+        {/if}
+      </div>
+    {/if}
+
+    <!-- Amount due + repay button (active loans only) -->
+    {#if isActive}
+      {#if chainError}
+        <p class="text-xs text-destructive">{chainError}</p>
+      {:else}
         <div
           class={cn(
             'rounded-lg px-4 py-3 flex items-center justify-between',
@@ -285,23 +305,22 @@
           <div>
             <p class="text-xs text-muted-foreground">Amount due</p>
             <p class={cn('text-lg font-black', isOverdue && 'text-destructive')}>
-              {remainingFormatted}
+              {formatUint256(displayRemaining.toString(), principalDecimals)}
               <span class="text-sm font-semibold">{principalSymbol}</span>
             </p>
           </div>
           {#if !showPaymentInput}
             <Button
-              size="sm"
-              variant={isOverdue ? 'destructive' : 'default'}
               class="font-bold"
               onclick={() => (showPaymentInput = true)}
+              size="sm"
+              variant={isOverdue ? 'destructive' : 'default'}
             >
               Repay
             </Button>
           {/if}
         </div>
 
-        <!-- Inline payment form -->
         {#if showPaymentInput}
           <div class="space-y-2 rounded-lg border border-border/60 bg-muted/30 p-3">
             <div class="flex items-center gap-2">
@@ -324,13 +343,12 @@
             {#if paymentExceedsRemaining}
               <p class="text-xs text-destructive">Exceeds remaining balance.</p>
             {/if}
-
             {#if txStatus === 'error'}
               <p class="text-xs text-destructive">{txError}</p>
             {:else if txStatus === 'success'}
               <p class="text-xs text-primary">Payment confirmed!</p>
-            {:else if statusLabel}
-              <p class="text-xs text-muted-foreground">{statusLabel}</p>
+            {:else if txStatusLabel}
+              <p class="text-xs text-muted-foreground">{txStatusLabel}</p>
             {/if}
 
             <div class="flex gap-2">
@@ -355,7 +373,6 @@
           </div>
         {/if}
       {/if}
-
     {/if}
   </Card.Content>
 </Card.Root>
