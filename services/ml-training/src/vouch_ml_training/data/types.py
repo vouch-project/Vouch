@@ -16,6 +16,7 @@ class LiquidationAggregate(BaseModel):
     first_liquidation_at: datetime
     last_liquidation_at: datetime
     total_principal_usd: float
+    aave_repay_ratio: float | None = None
 
 
 class SafeBorrower(BaseModel):
@@ -26,6 +27,8 @@ class SafeBorrower(BaseModel):
     total_borrowed_usd: float
     first_borrow_at: datetime | None = None
     last_borrow_at: datetime | None = None
+    aave_avg_health_factor_at_borrow: float | None = None
+    aave_repay_ratio: float | None = None
 
 
 class WalletEnrichment(BaseModel):
@@ -55,5 +58,8 @@ class TrainingRow(BaseModel):
     eth_balance: float | None = None
     stablecoin_balance_usd: float | None = None
     unique_protocols_interacted: int | None = None
+    aave_days_since_last_borrow: int | None = None
+    aave_avg_health_factor_at_borrow: float | None = None
+    aave_repay_ratio: float | None = None
     raw_features: dict[str, Any] = Field(default_factory=dict)
     feature_set_version: str = "cold_start_v1"

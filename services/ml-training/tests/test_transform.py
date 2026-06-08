@@ -103,3 +103,48 @@ def test_observation_window_excludes_recent_safe_borrowers() -> None:
 
     rows = build_training_rows(settings, snap, [], recent_safe, enrichments, observation_window_days=90)
     assert len(rows) == 0
+
+
+def test_new_aave_fields_present_on_training_rows() -> None:
+    """TrainingRow carries the three new Aave feature fields."""
+    settings = _settings()
+    snap = datetime(2026, 5, 20, tzinfo=UTC)
+
+    risky = [
+        LiquidationAggregate(
+            address="0xaaa",
+            liquidation_count=2,
+            first_liquidation_at=datetime(2026, 5, 1, tzinfo=UTC),
+            last_liquidation_at=datetime(2026, 5, 10, tzinfo=UTC),
+            total_principal_usd=10_000.0,
+            aave_repay_ratio=0.8,
+        )
+    ]
+    safe = [
+        SafeBorrower(
+            address="0xbbb",
+            borrows_count=4,
+            total_borrowed_usd=20_000.0,
+            first_borrow_at=datetime(2026, 1, 1, tzinfo=UTC),
+            last_borrow_at=datetime(2026, 5, 10, tzinfo=UTC),
+            aave_avg_health_factor_at_borrow=1.5,
+            aave_repay_ratio=0.75,
+        )
+    ]
+    enrichments = {
+        "0xaaa": WalletEnrichment(address="0xaaa"),
+        "0xbbb": WalletEnrichment(address="0xbbb"),
+    }
+
+    rows = build_training_rows(settings, snap, risky, safe, enrichments, observation_window_days=90)
+
+    risky_row = next(r for r in rows if r.address == "0xaaa")
+    safe_row = next(r for r in rows if r.address == "0xbbb")
+
+    assert risky_row.aave_days_since_last_borrow == 10  # snap - last_liquidation_at
+    assert risky_row.aave_repay_ratio == 0.8
+    assert risky_row.aave_avg_health_factor_at_borrow is None  # not available for risky
+
+    assert safe_row.aave_days_since_last_borrow == 10  # snap - last_borrow_at
+    assert safe_row.aave_avg_health_factor_at_borrow == 1.5
+    assert safe_row.aave_repay_ratio == 0.75
