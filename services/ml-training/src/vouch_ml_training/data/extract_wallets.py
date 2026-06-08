@@ -124,6 +124,11 @@ async def _etherscan_call(
     return body
 
 
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=1, max=30),
+    reraise=True,
+)
 async def _rpc_call(
     client: httpx.AsyncClient,
     settings: Settings,
@@ -142,6 +147,11 @@ async def _rpc_call(
     return body["result"]
 
 
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=1, max=30),
+    reraise=True,
+)
 async def _rpc_batch(
     client: httpx.AsyncClient,
     settings: Settings,
