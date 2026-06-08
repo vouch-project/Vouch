@@ -103,13 +103,32 @@ vouch-ml-training train
 | `vouch-ml-training export-parquet` | Snapshot Supabase → versioned parquet file. |
 | `vouch-ml-training train` | Read latest parquet → train XGBoost → write artifact. |
 
+## Tools
+
+### `scripts/check_wallet.py`
+
+Score a single wallet with the latest trained model without running the full ETL:
+
+```bash
+cd services/ml-training
+source .venv/bin/activate
+
+# Score a wallet (uses the latest artifact automatically)
+python scripts/check_wallet.py 0xabc...def
+
+# Score with a specific artifact
+python scripts/check_wallet.py 0xabc...def --artifact src/vouch_ml_training/models/artifacts/cold_start_v1-20260526T120000Z
+```
+
+Output includes `risk_probability` (calibrated), `raw_xgb_probability` (uncalibrated), all feature values, and the model version used.
+
 ## Output
 
 - **Supabase** `public.training_dataset` — labeled wallets + features. Service-role only (RLS on, no public policy). Source of truth.
 - **Parquet snapshots** `data/snapshots/<featureSetVersion>__<UTC timestamp>.parquet` — frozen, versioned, what the trainer reads.
 - **Model artifact** `src/vouch_ml_training/models/artifacts/<version>/`
   - `model.joblib` — `CalibratedPipeline` wrapping a `Pipeline(SimpleImputer, XGBClassifier)` + `IsotonicRegression` calibrator. Call `model.predict_proba(X)` to get calibrated probabilities.
-  - `metadata.json` — feature columns, mean CV metrics (AUC, accuracy, PR-AUC, log-loss, Brier ± std), `cv_folds`, `n_total`.
+  - `metadata.json` — feature columns (walletAgeDays, totalTransactions, aaveBorrowsCount, aaveTotalBorrowedUsd, ethBalance, stablecoinBalanceUsd, uniqueProtocolsInteracted, aaveDaysSinceLastBorrow, aaveAvgHealthFactorAtBorrow, aaveRepayRatio), mean CV metrics (AUC, accuracy, PR-AUC, log-loss, Brier ± std), `cv_folds`, `n_total`.
 
 `apps/ml-engine` is the eventual consumer of `model.joblib`.
 
@@ -121,7 +140,6 @@ vouch-ml-training train
 
 ## What's next
 
-- Add `aaveAvgHealthFactorAtBorrow` and `aaveTimeSinceLastBorrowDays` features (subgraph already has the data).
 - Add a `training_runs` table to track model version → metrics → dataset hash for full lineage.
 - Backfill with Vouch's own loan outcomes (`loans` table) once the protocol has real history — that's when the real model starts.
 - Optional: pin transitive deps via a lockfile (`pip-tools` or `uv pip compile`).
