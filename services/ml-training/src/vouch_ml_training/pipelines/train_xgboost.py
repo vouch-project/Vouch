@@ -43,6 +43,9 @@ FEATURE_COLUMNS: list[str] = [
     "ethBalance",
     "stablecoinBalanceUsd",
     "uniqueProtocolsInteracted",
+    "aaveDaysSinceLastBorrow",
+    "aaveAvgHealthFactorAtBorrow",
+    "aaveRepayRatio",
 ]
 LABEL_COLUMN = "labelIsRisky"
 
