@@ -328,6 +328,8 @@ async def fetch_safe_borrowers(
     # the safe-borrower address set. Same pattern as the borrows pass above.
     safe_addrs = {b.address for b in out}
     repay_counts: dict[str, int] = defaultdict(int)
+    max_repays_to_scan = max(len(safe_addrs) * 10, 5_000)
+    repays_scanned = 0
     async with httpx.AsyncClient() as client:
         async for row in _paginate_by_timestamp(
             client, settings.subgraph_url, _REPAYS_QUERY, "repays"
@@ -335,10 +337,14 @@ async def fetch_safe_borrowers(
             addr = row["user"]["id"].lower()
             if addr in safe_addrs:
                 repay_counts[addr] += 1
-            # Stop once we've seen a repay event for every safe borrower at least
-            # once, or once we've exhausted the stream (the loop exits naturally).
-            # In practice, not all wallets will have repays — we accept partial data.
-            if len(repay_counts) >= len(safe_addrs):
+            repays_scanned += 1
+            if repays_scanned >= max_repays_to_scan:
+                log.info(
+                    "repays scan hit limit of %d; %d/%d safe wallets have at least one repay",
+                    max_repays_to_scan,
+                    len(repay_counts),
+                    len(safe_addrs),
+                )
                 break
 
     for b in out:
@@ -461,6 +467,12 @@ async def _fetch_wallet_repay_and_borrow_counts(
         for i, addr in enumerate(batch):
             repays = data.get(f"r{i}") or []
             borrows = data.get(f"b{i}") or []
+            if len(repays) >= 1000 or len(borrows) >= 1000:
+                log.warning(
+                    "wallet %s: repay/borrow counts capped at 1000 (aliased query limit);"
+                    " repay_ratio may be underestimated",
+                    addr,
+                )
             result[addr] = (len(repays), len(borrows))
         return result
 
