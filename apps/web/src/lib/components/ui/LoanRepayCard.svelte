@@ -62,7 +62,7 @@
   $effect(() => {
     if (!isActive || loan.onChainLoanId === null) return;
     getRepaymentDetails(BigInt(loan.onChainLoanId))
-      .then((d) => { chainDetails = d; })
+      .then((d) => { chainDetails = d; chainError = ''; })
       .catch((e) => { chainError = (e as Error).message; });
   });
 

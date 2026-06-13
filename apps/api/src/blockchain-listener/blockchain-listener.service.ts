@@ -81,7 +81,15 @@ export class BlockchainListenerService implements OnModuleInit {
 
   private enqueue(key: string, task: () => Promise<void>) {
     const prev = this.eventQueues.get(key) ?? Promise.resolve();
-    const next = prev.then(task, task);
+    // Ignore the previous task's outcome so one failure can't poison the chain,
+    // then run this task and swallow+log any rejection to avoid an unhandled
+    // rejection leaving the queue permanently rejected.
+    const next = prev
+      .catch(() => undefined)
+      .then(task)
+      .catch((err) => {
+        this.logger.error(`Unhandled error in event queue for ${key}`, err);
+      });
     this.eventQueues.set(key, next);
   }
 
