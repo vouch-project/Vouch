@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Wire up `apps/ml-engine` to load the trained XGBoost model artifact from `services/ml-training` and serve real 0–1000 credit scores with per-feature explanations via the existing FastAPI endpoint.
+**Goal:** Wire up `apps/ml-engine` to load the trained XGBoost model artifact from `services/ml-training` and serve real 300–850 credit scores (FICO range) with per-feature strengths, risk factors, and improvement suggestions via the existing FastAPI endpoint.
 
-**Architecture:** `scorer.py` loads `model.joblib` + `metadata.json` from a configurable artifact path at startup, runs inference using the same feature vector as `check_wallet.py`, and converts the raw `risk_probability` into a credit score using a formula that down-weights the model's contribution for short-lived wallets. All business logic (formula, explanations, factors) lives in `scorer.py`; `main.py` stays a thin FastAPI router.
+**Architecture:** `scorer.py` loads `model.joblib` + `metadata.json` from a configurable artifact path at startup, runs inference using the same feature vector as `check_wallet.py`, and converts the raw `risk_probability` into a 300–850 credit score (FICO range) down-weighted by wallet age confidence. All business logic (formula, strengths/risk_factors/improvements) lives in `scorer.py`; `main.py` stays a thin FastAPI router.
 
 **Tech Stack:** FastAPI, joblib, numpy, scikit-learn (for `CalibratedPipeline` deserialization), httpx (subgraph + RPC calls reused from `services/ml-training`), pydantic-settings, pytest.
 
@@ -37,6 +37,15 @@ The model artifact lives at a directory path. Two files matter:
 
 ### Credit score formula
 
+Score range mirrors FICO: **300 (worst) → 850 (best)**.
+
+FICO tiers (for display context, not hardcoded in this service):
+- 800–850: Exceptional
+- 740–799: Very Good
+- 670–739: Good
+- 580–669: Fair
+- 300–579: Poor
+
 ```python
 BASE_SCORE = 300
 MAX_ADDITIVE = 550   # BASE_SCORE + MAX_ADDITIVE = 850 ceiling
@@ -46,35 +55,85 @@ model_contribution = (1.0 - risk_probability) * MAX_ADDITIVE
 credit_score = BASE_SCORE + round(model_contribution * confidence_weight)
 ```
 
-- Wallet with age 0: score = 300 (no information)
-- Wallet age 6 months, risk=0.5: 300 + round(275 × 0.5) = 437
+- Wallet with age 0: score = 300 (no information — floor regardless of risk probability)
+- Wallet age 6 months (182d), risk=0.5: 300 + round(275 × 0.5) = 437
 - Wallet age 1yr+, risk=0.05: 300 + round(522 × 1.0) = 822
 - Any wallet, risk=1.0: 300
 
 `confidence` field = `confidence_weight` (float 0–1).
 
-### Explanation/factors rules (generate from feature values)
+### Signal generation (strengths, risk factors, improvements)
 
+Generate three lists: `strengths` (positive signals), `risk_factors` (negative signals), and `improvements` (actionable suggestions). All three are returned in the response; `explanation` is improvements joined with "; ".
+
+**Strengths** — positive signals to show high scorers:
 ```python
-factors: list[str] = []
+strengths: list[str] = []
+
+if wallet_age_days is not None and wallet_age_days >= 365:
+    strengths.append("Long wallet history (1+ year)")
+if total_transactions is not None and total_transactions >= 100:
+    strengths.append("High on-chain activity")
+if unique_protocols_interacted is not None and unique_protocols_interacted >= 5:
+    strengths.append("Diverse DeFi protocol usage")
+if aave_repay_ratio is not None and aave_repay_ratio >= 0.8:
+    strengths.append("Strong Aave repayment history")
+if eth_balance is not None and eth_balance >= 1.0:
+    strengths.append("Healthy ETH balance")
+if stablecoin_balance_usd is not None and stablecoin_balance_usd >= 500:
+    strengths.append("Meaningful stablecoin reserves")
+if aave_borrows_count is not None and aave_borrows_count >= 3 and aave_repay_ratio is not None and aave_repay_ratio >= 0.8:
+    strengths.append("Consistent DeFi borrowing track record")
+```
+
+**Risk factors + improvements**:
+```python
+risk_factors: list[str] = []
 improvements: list[str] = []
 
-if wallet_age_days is None or wallet_age_days < 180:
-    factors.append("Limited wallet history (less than 6 months)")
+# Wallet age
+if wallet_age_days is None or wallet_age_days < 90:
+    risk_factors.append("Very new wallet (less than 3 months)")
     improvements.append("Score will increase automatically as wallet history grows")
-if aave_repay_ratio is not None and aave_repay_ratio < 0.5:
-    factors.append("Low Aave repayment ratio")
-    improvements.append("Repaying Aave borrows consistently will improve your score")
+elif wallet_age_days < 180:
+    risk_factors.append("Limited wallet history (less than 6 months)")
+    improvements.append("Score will increase automatically as wallet history grows")
+
+# On-chain activity
+if total_transactions is not None and total_transactions < 10:
+    risk_factors.append("Very few on-chain transactions")
+    improvements.append("Regular on-chain activity improves your score over time")
+if unique_protocols_interacted is not None and unique_protocols_interacted < 2:
+    risk_factors.append("Limited DeFi protocol usage")
+    improvements.append("Interacting with multiple DeFi protocols builds a stronger profile")
+
+# Aave signals
 if aave_repay_ratio is None:
-    factors.append("No Aave borrowing history")
-    improvements.append("Establishing an Aave borrowing and repayment history will improve your score")
+    risk_factors.append("No DeFi borrowing history")
+    improvements.append("Establishing a DeFi borrowing and repayment history will improve your score")
+elif aave_repay_ratio < 0.5:
+    risk_factors.append("Low Aave repayment ratio")
+    improvements.append("Repaying Aave borrows consistently will improve your score")
+elif aave_repay_ratio < 0.8:
+    risk_factors.append("Moderate Aave repayment ratio")
+    improvements.append("Increasing your Aave repayment rate above 80% will improve your score")
+if aave_days_since_last_borrow is not None and aave_days_since_last_borrow > 180:
+    risk_factors.append("No recent DeFi borrowing activity (6+ months)")
+    improvements.append("Recent borrowing activity signals active protocol engagement")
+elif aave_days_since_last_borrow is not None and aave_days_since_last_borrow > 60:
+    risk_factors.append("No recent DeFi borrowing activity (60+ days)")
+
+# Balance
 if eth_balance is not None and eth_balance < 0.05:
-    factors.append("Low ETH balance")
-if aave_days_since_last_borrow is not None and aave_days_since_last_borrow > 60:
-    factors.append("No recent Aave activity (last borrow over 60 days ago)")
+    risk_factors.append("Low ETH balance")
+    improvements.append("Maintaining an ETH balance improves your score")
+if stablecoin_balance_usd is not None and stablecoin_balance_usd < 50 and (eth_balance is None or eth_balance < 0.5):
+    risk_factors.append("Low overall assets on-chain")
 ```
 
 `explanation` field = improvements joined with "; " (empty string if no improvements).
+
+**Response schema change:** `factors` is replaced by two separate fields: `strengths: list[str]` and `risk_factors: list[str]`. The `improvements: list[str]` field is also added.
 
 ### Feature fetching
 
@@ -675,7 +734,7 @@ Replace the stub in `scorer.py` with real inference. The scorer loads the artifa
 - Modify: `apps/ml-engine/src/schemas.py`
 - Modify: `apps/ml-engine/tests/test_scorer.py`
 
-- [ ] **Step 1: Update `schemas.py` to add `improvements`**
+- [ ] **Step 1: Update `schemas.py` — replace `factors` with `strengths` + `risk_factors` + `improvements`**
 
 ```python
 # apps/ml-engine/src/schemas.py
@@ -684,12 +743,13 @@ from pydantic import BaseModel
 
 class CreditScoreResponse(BaseModel):
     address: str
-    score: int
-    confidence: float
-    factors: list[str]
-    improvements: list[str]
+    score: int                    # 300–850 (FICO range)
+    confidence: float             # 0.0–1.0 (wallet age weight)
+    strengths: list[str]          # positive signals
+    risk_factors: list[str]       # negative signals
+    improvements: list[str]       # actionable suggestions
     model_version: str
-    explanation: str | None = None
+    explanation: str | None = None  # improvements joined with "; "
 ```
 
 - [ ] **Step 2: Write failing scorer tests**
@@ -697,12 +757,8 @@ class CreditScoreResponse(BaseModel):
 Add these tests to `apps/ml-engine/tests/test_scorer.py` (keep existing tests, append new ones):
 
 ```python
-import json
-import numpy as np
-import joblib
 import pytest
-from pathlib import Path
-from src.scorer import CreditScorer, ScoringResult, _compute_credit_score, _generate_factors
+from src.scorer import CreditScorer, ScoringResult, _compute_credit_score, _generate_signals
 
 # --- pure formula tests (no model needed) ---
 
@@ -719,52 +775,78 @@ def test_credit_score_full_age_full_risk():
     assert _compute_credit_score(risk_probability=1.0, wallet_age_days=365) == 300
 
 def test_credit_score_half_age():
-    # confidence=0.5, risk=0.0 → 300 + round(550*0.5) = 300 + 275 = 575
-    assert _compute_credit_score(risk_probability=0.0, wallet_age_days=182) == 575
+    # confidence=182/365≈0.499, risk=0.0 → 300 + round(550*0.499) = 300 + 274 = 574
+    result = _compute_credit_score(risk_probability=0.0, wallet_age_days=182)
+    assert 570 <= result <= 578  # allow rounding variance
 
 def test_credit_score_none_age_uses_zero():
     assert _compute_credit_score(risk_probability=0.0, wallet_age_days=None) == 300
 
-# --- factor generation tests ---
+def test_score_in_fico_range():
+    for risk in [0.0, 0.5, 1.0]:
+        for age in [0, 180, 365, 730]:
+            s = _compute_credit_score(risk, age)
+            assert 300 <= s <= 850, f"score={s} out of FICO range for risk={risk} age={age}"
 
-def test_factors_short_wallet():
-    factors, improvements = _generate_factors(
-        wallet_age_days=30, aave_repay_ratio=None,
-        eth_balance=1.0, aave_days_since_last_borrow=5,
+# --- signal generation tests ---
+
+def test_signals_very_new_wallet():
+    strengths, risk_factors, improvements = _generate_signals(
+        wallet_age_days=30, total_transactions=5,
+        unique_protocols_interacted=1, aave_repay_ratio=None,
+        aave_days_since_last_borrow=None, aave_borrows_count=0,
+        eth_balance=1.0, stablecoin_balance_usd=0.0,
     )
-    assert "Limited wallet history" in factors[0]
+    assert any("Very new wallet" in f for f in risk_factors)
     assert any("history grows" in i for i in improvements)
 
-def test_factors_no_aave_history():
-    factors, improvements = _generate_factors(
-        wallet_age_days=400, aave_repay_ratio=None,
-        eth_balance=1.0, aave_days_since_last_borrow=None,
+def test_signals_no_defi_history():
+    strengths, risk_factors, improvements = _generate_signals(
+        wallet_age_days=400, total_transactions=50,
+        unique_protocols_interacted=1, aave_repay_ratio=None,
+        aave_days_since_last_borrow=None, aave_borrows_count=0,
+        eth_balance=1.0, stablecoin_balance_usd=0.0,
     )
-    assert any("No Aave borrowing" in f for f in factors)
+    assert any("No DeFi borrowing" in f for f in risk_factors)
 
-def test_factors_low_repay_ratio():
-    factors, improvements = _generate_factors(
-        wallet_age_days=400, aave_repay_ratio=0.3,
-        eth_balance=1.0, aave_days_since_last_borrow=5,
+def test_signals_low_repay_ratio():
+    strengths, risk_factors, improvements = _generate_signals(
+        wallet_age_days=400, total_transactions=50,
+        unique_protocols_interacted=3, aave_repay_ratio=0.3,
+        aave_days_since_last_borrow=5, aave_borrows_count=5,
+        eth_balance=1.0, stablecoin_balance_usd=0.0,
     )
-    assert any("repayment ratio" in f for f in factors)
+    assert any("repayment ratio" in f for f in risk_factors)
+    assert any("repayment rate" in i for i in improvements)
 
-def test_factors_healthy_wallet_no_warnings():
-    factors, improvements = _generate_factors(
-        wallet_age_days=730, aave_repay_ratio=0.9,
-        eth_balance=2.0, aave_days_since_last_borrow=10,
+def test_signals_healthy_wallet_has_strengths():
+    strengths, risk_factors, improvements = _generate_signals(
+        wallet_age_days=730, total_transactions=200,
+        unique_protocols_interacted=8, aave_repay_ratio=0.9,
+        aave_days_since_last_borrow=10, aave_borrows_count=10,
+        eth_balance=2.0, stablecoin_balance_usd=1000.0,
     )
-    assert factors == []
+    assert len(strengths) >= 3
+    assert risk_factors == []
     assert improvements == []
+
+def test_signals_high_repay_ratio_is_strength():
+    strengths, _, _ = _generate_signals(
+        wallet_age_days=730, total_transactions=200,
+        unique_protocols_interacted=8, aave_repay_ratio=0.85,
+        aave_days_since_last_borrow=10, aave_borrows_count=10,
+        eth_balance=2.0, stablecoin_balance_usd=0.0,
+    )
+    assert any("repayment" in s for s in strengths)
 ```
 
 - [ ] **Step 3: Run new tests to verify they fail**
 
 ```bash
-pytest tests/test_scorer.py -v -k "credit_score or factors"
+pytest tests/test_scorer.py -v -k "credit_score or signals"
 ```
 
-Expected: `ImportError` — `_compute_credit_score` and `_generate_factors` not defined yet.
+Expected: `ImportError` — `_compute_credit_score` and `_generate_signals` not defined yet.
 
 - [ ] **Step 4: Rewrite `src/scorer.py`**
 
@@ -775,7 +857,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import joblib
@@ -800,14 +882,15 @@ _FEATURE_COLUMNS = [
 ]
 
 BASE_SCORE = 300
-MAX_ADDITIVE = 550
+MAX_ADDITIVE = 550  # 300 + 550 = 850 ceiling (FICO range)
 
 
 @dataclass
 class ScoringResult:
-    score: int
-    confidence: float
-    factors: list[str]
+    score: int            # 300–850
+    confidence: float     # 0.0–1.0
+    strengths: list[str]
+    risk_factors: list[str]
     improvements: list[str]
     model_version: str
     explanation: str | None = None
@@ -820,33 +903,91 @@ def _compute_credit_score(risk_probability: float, wallet_age_days: int | None) 
     return BASE_SCORE + round(additive * confidence_weight)
 
 
-def _generate_factors(
+def _generate_signals(
     wallet_age_days: int | None,
+    total_transactions: int | None,
+    unique_protocols_interacted: int | None,
     aave_repay_ratio: float | None,
-    eth_balance: float | None,
     aave_days_since_last_borrow: int | None,
-) -> tuple[list[str], list[str]]:
-    factors: list[str] = []
+    aave_borrows_count: int | None,
+    eth_balance: float | None,
+    stablecoin_balance_usd: float | None,
+) -> tuple[list[str], list[str], list[str]]:
+    """Return (strengths, risk_factors, improvements)."""
+    strengths: list[str] = []
+    risk_factors: list[str] = []
     improvements: list[str] = []
 
     age = wallet_age_days or 0
-    if age < 180:
-        factors.append("Limited wallet history (less than 6 months)")
+
+    # --- Strengths ---
+    if wallet_age_days is not None and wallet_age_days >= 365:
+        strengths.append("Long wallet history (1+ year)")
+    if total_transactions is not None and total_transactions >= 100:
+        strengths.append("High on-chain activity")
+    if unique_protocols_interacted is not None and unique_protocols_interacted >= 5:
+        strengths.append("Diverse DeFi protocol usage")
+    if aave_repay_ratio is not None and aave_repay_ratio >= 0.8:
+        strengths.append("Strong Aave repayment history")
+    if eth_balance is not None and eth_balance >= 1.0:
+        strengths.append("Healthy ETH balance")
+    if stablecoin_balance_usd is not None and stablecoin_balance_usd >= 500:
+        strengths.append("Meaningful stablecoin reserves")
+    if (
+        aave_borrows_count is not None and aave_borrows_count >= 3
+        and aave_repay_ratio is not None and aave_repay_ratio >= 0.8
+    ):
+        strengths.append("Consistent DeFi borrowing track record")
+
+    # --- Risk factors + improvements ---
+
+    # Wallet age
+    if age < 90:
+        risk_factors.append("Very new wallet (less than 3 months)")
         improvements.append("Score will increase automatically as wallet history grows")
+    elif age < 180:
+        risk_factors.append("Limited wallet history (less than 6 months)")
+        improvements.append("Score will increase automatically as wallet history grows")
+
+    # On-chain activity
+    if total_transactions is not None and total_transactions < 10:
+        risk_factors.append("Very few on-chain transactions")
+        improvements.append("Regular on-chain activity improves your score over time")
+    if unique_protocols_interacted is not None and unique_protocols_interacted < 2:
+        risk_factors.append("Limited DeFi protocol usage")
+        improvements.append("Interacting with multiple DeFi protocols builds a stronger profile")
+
+    # Aave signals
     if aave_repay_ratio is None:
-        factors.append("No Aave borrowing history")
+        risk_factors.append("No DeFi borrowing history")
         improvements.append(
-            "Establishing an Aave borrowing and repayment history will improve your score"
+            "Establishing a DeFi borrowing and repayment history will improve your score"
         )
     elif aave_repay_ratio < 0.5:
-        factors.append("Low Aave repayment ratio")
+        risk_factors.append("Low Aave repayment ratio")
         improvements.append("Repaying Aave borrows consistently will improve your score")
-    if eth_balance is not None and eth_balance < 0.05:
-        factors.append("Low ETH balance")
-    if aave_days_since_last_borrow is not None and aave_days_since_last_borrow > 60:
-        factors.append("No recent Aave activity (last borrow over 60 days ago)")
+    elif aave_repay_ratio < 0.8:
+        risk_factors.append("Moderate Aave repayment ratio")
+        improvements.append(
+            "Increasing your Aave repayment rate above 80% will improve your score"
+        )
+    if aave_days_since_last_borrow is not None and aave_days_since_last_borrow > 180:
+        risk_factors.append("No recent DeFi borrowing activity (6+ months)")
+        improvements.append("Recent borrowing activity signals active protocol engagement")
+    elif aave_days_since_last_borrow is not None and aave_days_since_last_borrow > 60:
+        risk_factors.append("No recent DeFi borrowing activity (60+ days)")
 
-    return factors, improvements
+    # Balance
+    if eth_balance is not None and eth_balance < 0.05:
+        risk_factors.append("Low ETH balance")
+        improvements.append("Maintaining an ETH balance improves your score")
+    if (
+        stablecoin_balance_usd is not None and stablecoin_balance_usd < 50
+        and (eth_balance is None or eth_balance < 0.5)
+    ):
+        risk_factors.append("Low overall assets on-chain")
+
+    return strengths, risk_factors, improvements
 
 
 def _find_latest_artifact(root: Path) -> Path:
@@ -870,7 +1011,6 @@ class CreditScorer:
         try:
             self._load(artifact_dir)
         except Exception as exc:
-            # Startup should not crash if artifact is missing — is_ready() returns False.
             import logging
             logging.getLogger(__name__).warning("Could not load model artifact: %s", exc)
 
@@ -888,7 +1028,8 @@ class CreditScorer:
             return ScoringResult(
                 score=0,
                 confidence=0.0,
-                factors=[],
+                strengths=[],
+                risk_factors=[],
                 improvements=[],
                 model_version=self._model_version,
             )
@@ -905,32 +1046,56 @@ class CreditScorer:
         wallet_age_days = int(wallet_age) if wallet_age is not None else None
         confidence_weight = min(1.0, (wallet_age_days or 0) / 365.0)
         credit_score = _compute_credit_score(risk_probability, wallet_age_days)
-        factors, improvements = _generate_factors(
+
+        total_tx = features.get("totalTransactions")
+        strengths, risk_factors, improvements = _generate_signals(
             wallet_age_days=wallet_age_days,
+            total_transactions=int(total_tx) if total_tx is not None else None,
+            unique_protocols_interacted=features.get("uniqueProtocolsInteracted"),
             aave_repay_ratio=features.get("aaveRepayRatio"),
-            eth_balance=features.get("ethBalance"),
             aave_days_since_last_borrow=features.get("aaveDaysSinceLastBorrow"),
+            aave_borrows_count=features.get("aaveBorrowsCount"),
+            eth_balance=features.get("ethBalance"),
+            stablecoin_balance_usd=features.get("stablecoinBalanceUsd"),
         )
 
         return ScoringResult(
             score=credit_score,
             confidence=round(confidence_weight, 4),
-            factors=factors,
+            strengths=strengths,
+            risk_factors=risk_factors,
             improvements=improvements,
             model_version=self._model_version,
             explanation="; ".join(improvements) if improvements else None,
         )
 ```
 
-- [ ] **Step 5: Run all scorer tests**
+- [ ] **Step 5: Update existing stub test and run all scorer tests**
+
+Update the existing `test_scorer_returns_stub_when_no_model` test — `ScoringResult` now has `strengths`, `risk_factors`, and `improvements` instead of `factors`:
+
+```python
+def test_scorer_returns_stub_when_no_model() -> None:
+    scorer = CreditScorer()
+    result = scorer.score("0x1234567890abcdef1234567890abcdef12345678")
+    assert isinstance(result, ScoringResult)
+    assert result.score == 0
+    assert result.confidence == 0.0
+    assert result.strengths == []
+    assert result.risk_factors == []
+    assert result.improvements == []
+    assert result.model_version == "none"
+```
+
+Then run:
 
 ```bash
 pytest tests/test_scorer.py -v
 ```
 
-Expected: PASS (all tests including the original stub tests — note: `test_scorer_returns_stub_when_no_model` will need updating since `ScoringResult` now has `improvements` field; update it to also assert `result.improvements == []`)
+Expected: PASS (all tests)
 
-- [ ] **Step 6: Update `main.py` to pass improvements through**
+- [ ] **Step 6: Update `main.py` to pass strengths, risk_factors, improvements through**
 
 ```python
 # apps/ml-engine/main.py
@@ -968,7 +1133,8 @@ async def get_credit_score(address: str) -> CreditScoreResponse | JSONResponse:
         address=address,
         score=result.score,
         confidence=result.confidence,
-        factors=result.factors,
+        strengths=result.strengths,
+        risk_factors=result.risk_factors,
         improvements=result.improvements,
         model_version=result.model_version,
         explanation=result.explanation,
@@ -1042,7 +1208,7 @@ Use the same risky wallet from development (`0x536b42cb48ad77d8c6c3aa1e994107d20
 curl http://localhost:8001/api/v1/score/0x536b42cb48ad77d8c6c3aa1e994107d20ddcca7a | python3 -m json.tool
 ```
 
-Expected: `score` between 300–400, `predicted_label` would map to high risk. The `factors` list should include "Low Aave repayment ratio" or "No recent Aave activity". `confidence` should be close to 1.0 (wallet is old).
+Expected: `score` between 300–400. `risk_factors` should include "Low Aave repayment ratio" or similar. `strengths` may include "Long wallet history" if the wallet is old. `confidence` should be close to 1.0 (wallet is old).
 
 - [ ] **Step 5: Commit**
 
@@ -1059,15 +1225,17 @@ git commit -m "chore(ml-engine): smoke tested end-to-end scoring"
 - ✅ Model artifact loaded at startup from configurable path
 - ✅ CalibratedPipeline deserialization (compat stub)
 - ✅ 9-feature vector fetched from subgraph + RPC + Etherscan
-- ✅ Credit score formula (0–850, base 300, confidence-weighted)
-- ✅ Wallet age confidence weighting
-- ✅ Factors list with specific conditions
-- ✅ Improvements list with actionable suggestions
-- ✅ `explanation` field (improvements joined)
-- ✅ `improvements` added to schema and API response
+- ✅ Credit score formula (300–850 FICO range, base 300, confidence-weighted by wallet age)
+- ✅ Wallet age confidence weighting (0d→300, 365d→full model contribution)
+- ✅ FICO tier thresholds documented (300–579 Poor / 580–669 Fair / 670–739 Good / 740–799 Very Good / 800–850 Exceptional)
+- ✅ `strengths` list — positive signals for well-scored wallets
+- ✅ `risk_factors` list — negative signals with graded severity (e.g. <90d vs <180d wallet age)
+- ✅ `improvements` list — actionable, non-Aave-specific suggestions
+- ✅ `explanation` field (improvements joined with "; ")
+- ✅ Schema updated: `factors` → `strengths` + `risk_factors` + `improvements`
 - ✅ Graceful degradation when no model loaded (503)
-- ✅ Tests for formula, factors, and feature helpers
+- ✅ Tests for formula, signals (both positive and negative), and feature helpers
 
 **Placeholder scan:** None found.
 
-**Type consistency:** `ScoringResult.improvements: list[str]` defined in Task 3 Step 4, used in Task 3 Steps 5–6. `_compute_credit_score` and `_generate_factors` defined in scorer.py and tested with matching signatures throughout.
+**Type consistency:** `ScoringResult` fields `strengths`, `risk_factors`, `improvements` defined in Task 3 Step 4. `CreditScoreResponse` schema updated in Step 1. `_compute_credit_score` and `_generate_signals` defined in scorer.py and tested with matching signatures. `main.py` passes all three new fields.

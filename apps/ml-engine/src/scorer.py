@@ -9,6 +9,7 @@ from pathlib import Path
 
 import joblib
 import numpy as np
+from pydantic import ValidationError
 
 from src.compat import register as _register_compat
 from src.config import get_settings
@@ -171,6 +172,10 @@ class CreditScorer:
 
         try:
             settings = get_settings()
+        except ValidationError:
+            raise  # missing/invalid env vars → fail loudly at startup
+
+        try:
             artifact_dir = settings.artifact_path or _find_latest_artifact(_ARTIFACT_ROOT)
             self._load(artifact_dir)
         except Exception as exc:
