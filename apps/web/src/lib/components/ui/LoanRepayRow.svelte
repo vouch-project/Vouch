@@ -53,7 +53,9 @@
   const progressPctFromDB = $derived(computeProgressPct(amountRepaidFromDB, totalDueFromDB, isRepaid));
 
   $effect(() => {
-    if (!isActive || loan.onChainLoanId === null) return;
+    // Guard on loan.status (not the chainDetails-derived `isActive`) so setting
+    // chainDetails below can't feed back into this effect's dependencies.
+    if (loan.status !== 'active' || loan.onChainLoanId === null) return;
     getRepaymentDetails(BigInt(loan.onChainLoanId))
       .then((d) => {
         chainDetails = d;

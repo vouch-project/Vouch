@@ -50,8 +50,10 @@
           {#if realtimeActive}
             <span class="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-green-400 opacity-75"></span>
           {/if}
-          <span class={cn('relative inline-flex h-2 w-2 rounded-full', realtimeActive ? 'bg-green-500' : 'bg-gray-400')}
-          ></span>
+          <span
+            class={cn('relative inline-flex h-2 w-2 rounded-full', realtimeActive ? 'bg-green-500' : 'bg-gray-400')}
+          >
+          </span>
         </div>
         {realtimeActive ? 'Live Updates' : 'Realtime Off'}
       </Button>

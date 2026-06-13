@@ -70,10 +70,22 @@ export class DashboardData {
     const refetch = () => {
       if (this.#address) void this.fetch(this.#address);
     };
+    // Scope the subscription to this borrower so we don't refetch on unrelated
+    // users' loan/transaction changes. Addresses are checksummed to match how
+    // they're stored (see fetch()).
+    const checksummed = this.#address ? ethers.getAddress(this.#address) : '';
     this.#channel = supabase
       .channel('public:dashboard-loans')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'loans' }, refetch)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, refetch)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'loans', filter: `borrowerAddress=eq.${checksummed}` },
+        refetch,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'transactions', filter: `fromAddress=eq.${checksummed}` },
+        refetch,
+      )
       .subscribe();
     this.realtimeActive = true;
   }

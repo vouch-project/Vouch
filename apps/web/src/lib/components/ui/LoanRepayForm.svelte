@@ -4,6 +4,8 @@
   import type { LoanFull } from '$lib/types';
   import { cn } from '$lib/utils';
   import { getRepaymentDetails, repayLoan, repayLoanWithERC20, type RepaymentDetails } from '$lib/wallet/vouchVault';
+  import { txExplorerUrl } from '$lib/wallet/explorer';
+  import { wallet } from '$lib/wallet/wallet.svelte';
   import { ExternalLink } from '@lucide/svelte';
   import { ethers } from 'ethers';
 
@@ -107,7 +109,7 @@
         {#if latestTx}
           <a
             class="flex items-center gap-1 hover:text-foreground transition-colors"
-            href="https://etherscan.io/tx/{latestTx.txHash}"
+            href={txExplorerUrl(wallet.networkId, latestTx.txHash)}
             rel="noopener noreferrer"
             target="_blank"
           >
