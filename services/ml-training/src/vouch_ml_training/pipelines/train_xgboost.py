@@ -1,9 +1,10 @@
 """Train an XGBoost classifier on the populated training_dataset table.
 
 Reads from the latest parquet snapshot (preferred) or, if missing, falls
-back to a live Supabase read. Runs a stratified train/val/test split,
-fits XGBoost with isotonic probability calibration, and writes the model
-artifact to `services/ml-training/src/vouch_ml_training/models/artifacts/<version>/`.
+back to a live Supabase read. Runs 5-fold stratified cross-validation for
+evaluation metrics, then trains the final model on an 80/20 calibration
+split and applies isotonic calibration. Writes the model artifact to
+`services/ml-training/src/vouch_ml_training/models/artifacts/<version>/`.
 """
 
 from __future__ import annotations
@@ -153,17 +154,16 @@ def train(settings: Settings | None = None) -> TrainingResult:
     x = df.select(FEATURE_COLUMNS).cast(pl.Float64).to_numpy()
     y = df.get_column(LABEL_COLUMN).cast(pl.Int8).to_numpy()
 
-    # Stratified splits require both classes to be present with enough samples
-    # to survive two successive splits (train/test then train/val). With the
-    # default 0.2 test ratios that means each class needs >=4 rows in the
-    # original dataset so the smallest resulting fold still has >=1 sample.
+    # StratifiedKFold(n_splits=5) requires at least 5 samples per class.
+    # The subsequent calibration train_test_split(test_size=0.2) on the same
+    # data needs each class to survive that split too, so 10 is a safe floor.
     # Fail loudly with a fix-it message instead of letting sklearn raise a
     # cryptic ValueError.
     classes, counts = np.unique(y, return_counts=True)
     class_counts = dict(zip(classes.tolist(), counts.tolist(), strict=True))
     risky_n = class_counts.get(1, 0)
     safe_n = class_counts.get(0, 0)
-    min_per_class = 4
+    min_per_class = 10
     if risky_n < min_per_class or safe_n < min_per_class:
         raise RuntimeError(
             "Training data does not contain both classes with enough samples "
@@ -209,15 +209,11 @@ def train(settings: Settings | None = None) -> TrainingResult:
     metrics["positive_rate"] = float(np.mean(y))
     log.info("cv metrics (mean) | %s", {k: v for k, v in metrics.items() if not k.endswith("_std")})
 
-    # Train final production model on all data
+    # Train on an 80% split; hold out 20% for isotonic calibration.
+    # sklearn >=1.8 removed cv="prefit"; use IsotonicRegression directly.
     n_pos = int(y.sum())
     n_neg = len(y) - n_pos
     scale_pos_weight = (n_neg / n_pos) if n_pos > 0 else 1.0
-    pipe = _build_pipeline(scale_pos_weight)
-    pipe.fit(x, y)
-
-    # Calibrate on a held-out portion for probability quality.
-    # sklearn >=1.8 removed cv="prefit"; use IsotonicRegression directly.
     x_cal_train, x_cal_val, y_cal_train, y_cal_val = train_test_split(
         x, y, test_size=0.2, stratify=y, random_state=42,
     )
@@ -250,8 +246,8 @@ def train(settings: Settings | None = None) -> TrainingResult:
         model_version=model_version,
         artifact_dir=artifact_dir,
         metrics=metrics,
-        n_train=len(x),
-        n_val=0,
+        n_train=len(x_cal_train),
+        n_val=len(x_cal_val),
         n_test=0,
     )
 

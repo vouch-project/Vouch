@@ -5,7 +5,7 @@
 -- been liquidated (negative class), enriches each wallet with on-chain
 -- activity metrics, and upserts the result here.
 --
--- The downstream XGBoost trainer in `services/ml-training/pipelines/` reads
+-- The downstream XGBoost trainer in `services/ml-training/src/vouch_ml_training/pipelines/` reads
 -- this table to build the model that powers `apps/ml-engine`.
 --
 -- Re-run safety: the (address, chainId, featureSetVersion) UNIQUE constraint

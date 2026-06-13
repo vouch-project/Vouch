@@ -232,10 +232,12 @@ async def _enrich_one(
             if isinstance(tx_list, list) and tx_list:
                 first_ts = int(tx_list[0]["timeStamp"])
                 age_days = max(0, (int(time.time()) - first_ts) // 86400)
+                # Only count transactions with non-empty input data (contract calls).
+                # Plain ETH transfers have input="0x" and would inflate the count.
                 contracts = {
                     (t.get("to") or "").lower()
                     for t in tx_list
-                    if t.get("to")
+                    if t.get("to") and t.get("input", "0x") not in ("0x", "")
                 }
                 contracts.discard("")
                 unique_contracts = len(contracts)
