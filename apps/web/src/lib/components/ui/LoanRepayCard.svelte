@@ -31,11 +31,13 @@
   );
 
   const principalRaw = $derived(BigInt(loan.principalAmount ?? '0'));
-  const interestRateDecimal = $derived(loan.interestRate ?? 0) as number;
-  // interestRateDecimal is a fraction (e.g. 0.05). Scale to bps and do the
-  // interest math in bigint to avoid Number precision loss on uint256 values.
+  // loans.interestRate is a uint256 (string) scaled so that 1e18 == one
+  // percentage point — matching the marketplace's formatUint256(rate) + "%".
+  // So 5% is stored as 5e18. Keep all math in bigint to avoid precision loss.
+  const PERCENT_WAD = 10n ** 18n;
+  const interestRateRaw = $derived(BigInt(loan.interestRate ?? '0'));
   const totalDueFromDB = $derived(
-    principalRaw + (principalRaw * BigInt(Math.round(interestRateDecimal * 10000))) / 10000n,
+    principalRaw + (principalRaw * interestRateRaw) / (100n * PERCENT_WAD),
   );
   const remainingFromDB = $derived(
     totalDueFromDB > amountRepaidFromDB ? totalDueFromDB - amountRepaidFromDB : 0n,
@@ -90,7 +92,7 @@
   const displayTotalDue = $derived(chainDetails ? chainDetails.totalDue : totalDueFromDB);
   const displayAmountRepaid = $derived(chainDetails ? chainDetails.amountRepaid : amountRepaidFromDB);
   const displayInterestRateBps = $derived(
-    chainDetails ? chainDetails.interestRateBps : Math.round(interestRateDecimal * 10000),
+    chainDetails ? chainDetails.interestRateBps : Number((interestRateRaw * 100n) / PERCENT_WAD),
   );
   const interestAmount = $derived(displayTotalDue - principalRaw);
 
