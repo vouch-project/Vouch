@@ -41,6 +41,12 @@
   };
 
   $effect(() => {
+    // Read wallet.address here so the effect re-runs when it changes; otherwise
+    // it never refetches after the wallet connects (the read is buried in fetchLoans).
+    if (!wallet.address) {
+      loans = [];
+      return;
+    }
     void fetchLoans();
   });
 
