@@ -73,6 +73,18 @@ export class BlockchainListenerService implements OnModuleInit {
     }
   }
 
+  // Serializes event processing per chain so handlers run in arrival order.
+  // Without this, ethers fires listeners concurrently and a LoanPartiallyRepaid
+  // can be processed before the corresponding LoanFunded write completes,
+  // leaving lenderAddress NULL when the repayment RPC needs it.
+  private eventQueues = new Map<string, Promise<void>>();
+
+  private enqueue(key: string, task: () => Promise<void>) {
+    const prev = this.eventQueues.get(key) ?? Promise.resolve();
+    const next = prev.then(task, task);
+    this.eventQueues.set(key, next);
+  }
+
   private setupEventListener(
     contract: ethers.Contract,
     network: ethers.Network,
@@ -81,6 +93,8 @@ export class BlockchainListenerService implements OnModuleInit {
     this.logger.log(
       `Listening for events on chain ${network.chainId} (${network.name})...`,
     );
+
+    const queueKey = `${network.chainId.toString()}:${config.contractAddress}`;
 
     void contract.on(
       'LoanCreated',
@@ -94,17 +108,19 @@ export class BlockchainListenerService implements OnModuleInit {
         timestamp: bigint,
         { log: eventLog }: ethers.ContractEventPayload,
       ) => {
-        void this.handleLoanCreated(
-          loanId,
-          borrower,
-          collateralTokenAddress,
-          collateralAmount,
-          requestedPrincipalToken,
-          requestedPrincipalAmount,
-          timestamp,
-          eventLog,
-          network,
-          config.contractAddress,
+        this.enqueue(queueKey, () =>
+          this.handleLoanCreated(
+            loanId,
+            borrower,
+            collateralTokenAddress,
+            collateralAmount,
+            requestedPrincipalToken,
+            requestedPrincipalAmount,
+            timestamp,
+            eventLog,
+            network,
+            config.contractAddress,
+          ),
         );
       },
     );
@@ -119,15 +135,17 @@ export class BlockchainListenerService implements OnModuleInit {
         timestamp: bigint,
         { log: eventLog }: ethers.ContractEventPayload,
       ) => {
-        void this.handleLoanFunded(
-          loanId,
-          lender,
-          borrower,
-          principalAmount,
-          timestamp,
-          eventLog,
-          network,
-          config.contractAddress,
+        this.enqueue(queueKey, () =>
+          this.handleLoanFunded(
+            loanId,
+            lender,
+            borrower,
+            principalAmount,
+            timestamp,
+            eventLog,
+            network,
+            config.contractAddress,
+          ),
         );
       },
     );
@@ -144,17 +162,19 @@ export class BlockchainListenerService implements OnModuleInit {
         timestamp: bigint,
         { log: eventLog }: ethers.ContractEventPayload,
       ) => {
-        void this.handleLoanRepaid(
-          loanId,
-          borrower,
-          lender,
-          principalAmount,
-          interestAmount,
-          totalRepaid,
-          timestamp,
-          eventLog,
-          network,
-          config.contractAddress,
+        this.enqueue(queueKey, () =>
+          this.handleLoanRepaid(
+            loanId,
+            borrower,
+            lender,
+            principalAmount,
+            interestAmount,
+            totalRepaid,
+            timestamp,
+            eventLog,
+            network,
+            config.contractAddress,
+          ),
         );
       },
     );
@@ -171,14 +191,16 @@ export class BlockchainListenerService implements OnModuleInit {
         timestamp: bigint,
         { log: eventLog }: ethers.ContractEventPayload,
       ) => {
-        void this.handleLoanPartiallyRepaid(
-          loanId,
-          borrower,
-          paymentAmount,
-          timestamp,
-          eventLog,
-          network,
-          config.contractAddress,
+        this.enqueue(queueKey, () =>
+          this.handleLoanPartiallyRepaid(
+            loanId,
+            borrower,
+            paymentAmount,
+            timestamp,
+            eventLog,
+            network,
+            config.contractAddress,
+          ),
         );
       },
     );

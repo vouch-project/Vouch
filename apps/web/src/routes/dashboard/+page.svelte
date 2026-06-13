@@ -26,7 +26,7 @@
         *,
         collateralToken:tokens!loans_collateralTokenId_fkey(*),
         principalToken:tokens!loans_principalTokenId_fkey(*),
-        repaymentTransactions:transactions!transactions_loanId_fkey(id, amount, txTimestamp, txHash)
+        repaymentTransactions:transactions!transactions_loanId_fkey(id, amount, txTimestamp, txHash, type)
       `,
       )
       .eq('borrowerAddress', ethers.getAddress(wallet.address) as Address)

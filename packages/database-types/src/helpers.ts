@@ -17,5 +17,5 @@ export type LoanWithTokens = Row<'loans'> & {
  * Used in the dashboard to show repayment progress from the DB.
  */
 export type LoanFull = LoanWithTokens & {
-  repaymentTransactions: Pick<Row<'transactions'>, 'id' | 'amount' | 'txTimestamp' | 'txHash'>[];
+  repaymentTransactions: Pick<Row<'transactions'>, 'id' | 'amount' | 'txTimestamp' | 'txHash' | 'type'>[];
 };

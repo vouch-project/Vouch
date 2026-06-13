@@ -24,6 +24,7 @@ DECLARE
     v_chain_id            uuid;
     v_loan_id             uuid;
     v_principal_token_id  uuid;
+    v_final_payment       numeric;
 BEGIN
     SELECT id INTO v_chain_id
     FROM public.chains
@@ -52,6 +53,21 @@ BEGIN
         RAISE EXCEPTION 'Loan % has no principal token set', v_loan_id;
     END IF;
 
+    -- p_total_repaid is the cumulative debt repaid. Any prior LoanPartiallyRepaid
+    -- events already inserted their payments, so record only the final delta here
+    -- to avoid over-counting (sum of repayment transactions must equal totalDue).
+    v_final_payment := GREATEST(
+        p_total_repaid::numeric - COALESCE((
+            SELECT SUM(t.amount::numeric)
+            FROM public.transactions t
+            WHERE t."loanId"  = v_loan_id
+              AND t."chainId" = v_chain_id
+              AND t.type      = 'repayment'
+              AND t.status    = 'confirmed'
+        ), 0),
+        0
+    );
+
     INSERT INTO public.transactions (
         "loanId", "chainId", "tokenId", "txHash", "blockNumber", "blockHash",
         type, status, "fromAddress", "toAddress", amount, "logIndex", "txTimestamp"
@@ -60,7 +76,7 @@ BEGIN
         p_tx_hash, p_block_number, p_block_hash,
         'repayment', 'confirmed',
         p_borrower_address, p_lender_address,
-        p_total_repaid, p_log_index, p_repaid_at
+        v_final_payment::text, p_log_index, p_repaid_at
     )
     ON CONFLICT ("chainId", "txHash", "logIndex") DO NOTHING;
 

@@ -23,14 +23,19 @@
   const principalSymbol = $derived(loan.principalToken?.symbol ?? 'ETH');
 
   // ── DB-derived repayment progress ─────────────────────────────────────────
+  // The embedded transactions relation contains every transaction for the loan
+  // (collateral deposit, disbursement, …); keep only the repayment payments.
+  const repaymentTxs = $derived(loan.repaymentTransactions.filter((tx) => tx.type === 'repayment'));
   const amountRepaidFromDB = $derived(
-    loan.repaymentTransactions.reduce((sum, tx) => sum + BigInt(tx.amount ?? 0), 0n),
+    repaymentTxs.reduce((sum, tx) => sum + BigInt(tx.amount ?? 0), 0n),
   );
 
   const principalRaw = $derived(BigInt(loan.principalAmount ?? '0'));
   const interestRateDecimal = $derived(loan.interestRate ?? 0) as number;
+  // interestRateDecimal is a fraction (e.g. 0.05). Scale to bps and do the
+  // interest math in bigint to avoid Number precision loss on uint256 values.
   const totalDueFromDB = $derived(
-    principalRaw + BigInt(Math.round(Number(principalRaw) * interestRateDecimal)),
+    principalRaw + (principalRaw * BigInt(Math.round(interestRateDecimal * 10000))) / 10000n,
   );
   const remainingFromDB = $derived(
     totalDueFromDB > amountRepaidFromDB ? totalDueFromDB - amountRepaidFromDB : 0n,
@@ -146,7 +151,7 @@
 
   // Latest repayment tx for the history link
   const latestTx = $derived(
-    [...loan.repaymentTransactions].sort(
+    [...repaymentTxs].sort(
       (a, b) => new Date(b.txTimestamp).getTime() - new Date(a.txTimestamp).getTime(),
     )[0] ?? null,
   );
@@ -275,9 +280,9 @@
     </div>
 
     <!-- Partial payment history count -->
-    {#if loan.repaymentTransactions.length > 0}
+    {#if repaymentTxs.length > 0}
       <div class="flex items-center justify-between text-xs text-muted-foreground">
-        <span>{loan.repaymentTransactions.length} payment{loan.repaymentTransactions.length > 1 ? 's' : ''} recorded</span>
+        <span>{repaymentTxs.length} payment{repaymentTxs.length > 1 ? 's' : ''} recorded</span>
         {#if latestTx}
           <a
             class="flex items-center gap-1 hover:text-foreground transition-colors"

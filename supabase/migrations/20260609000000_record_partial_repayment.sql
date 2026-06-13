@@ -49,6 +49,13 @@ BEGIN
         RAISE EXCEPTION 'Loan % has no principal token set', v_loan_id;
     END IF;
 
+    -- A partial-repayment event can be processed before the LoanFunded handler
+    -- has written the lender. Fail loudly so the listener can retry rather than
+    -- inserting a row that violates transactions.toAddress NOT NULL.
+    IF v_lender_address IS NULL THEN
+        RAISE EXCEPTION 'Loan % has no lender set (loan not funded yet?)', v_loan_id;
+    END IF;
+
     INSERT INTO public.transactions (
         "loanId", "chainId", "tokenId", "txHash", "blockNumber", "blockHash",
         type, status, "fromAddress", "toAddress", amount, "logIndex", "txTimestamp"

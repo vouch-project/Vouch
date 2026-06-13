@@ -250,17 +250,19 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             loan.collateralLocked = false;
         }
 
-        if (loan.collateralToken == address(0)) {
-            lockedEthCollateral[loan.borrower] -= collateralToRelease;
-        }
-
         // State fully updated — now do external calls
         (bool lenderOk, ) = payable(loan.lender).call{value: msg.value}("");
         require(lenderOk, "ETH transfer to lender failed");
 
+        // Return collateral in its original form (ETH or ERC20).
         if (collateralToRelease > 0) {
-            (bool borrowerOk, ) = payable(loan.borrower).call{value: collateralToRelease}("");
-            require(borrowerOk, "ETH collateral return failed");
+            if (loan.collateralToken == address(0)) {
+                lockedEthCollateral[loan.borrower] -= collateralToRelease;
+                (bool borrowerOk, ) = payable(loan.borrower).call{value: collateralToRelease}("");
+                require(borrowerOk, "ETH collateral return failed");
+            } else {
+                IERC20(loan.collateralToken).safeTransfer(loan.borrower, collateralToRelease);
+            }
         }
 
         if (fullRepayment) {
