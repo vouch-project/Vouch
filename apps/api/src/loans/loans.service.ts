@@ -68,7 +68,7 @@ export class LoansService {
         p_tx_hash: txHash,
         p_block_number: blockNumber.toString(),
         p_block_hash: blockHash,
-        p_log_index: logIndex,
+        p_log_index: logIndex.toString(),
         p_funded_at: fundedAt.toISOString(),
       },
     );
@@ -105,7 +105,7 @@ export class LoansService {
         p_tx_hash: txHash,
         p_block_number: blockNumber.toString(),
         p_block_hash: blockHash,
-        p_log_index: logIndex,
+        p_log_index: logIndex.toString(),
         p_repaid_at: repaidAt.toISOString(),
       },
     );
@@ -136,7 +136,7 @@ export class LoansService {
         p_tx_hash: txHash,
         p_block_number: blockNumber.toString(),
         p_block_hash: blockHash,
-        p_log_index: logIndex,
+        p_log_index: logIndex.toString(),
         p_paid_at: paidAt.toISOString(),
       },
     );

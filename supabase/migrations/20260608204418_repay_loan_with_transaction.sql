@@ -37,11 +37,13 @@ BEGIN
     END IF;
 
     UPDATE public.loans
-    SET status     = 'repaid',
-        "repaidAt" = p_repaid_at
-    WHERE "onChainLoanId" = p_on_chain_loan_id
-      AND "chainId"       = v_chain_id
-      AND status         != 'repaid'           -- idempotent: skip if already repaid
+    SET status          = 'repaid',
+        "repaidAt"      = p_repaid_at,
+        "lenderAddress" = COALESCE("lenderAddress", p_lender_address)  -- backfill if LoanFunded write was missed
+    WHERE "onChainLoanId"   = p_on_chain_loan_id
+      AND "chainId"         = v_chain_id
+      AND "borrowerAddress" = p_borrower_address  -- guard against updating the wrong loan
+      AND status           != 'repaid'           -- idempotent: skip if already repaid
     RETURNING id, "principalTokenId" INTO v_loan_id, v_principal_token_id;
 
     -- Already repaid (duplicate event) — exit cleanly.

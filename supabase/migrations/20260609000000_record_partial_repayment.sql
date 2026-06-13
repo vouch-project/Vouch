@@ -37,8 +37,9 @@ BEGIN
     SELECT id, "principalTokenId", "lenderAddress"
     INTO v_loan_id, v_principal_token_id, v_lender_address
     FROM public.loans
-    WHERE "onChainLoanId" = p_on_chain_loan_id
-      AND "chainId"       = v_chain_id;
+    WHERE "onChainLoanId"   = p_on_chain_loan_id
+      AND "chainId"         = v_chain_id
+      AND "borrowerAddress" = p_borrower_address;  -- guard against wrong borrower/loan pairing
 
     IF v_loan_id IS NULL THEN
         RAISE EXCEPTION 'Loan not found: onChainLoanId=%, chainId=%',
