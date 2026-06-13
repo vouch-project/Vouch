@@ -20,6 +20,11 @@ _TEST_ENV = {
 for _k, _v in _TEST_ENV.items():
     os.environ.setdefault(_k, _v)
 
+# Pin ARTIFACT_PATH to a nonexistent directory so CreditScorer always starts
+# in no-model mode regardless of whether a real artifact exists locally.
+# Use setdefault so a developer can override with a real path if needed.
+os.environ.setdefault("ARTIFACT_PATH", "/nonexistent/artifact/path")
+
 
 @pytest.fixture(autouse=True)
 def _reset_settings_singleton():
@@ -28,5 +33,9 @@ def _reset_settings_singleton():
 
     original = cfg._settings
     cfg._settings = None
+    # Also clear ARTIFACT_PATH during the test so monkeypatch.setenv can override it cleanly.
+    prev_artifact_path = os.environ.pop("ARTIFACT_PATH", None)
     yield
     cfg._settings = original
+    if prev_artifact_path is not None:
+        os.environ["ARTIFACT_PATH"] = prev_artifact_path

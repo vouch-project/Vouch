@@ -18,7 +18,7 @@ from src.features import fetch_features
 _register_compat()
 
 _ARTIFACT_ROOT = (
-    Path(__file__).resolve().parents[2]
+    Path(__file__).resolve().parents[3]
     / "services"
     / "ml-training"
     / "src"

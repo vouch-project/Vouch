@@ -241,51 +241,49 @@ async def fetch_features(address: str) -> dict[str, float | int | None]:
     """Return the 9-feature dict in FEATURE_COLUMNS order."""
     settings = get_settings()
     limiter = _RateLimiter(settings.etherscan_rps)
-    semaphore = asyncio.Semaphore(settings.http_concurrency)
 
     async with httpx.AsyncClient() as client:
-        async with semaphore:
-            tx_resp = await _etherscan_call(
-                client,
-                settings,
-                {
-                    "module": "account",
-                    "action": "txlist",
-                    "address": address,
-                    "startblock": 0,
-                    "endblock": 99999999,
-                    "page": 1,
-                    "offset": 10000,
-                    "sort": "asc",
-                },
-                limiter,
-            )
-            wallet_age_days: int | None = None
-            unique_contracts: int | None = None
-            tx_list = tx_resp.get("result")
-            if isinstance(tx_list, list) and tx_list:
-                first_ts = int(tx_list[0]["timeStamp"])
-                wallet_age_days = max(0, (int(time.time()) - first_ts) // 86400)
-                contracts = {(t.get("to") or "").lower() for t in tx_list if t.get("to")}
-                contracts.discard("")
-                unique_contracts = len(contracts)
+        tx_resp = await _etherscan_call(
+            client,
+            settings,
+            {
+                "module": "account",
+                "action": "txlist",
+                "address": address,
+                "startblock": 0,
+                "endblock": 99999999,
+                "page": 1,
+                "offset": 10000,
+                "sort": "asc",
+            },
+            limiter,
+        )
+        wallet_age_days: int | None = None
+        unique_contracts: int | None = None
+        tx_list = tx_resp.get("result")
+        if isinstance(tx_list, list) and tx_list:
+            first_ts = int(tx_list[0]["timeStamp"])
+            wallet_age_days = max(0, (int(time.time()) - first_ts) // 86400)
+            contracts = {(t.get("to") or "").lower() for t in tx_list if t.get("to")}
+            contracts.discard("")
+            unique_contracts = len(contracts)
 
-            nonce_hex, balance_hex = await _rpc_batch(
-                client,
-                settings,
-                [
-                    ("eth_getTransactionCount", [address, "latest"]),
-                    ("eth_getBalance", [address, "latest"]),
-                ],
-            )
-            total_tx = int(nonce_hex, 16)
-            eth_balance = int(balance_hex, 16) / 1e18
+        nonce_hex, balance_hex = await _rpc_batch(
+            client,
+            settings,
+            [
+                ("eth_getTransactionCount", [address, "latest"]),
+                ("eth_getBalance", [address, "latest"]),
+            ],
+        )
+        total_tx = int(nonce_hex, 16)
+        eth_balance = int(balance_hex, 16) / 1e18
 
-            stablecoin_usd = await _fetch_stablecoin_balance(client, settings, address)
+        stablecoin_usd = await _fetch_stablecoin_balance(client, settings, address)
 
-            aave_count, aave_usd, repay_ratio, last_borrow_ts = await _fetch_aave_stats(
-                client, settings, address
-            )
+        aave_count, aave_usd, repay_ratio, last_borrow_ts = await _fetch_aave_stats(
+            client, settings, address
+        )
 
     return {
         "walletAgeDays": wallet_age_days,
