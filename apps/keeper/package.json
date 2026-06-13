@@ -1,0 +1,8 @@
+{
+  "name": "@vouch/keeper",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "test": "sh -c 'if [ -d tests ]; then pytest ./tests; else echo No tests in apps/keeper, skipping.; fi'"
+  }
+}
