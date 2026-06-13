@@ -217,7 +217,12 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @dev    Accepts any msg.value between 1 wei and the remaining balance (totalDue - amountRepaid).
      *         Each payment proportionally releases collateral: floor(collateralAmount * payment / totalDue).
      *         On the final payment, any dust left from rounding is also returned so all collateral
-     *         is eventually recovered. Interest is a flat rate on the original principal.
+     *         is eventually recovered.
+     *
+     *         Interest is a fixed flat amount agreed at creation: totalDue =
+     *         principal + principal * interestRateBps / 10000. It does NOT accrue
+     *         over time — `durationSeconds` is informational (display / off-chain
+     *         deadline & liquidation signals) and is intentionally not used here.
      * @param loanId The ID of the loan to repay.
      */
     function repayLoan(uint256 loanId) external payable {
@@ -278,6 +283,10 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @dev    The borrower must approve this contract for at least `amount` of the principal token
      *         before calling. Collateral is released proportionally each payment and returned in its
      *         original form (ETH or ERC20). On the final payment, any rounding dust is also returned.
+     *
+     *         Interest is a fixed flat amount agreed at creation (principal +
+     *         principal * interestRateBps / 10000); it does NOT accrue over time.
+     *         `durationSeconds` is informational only and is intentionally unused here.
      * @param loanId  The ID of the loan to repay.
      * @param amount  The token amount to repay this call (must be > 0 and <= remaining balance).
      */
