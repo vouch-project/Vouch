@@ -1,0 +1,8 @@
+{
+  "name": "@vouch/ml-training",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "test": "pytest ./tests"
+  }
+}

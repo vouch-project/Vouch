@@ -26,8 +26,25 @@ jobs:
           node-version: 20
           cache: pnpm
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            services/ml-training/pyproject.toml
+            apps/ml-engine/pyproject.toml
+            apps/keeper/pyproject.toml
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "services/ml-training[dev]"
+          pip install -e "apps/ml-engine[dev]"
+          pip install -e "apps/keeper[dev]"
 
       - name: Build
         run: pnpm build
