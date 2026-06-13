@@ -78,8 +78,10 @@
   const dueDateLabel = $derived.by(() => {
     if (!dueDate) return 'No deadline';
     const diff = dueDate.getTime() - Date.now();
+    // Check the sign before rounding: Math.ceil() of a small negative diff is 0,
+    // which would mislabel a <1d overdue loan as "Due today".
+    if (diff < 0) return `Overdue by ${Math.ceil(Math.abs(diff) / 86400000)}d`;
     const days = Math.ceil(diff / 86400000);
-    if (days < 0) return `Overdue by ${Math.abs(days)}d`;
     if (days === 0) return 'Due today';
     return `Due in ${days}d`;
   });
