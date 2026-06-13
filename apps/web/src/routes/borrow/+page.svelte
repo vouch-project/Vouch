@@ -7,7 +7,7 @@
   <title>Borrow | Vouch</title>
 </svelte:head>
 
-<div class="flex flex-col items-center py-12 px-4 space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-700">
+<div class="flex flex-col items-center py-12 px-4 space-y-12 animate-in fade-in duration-700">
   <div class="w-full max-w-2xl">
     <Card.Root class="bg-card/40 backdrop-blur-md border-border/50 shadow-2xl shadow-primary/5 overflow-hidden">
       <Card.Header class="text-center pb-2">

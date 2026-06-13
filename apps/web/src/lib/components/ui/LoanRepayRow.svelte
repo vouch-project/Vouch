@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { ethers } from 'ethers';
-  import { AlertCircle, CheckCircle2, Clock, Coins, ExternalLink, Hourglass, TrendingUp } from '@lucide/svelte';
-  import * as Card from '$lib/components/ui/card';
-  import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
-  import { cn } from '$lib/utils';
+  import { Button } from '$lib/components/ui/button';
+  import * as Table from '$lib/components/ui/table';
   import { formatUint256 } from '$lib/formatUint256';
-  import { repayLoan, repayLoanWithERC20, getRepaymentDetails, type RepaymentDetails } from '$lib/wallet/vouchVault';
   import type { LoanFull } from '$lib/types';
+  import { cn } from '$lib/utils';
+  import { getRepaymentDetails, repayLoan, repayLoanWithERC20, type RepaymentDetails } from '$lib/wallet/vouchVault';
+  import { AlertCircle, CheckCircle2, Clock, ExternalLink } from '@lucide/svelte';
+  import { ethers } from 'ethers';
 
   type Props = {
     loan: LoanFull;
@@ -16,9 +16,7 @@
 
   let { loan, onRepaid }: Props = $props();
 
-  const isEthPrincipal = $derived(
-    !loan.principalToken?.address || loan.principalToken.address === ethers.ZeroAddress,
-  );
+  const isEthPrincipal = $derived(!loan.principalToken?.address || loan.principalToken.address === ethers.ZeroAddress);
   const principalDecimals = $derived(loan.principalToken?.decimals ?? 18);
   const principalSymbol = $derived(loan.principalToken?.symbol ?? 'ETH');
 
@@ -26,9 +24,7 @@
   // The embedded transactions relation contains every transaction for the loan
   // (collateral deposit, disbursement, …); keep only the repayment payments.
   const repaymentTxs = $derived(loan.repaymentTransactions.filter((tx) => tx.type === 'repayment'));
-  const amountRepaidFromDB = $derived(
-    repaymentTxs.reduce((sum, tx) => sum + BigInt(tx.amount ?? 0), 0n),
-  );
+  const amountRepaidFromDB = $derived(repaymentTxs.reduce((sum, tx) => sum + BigInt(tx.amount ?? 0), 0n));
 
   const principalRaw = $derived(BigInt(loan.principalAmount ?? '0'));
   // loans.interestRate is a uint256 (string) scaled so that 1e18 == one
@@ -36,12 +32,8 @@
   // So 5% is stored as 5e18. Keep all math in bigint to avoid precision loss.
   const PERCENT_WAD = 10n ** 18n;
   const interestRateRaw = $derived(BigInt(loan.interestRate ?? '0'));
-  const totalDueFromDB = $derived(
-    principalRaw + (principalRaw * interestRateRaw) / (100n * PERCENT_WAD),
-  );
-  const remainingFromDB = $derived(
-    totalDueFromDB > amountRepaidFromDB ? totalDueFromDB - amountRepaidFromDB : 0n,
-  );
+  const totalDueFromDB = $derived(principalRaw + (principalRaw * interestRateRaw) / (100n * PERCENT_WAD));
+  const remainingFromDB = $derived(totalDueFromDB > amountRepaidFromDB ? totalDueFromDB - amountRepaidFromDB : 0n);
 
   // ── Chain hydration (active loans only) ───────────────────────────────────
   // For active loans we also fetch exact on-chain state so the repay form has
@@ -62,8 +54,13 @@
   $effect(() => {
     if (!isActive || loan.onChainLoanId === null) return;
     getRepaymentDetails(BigInt(loan.onChainLoanId))
-      .then((d) => { chainDetails = d; chainError = ''; })
-      .catch((e) => { chainError = (e as Error).message; });
+      .then((d) => {
+        chainDetails = d;
+        chainError = '';
+      })
+      .catch((e) => {
+        chainError = (e as Error).message;
+      });
   });
 
   // ── Due date (from DB field, fallback to chain duration) ──────────────────
@@ -102,12 +99,15 @@
   let paymentInput = $state('');
   let txStatus = $state<'idle' | 'approving' | 'confirming' | 'success' | 'error'>('idle');
   let txError = $state('');
-  let showPaymentInput = $state(false);
+  let expanded = $state(false);
 
   const paymentRaw = $derived.by(() => {
     if (!paymentInput.trim()) return 0n;
-    try { return ethers.parseUnits(paymentInput, principalDecimals); }
-    catch { return 0n; }
+    try {
+      return ethers.parseUnits(paymentInput, principalDecimals);
+    } catch {
+      return 0n;
+    }
   });
 
   const paymentExceedsRemaining = $derived(paymentRaw > displayRemaining);
@@ -132,12 +132,14 @@
 
       txStatus = 'success';
       paymentInput = '';
-      showPaymentInput = false;
 
       // Refresh chain state after payment
       const updated = await getRepaymentDetails(BigInt(loan.onChainLoanId));
       chainDetails = updated;
-      if (updated.repaid) onRepaid?.();
+      if (updated.repaid) {
+        expanded = false;
+        onRepaid?.();
+      }
     } catch (e: unknown) {
       txStatus = 'error';
       if (e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'ACTION_REJECTED') {
@@ -149,189 +151,143 @@
   };
 
   const txStatusLabel = $derived(
-    txStatus === 'approving' ? 'Approving token…' :
-    txStatus === 'confirming' ? 'Confirm in wallet…' : '',
+    txStatus === 'approving' ? 'Approving token…' : txStatus === 'confirming' ? 'Confirm in wallet…' : '',
   );
 
   // Latest repayment tx for the history link
   const latestTx = $derived(
-    [...repaymentTxs].sort(
-      (a, b) => new Date(b.txTimestamp).getTime() - new Date(a.txTimestamp).getTime(),
-    )[0] ?? null,
+    [...repaymentTxs].sort((a, b) => new Date(b.txTimestamp).getTime() - new Date(a.txTimestamp).getTime())[0] ?? null,
   );
 </script>
 
-<Card.Root
-  class={cn(
-    'bg-card/60 backdrop-blur-sm border-border/50 overflow-hidden transition-all duration-300',
-    isOverdue && 'border-destructive/40',
-    isRepaid && 'opacity-70',
-  )}
->
-  <!-- Progress accent bar -->
-  <div class="h-1 w-full bg-muted">
-    <div
-      class={cn(
-        'h-full transition-all duration-500',
-        displayProgressPct === 100 ? 'bg-primary' : isOverdue ? 'bg-destructive' : 'bg-primary/70',
-      )}
-      style:width="{displayProgressPct}%"
-    ></div>
-  </div>
-
-  <Card.Header class="pb-3">
-    <div class="flex items-start justify-between gap-2">
-      <div>
-        <Card.Title class="text-base font-bold">
-          Loan #{loan.onChainLoanId ?? '—'}
-        </Card.Title>
-        <Card.Description class="text-xs mt-0.5">
-          {#if loan.fundedAt}
-            Funded {new Date(loan.fundedAt).toLocaleDateString()}
-          {:else}
-            Awaiting funding
-          {/if}
-        </Card.Description>
-      </div>
-
-      <div class="flex flex-wrap gap-1 justify-end">
-        {#if isRepaid}
-          <Badge class="text-primary border-primary/40 text-xs gap-1" variant="outline">
-            <CheckCircle2 class="h-3 w-3" /> Repaid
-          </Badge>
-        {:else if isOverdue}
-          <Badge class="text-xs gap-1" variant="destructive">
-            <AlertCircle class="h-3 w-3" /> Overdue
-          </Badge>
-        {:else if isPending}
-          <Badge class="text-xs gap-1" variant="secondary">
-            <Clock class="h-3 w-3" /> Pending
-          </Badge>
-        {:else}
-          <Badge class="text-xs gap-1" variant="secondary">
-            <Clock class="h-3 w-3" /> Active
-          </Badge>
-        {/if}
-      </div>
+<Table.Row class={cn('hover:bg-muted/10 transition-colors', isRepaid && 'opacity-60', isOverdue && 'bg-destructive/5')}>
+  <!-- Loan # -->
+  <Table.Cell class="pl-4 sm:pl-6 py-3 font-bold whitespace-nowrap">
+    #{loan.onChainLoanId ?? '—'}
+    <div class="text-[10px] font-normal text-muted-foreground">
+      {#if loan.fundedAt}
+        Funded {new Date(loan.fundedAt).toLocaleDateString()}
+      {:else}
+        Awaiting funding
+      {/if}
     </div>
-  </Card.Header>
+  </Table.Cell>
 
-  <Card.Content class="space-y-4">
-    <!-- Stats grid — always shown from DB data immediately -->
-    <div class="grid grid-cols-2 gap-3 text-sm">
-      <div class="space-y-0.5">
-        <p class="text-xs text-muted-foreground flex items-center gap-1">
-          <Coins class="h-3 w-3" /> Principal
-        </p>
-        <p class="font-semibold">
-          {formatUint256(loan.principalAmount ?? '0', principalDecimals)}
-          {principalSymbol}
-        </p>
-      </div>
+  <!-- Principal -->
+  <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
+    {formatUint256(loan.principalAmount ?? '0', principalDecimals)}
+    <span class="text-muted-foreground text-xs">{principalSymbol}</span>
+  </Table.Cell>
 
-      <div class="space-y-0.5">
-        <p class="text-xs text-muted-foreground flex items-center gap-1">
-          <TrendingUp class="h-3 w-3" /> Interest
-        </p>
-        <p class="font-semibold">
-          {formatUint256(interestAmount.toString(), principalDecimals)}
-          {principalSymbol}
-          <span class="text-muted-foreground text-xs font-normal">
-            ({(displayInterestRateBps / 100).toFixed(2)}%)
-          </span>
-        </p>
-      </div>
+  <!-- Interest -->
+  <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
+    {formatUint256(interestAmount.toString(), principalDecimals)}
+    <span class="text-muted-foreground text-xs">
+      ({(displayInterestRateBps / 100).toFixed(2)}%)
+    </span>
+  </Table.Cell>
 
-      <div class="space-y-0.5">
-        <p class="text-xs text-muted-foreground flex items-center gap-1">
-          <Hourglass class="h-3 w-3" /> Due date
-        </p>
-        <p class={cn('font-semibold text-sm', isOverdue && 'text-destructive')}>
-          {#if isRepaid && loan.repaidAt}
-            Repaid {new Date(loan.repaidAt).toLocaleDateString()}
-          {:else}
-            {dueDateLabel}
-          {/if}
-        </p>
-      </div>
-
-      <div class="space-y-0.5">
-        <p class="text-xs text-muted-foreground">Repaid so far</p>
-        <p class="font-semibold">
-          {formatUint256(displayAmountRepaid.toString(), principalDecimals)}
-          /
-          {formatUint256(displayTotalDue.toString(), principalDecimals)}
-          {principalSymbol}
-        </p>
-      </div>
-    </div>
-
-    <!-- Repayment progress bar -->
-    <div class="space-y-1">
-      <div class="flex justify-between text-xs text-muted-foreground">
-        <span>Repayment progress</span>
-        <span>{displayProgressPct}%</span>
-      </div>
-      <div class="h-2 w-full bg-muted rounded-full overflow-hidden">
+  <!-- Repaid so far -->
+  <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
+    <div class="flex flex-col gap-1">
+      <span>
+        {formatUint256(displayAmountRepaid.toString(), principalDecimals)}
+        /
+        {formatUint256(displayTotalDue.toString(), principalDecimals)}
+        <span class="text-muted-foreground text-xs">({displayProgressPct}%)</span>
+      </span>
+      <div class="w-full h-1.5 bg-muted rounded-full overflow-hidden">
         <div
+          style:width="{displayProgressPct}%"
           class={cn(
-            'h-full rounded-full transition-all duration-500',
+            'h-full transition-all',
             displayProgressPct === 100 ? 'bg-primary' : isOverdue ? 'bg-destructive' : 'bg-primary/70',
           )}
-          style:width="{displayProgressPct}%"
         ></div>
       </div>
     </div>
+  </Table.Cell>
 
-    <!-- Partial payment history count -->
-    {#if repaymentTxs.length > 0}
-      <div class="flex items-center justify-between text-xs text-muted-foreground">
-        <span>{repaymentTxs.length} payment{repaymentTxs.length > 1 ? 's' : ''} recorded</span>
-        {#if latestTx}
-          <a
-            class="flex items-center gap-1 hover:text-foreground transition-colors"
-            href="https://etherscan.io/tx/{latestTx.txHash}"
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            Latest tx <ExternalLink class="h-3 w-3" />
-          </a>
-        {/if}
-      </div>
+  <!-- Due date -->
+  <Table.Cell
+    class={cn('px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm', isOverdue && 'text-destructive font-semibold')}
+  >
+    {#if isRepaid && loan.repaidAt}
+      Repaid {new Date(loan.repaidAt).toLocaleDateString()}
+    {:else}
+      {dueDateLabel}
     {/if}
+  </Table.Cell>
 
-    <!-- Amount due + repay button (active loans only) -->
+  <!-- Status -->
+  <Table.Cell class="px-2 sm:px-4 py-3 whitespace-nowrap text-center">
+    {#if isRepaid}
+      <Badge class="text-primary border-primary/40 text-xs gap-1" variant="outline">
+        <CheckCircle2 class="h-3 w-3" /> Repaid
+      </Badge>
+    {:else if isOverdue}
+      <Badge class="text-xs gap-1" variant="destructive">
+        <AlertCircle class="h-3 w-3" /> Overdue
+      </Badge>
+    {:else if isPending}
+      <Badge class="text-xs gap-1" variant="secondary">
+        <Clock class="h-3 w-3" /> Pending
+      </Badge>
+    {:else}
+      <Badge class="text-xs gap-1" variant="secondary">
+        <Clock class="h-3 w-3" /> Active
+      </Badge>
+    {/if}
+  </Table.Cell>
+
+  <!-- Action -->
+  <Table.Cell class="pr-4 sm:pr-6 py-3 text-right whitespace-nowrap">
     {#if isActive}
+      <Button
+        class="font-bold h-8 px-3 text-xs"
+        onclick={() => (expanded = !expanded)}
+        size="sm"
+        variant={isOverdue ? 'destructive' : 'default'}
+      >
+        {expanded ? 'Close' : 'Repay'}
+      </Button>
+    {/if}
+  </Table.Cell>
+</Table.Row>
+
+{#if expanded && isActive}
+  <Table.Row class="bg-muted/20 hover:bg-muted/20">
+    <Table.Cell class="px-4 sm:px-6 py-4" colspan={7}>
       {#if chainError}
         <p class="text-xs text-destructive">{chainError}</p>
       {:else}
-        <div
-          class={cn(
-            'rounded-lg px-4 py-3 flex items-center justify-between',
-            isOverdue ? 'bg-destructive/10 border border-destructive/20' : 'bg-muted/60',
-          )}
-        >
-          <div>
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between min-w-0">
+          <!-- Amount due -->
+          <div class="min-w-0">
             <p class="text-xs text-muted-foreground">Amount due</p>
             <p class={cn('text-lg font-black', isOverdue && 'text-destructive')}>
-              {formatUint256(displayRemaining.toString(), principalDecimals)}
+              {formatUint256(displayRemaining.toString(), principalDecimals, principalDecimals)}
               <span class="text-sm font-semibold">{principalSymbol}</span>
             </p>
+            {#if repaymentTxs.length > 0}
+              <div class="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                <span>{repaymentTxs.length} payment{repaymentTxs.length > 1 ? 's' : ''} recorded</span>
+                {#if latestTx}
+                  <a
+                    class="flex items-center gap-1 hover:text-foreground transition-colors"
+                    href="https://etherscan.io/tx/{latestTx.txHash}"
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    Latest tx <ExternalLink class="h-3 w-3" />
+                  </a>
+                {/if}
+              </div>
+            {/if}
           </div>
-          {#if !showPaymentInput}
-            <Button
-              class="font-bold"
-              onclick={() => (showPaymentInput = true)}
-              size="sm"
-              variant={isOverdue ? 'destructive' : 'default'}
-            >
-              Repay
-            </Button>
-          {/if}
-        </div>
 
-        {#if showPaymentInput}
-          <div class="space-y-2 rounded-lg border border-border/60 bg-muted/30 p-3">
+          <!-- Payment form -->
+          <div class="flex flex-col gap-2 sm:min-w-[320px]">
             <div class="flex items-center gap-2">
               <input
                 class="flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -341,7 +297,7 @@
                 bind:value={paymentInput}
               />
               <button
-                class="text-xs text-primary hover:underline whitespace-nowrap"
+                class="shrink-0 rounded-md border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-xs font-semibold text-primary whitespace-nowrap transition-colors hover:bg-primary/20 hover:border-primary/60"
                 onclick={setFullPayment}
                 type="button"
               >
@@ -360,28 +316,39 @@
               <p class="text-xs text-muted-foreground">{txStatusLabel}</p>
             {/if}
 
-            <div class="flex gap-2">
+            <div class="flex gap-2 justify-center">
               <Button
-                class="flex-1 font-bold"
-                disabled={paymentRaw === 0n || paymentExceedsRemaining || txStatus === 'confirming' || txStatus === 'approving'}
+                class="font-bold"
+                disabled={paymentRaw === 0n ||
+                  paymentExceedsRemaining ||
+                  txStatus === 'confirming' ||
+                  txStatus === 'approving'}
                 onclick={handleRepay}
                 size="sm"
               >
-                {txStatus === 'approving' ? 'Approving…' : txStatus === 'confirming' ? 'Confirming…' : 'Confirm Repayment'}
+                {txStatus === 'approving'
+                  ? 'Approving…'
+                  : txStatus === 'confirming'
+                    ? 'Confirming…'
+                    : 'Confirm Repayment'}
               </Button>
               <Button
-                class="font-medium"
+                class="font-medium text-muted-foreground hover:text-foreground"
                 disabled={txStatus === 'confirming' || txStatus === 'approving'}
-                onclick={() => { showPaymentInput = false; txStatus = 'idle'; txError = ''; }}
+                onclick={() => {
+                  expanded = false;
+                  txStatus = 'idle';
+                  txError = '';
+                }}
                 size="sm"
-                variant="ghost"
+                variant="outline"
               >
                 Cancel
               </Button>
             </div>
           </div>
-        {/if}
+        </div>
       {/if}
-    {/if}
-  </Card.Content>
-</Card.Root>
+    </Table.Cell>
+  </Table.Row>
+{/if}
