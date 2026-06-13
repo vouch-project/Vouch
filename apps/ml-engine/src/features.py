@@ -237,7 +237,7 @@ async def _fetch_aave_stats(
     return total_count, total_usd, _compute_repay_ratio(repay_count, total_count), last_borrow_ts
 
 
-async def fetch_features(address: str) -> dict[str, float | None]:
+async def fetch_features(address: str) -> dict[str, float | int | None]:
     """Return the 9-feature dict in FEATURE_COLUMNS order."""
     settings = get_settings()
     limiter = _RateLimiter(settings.etherscan_rps)
