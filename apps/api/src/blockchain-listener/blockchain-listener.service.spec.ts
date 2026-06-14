@@ -50,9 +50,7 @@ describe('BlockchainListenerService', () => {
     internals = service as unknown as ServiceInternals;
 
     // Silence the logger so expected error-path logs don't clutter test output.
-    jest
-      .spyOn(service['logger'], 'error')
-      .mockImplementation(() => undefined);
+    jest.spyOn(service['logger'], 'error').mockImplementation(() => undefined);
     jest.spyOn(service['logger'], 'log').mockImplementation(() => undefined);
   });
 

@@ -360,7 +360,10 @@ export class BlockchainListenerService implements OnModuleInit {
       });
       this.logger.log(`Loan ${loanId.toString()} repaid by ${borrower}`);
     } catch (error) {
-      this.logger.error(`Failed to mark loan ${loanId.toString()} as repaid in DB`, error);
+      this.logger.error(
+        `Failed to mark loan ${loanId.toString()} as repaid in DB`,
+        error,
+      );
     }
   }
 }
