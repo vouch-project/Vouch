@@ -8,7 +8,7 @@
   <title>Lend | Vouch</title>
 </svelte:head>
 
-<div class="flex flex-col items-center py-6 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
+<div class="flex flex-col items-center py-6 px-4 space-y-8 animate-in fade-in duration-700">
   <div class="text-center space-y-4">
     <h1 class="text-5xl font-black tracking-tight text-foreground text-center">
       Lend

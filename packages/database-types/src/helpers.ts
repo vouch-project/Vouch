@@ -11,3 +11,11 @@ export type LoanWithTokens = Row<'loans'> & {
   collateralToken: Row<'tokens'> | null;
   principalToken: Row<'tokens'> | null;
 };
+
+/**
+ * LoanWithTokens further extended with repayment transactions.
+ * Used in the dashboard to show repayment progress from the DB.
+ */
+export type LoanFull = LoanWithTokens & {
+  repaymentTransactions: Pick<Row<'transactions'>, 'id' | 'amount' | 'txTimestamp' | 'txHash' | 'type'>[];
+};

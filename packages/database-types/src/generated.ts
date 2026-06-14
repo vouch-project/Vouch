@@ -511,6 +511,39 @@ export type Database = {
         }
         Returns: undefined
       }
+      record_partial_repayment: {
+        Args: {
+          p_network_id: string
+          p_contract_address: unknown
+          p_on_chain_loan_id: unknown
+          p_borrower_address: unknown
+          p_payment_amount: string
+          p_tx_hash: string
+          p_block_number: unknown
+          p_block_hash: string
+          p_log_index: unknown
+          p_paid_at: string
+        }
+        Returns: undefined
+      }
+      repay_loan_with_transaction: {
+        Args: {
+          p_network_id: string
+          p_contract_address: unknown
+          p_on_chain_loan_id: unknown
+          p_borrower_address: unknown
+          p_lender_address: unknown
+          p_principal_amount: string
+          p_interest_amount: string
+          p_total_repaid: string
+          p_tx_hash: string
+          p_block_number: unknown
+          p_block_hash: string
+          p_log_index: unknown
+          p_repaid_at: string
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       addressType: "evm" | "solana" | "bitcoin"

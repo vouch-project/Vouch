@@ -6,6 +6,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { LoansService } from '../loans/loans.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { SerialQueue } from './serial-queue';
 
 type ChainConfig = Tables<'chains'>;
 
@@ -73,14 +74,29 @@ export class BlockchainListenerService implements OnModuleInit {
     }
   }
 
+  // Serializes event processing per chain so handlers run in arrival order
+  // (see SerialQueue). Without this, ethers fires listeners concurrently and a
+  // LoanPartiallyRepaid can be processed before the corresponding LoanFunded
+  // write completes, leaving lenderAddress NULL when the repayment RPC needs it.
+  private readonly queue = new SerialQueue((key, err) =>
+    this.logger.error(`Unhandled error in event queue for ${key}`, err),
+  );
+
+  private enqueue(key: string, task: () => Promise<void>) {
+    this.queue.enqueue(key, task);
+  }
+
   private setupEventListener(
     contract: ethers.Contract,
     network: ethers.Network,
     config: ChainConfig,
   ) {
     this.logger.log(
-      `Listening for LoanCreated events on chain ${network.chainId} (${network.name})...`,
+      `Listening for events on chain ${network.chainId} (${network.name})...`,
     );
+
+    const queueKey = `${network.chainId.toString()}:${config.contractAddress}`;
+
     void contract.on(
       'LoanCreated',
       (
@@ -93,17 +109,19 @@ export class BlockchainListenerService implements OnModuleInit {
         timestamp: bigint,
         { log: eventLog }: ethers.ContractEventPayload,
       ) => {
-        void this.handleLoanCreated(
-          loanId,
-          borrower,
-          collateralTokenAddress,
-          collateralAmount,
-          requestedPrincipalToken,
-          requestedPrincipalAmount,
-          timestamp,
-          eventLog,
-          network,
-          config.contractAddress,
+        this.enqueue(queueKey, () =>
+          this.handleLoanCreated(
+            loanId,
+            borrower,
+            collateralTokenAddress,
+            collateralAmount,
+            requestedPrincipalToken,
+            requestedPrincipalAmount,
+            timestamp,
+            eventLog,
+            network,
+            config.contractAddress,
+          ),
         );
       },
     );
@@ -118,15 +136,72 @@ export class BlockchainListenerService implements OnModuleInit {
         timestamp: bigint,
         { log: eventLog }: ethers.ContractEventPayload,
       ) => {
-        void this.handleLoanFunded(
-          loanId,
-          lender,
-          borrower,
-          principalAmount,
-          timestamp,
-          eventLog,
-          network,
-          config.contractAddress,
+        this.enqueue(queueKey, () =>
+          this.handleLoanFunded(
+            loanId,
+            lender,
+            borrower,
+            principalAmount,
+            timestamp,
+            eventLog,
+            network,
+            config.contractAddress,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      'LoanRepaid',
+      (
+        loanId: bigint,
+        borrower: string,
+        lender: string,
+        principalAmount: bigint,
+        interestAmount: bigint,
+        totalRepaid: bigint,
+        timestamp: bigint,
+        { log: eventLog }: ethers.ContractEventPayload,
+      ) => {
+        this.enqueue(queueKey, () =>
+          this.handleLoanRepaid(
+            loanId,
+            borrower,
+            lender,
+            principalAmount,
+            interestAmount,
+            totalRepaid,
+            timestamp,
+            eventLog,
+            network,
+            config.contractAddress,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      'LoanPartiallyRepaid',
+      (
+        loanId: bigint,
+        borrower: string,
+        paymentAmount: bigint,
+        _collateralReleased: bigint,
+        _totalRepaidSoFar: bigint,
+        _totalDue: bigint,
+        timestamp: bigint,
+        { log: eventLog }: ethers.ContractEventPayload,
+      ) => {
+        this.enqueue(queueKey, () =>
+          this.handleLoanPartiallyRepaid(
+            loanId,
+            borrower,
+            paymentAmount,
+            timestamp,
+            eventLog,
+            network,
+            config.contractAddress,
+          ),
         );
       },
     );
@@ -202,6 +277,86 @@ export class BlockchainListenerService implements OnModuleInit {
       this.logger.log(`Loan ${loanId.toString()} funded by ${lender}`);
     } catch (error) {
       this.logger.error('Failed to update funded loan in DB', error);
+    }
+  }
+
+  protected async handleLoanPartiallyRepaid(
+    loanId: bigint,
+    borrower: string,
+    paymentAmount: bigint,
+    timestamp: bigint,
+    {
+      transactionHash,
+      blockNumber,
+      blockHash,
+      index: logIndex,
+    }: ethers.EventLog,
+    network: ethers.Network,
+    contractAddress: string,
+  ) {
+    try {
+      await this.loanService.partialRepay({
+        onChainLoanId: loanId,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        borrowerAddress: borrower,
+        paymentAmount,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        paidAt: new Date(Number(timestamp) * 1000),
+      });
+      this.logger.log(
+        `Loan ${loanId.toString()} partial repayment of ${paymentAmount.toString()} by ${borrower}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to record partial repayment for loan ${loanId.toString()}`,
+        error,
+      );
+    }
+  }
+
+  private async handleLoanRepaid(
+    loanId: bigint,
+    borrower: string,
+    lender: string,
+    principalAmount: bigint,
+    interestAmount: bigint,
+    totalRepaid: bigint,
+    timestamp: bigint,
+    {
+      transactionHash,
+      blockNumber,
+      blockHash,
+      index: logIndex,
+    }: ethers.EventLog,
+    network: ethers.Network,
+    contractAddress: string,
+  ) {
+    try {
+      await this.loanService.repay({
+        onChainLoanId: loanId,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        borrowerAddress: borrower,
+        lenderAddress: lender,
+        principalAmount,
+        interestAmount,
+        totalRepaid,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        repaidAt: new Date(Number(timestamp) * 1000),
+      });
+      this.logger.log(`Loan ${loanId.toString()} repaid by ${borrower}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to mark loan ${loanId.toString()} as repaid in DB`,
+        error,
+      );
     }
   }
 }
