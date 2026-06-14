@@ -456,6 +456,22 @@ describe('VouchVault', function () {
         expect(rd[5]).to.equal(totalDue - half); // remaining
       });
 
+      it('Should report remaining locked collateral via view helpers after a partial payment', async function () {
+        const { vault, borrower, collateral, totalDue } = await deployFundedLoan(1000);
+
+        const half = totalDue / 2n;
+        const expectedCollateralRelease = (collateral * half) / totalDue;
+        const expectedStillLocked = collateral - expectedCollateralRelease;
+
+        await vault.connect(borrower).repayLoan(0, { value: half });
+
+        // Both helpers must report what's STILL locked, not the original deposit.
+        expect(await vault.loanLockedBalanceOf(0)).to.equal(expectedStillLocked);
+        const locked = await vault.getLoanLockedCollateral(0);
+        expect(locked[1]).to.equal(expectedStillLocked); // collateralAmount = remaining
+        expect(locked[2]).to.equal(true);                // still locked (loan not fully repaid)
+      });
+
       it('Should forward each partial payment to the lender', async function () {
         const { vault, borrower, lender, totalDue } = await deployFundedLoan(500);
 

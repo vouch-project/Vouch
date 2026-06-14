@@ -51,8 +51,10 @@ BEGIN
     END IF;
 
     -- A partial-repayment event can be processed before the LoanFunded handler
-    -- has written the lender. Fail loudly so the listener can retry rather than
-    -- inserting a row that violates transactions.toAddress NOT NULL.
+    -- has written the lender. Raise rather than insert a row that violates
+    -- transactions.toAddress NOT NULL. NOTE: the listener currently catches and
+    -- logs this without replaying, so such an event is dropped — the per-chain
+    -- event queue makes this ordering rare but does not guarantee durability.
     IF v_lender_address IS NULL THEN
         RAISE EXCEPTION 'Loan % has no lender set (loan not funded yet?)', v_loan_id;
     END IF;

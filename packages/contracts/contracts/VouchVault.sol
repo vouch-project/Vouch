@@ -414,8 +414,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     function loanLockedBalanceOf(uint256 loanId) external view returns (uint256) {
         Loan memory loan = loans[loanId];
-        // ETH-only; ERC20 collateral has no common unit — use getLoanLockedCollateral instead
-        return loan.collateralToken == address(0) ? loan.collateralAmount : 0;
+        // ETH-only; ERC20 collateral has no common unit — use getLoanLockedCollateral instead.
+        // Return collateral still locked (original minus what partial repayments have released).
+        return loan.collateralToken == address(0) ? loan.collateralAmount - loan.collateralReleased : 0;
     }
 
     function getLoanLockedCollateral(uint256 loanId) external view returns (
@@ -424,7 +425,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         bool locked
     ) {
         Loan memory loan = loans[loanId];
-        return (loan.collateralToken, loan.collateralAmount, loan.collateralLocked);
+        // collateralAmount reflects what remains locked after any partial releases, not the original deposit.
+        return (loan.collateralToken, loan.collateralAmount - loan.collateralReleased, loan.collateralLocked);
     }
 
     function getLoan(uint256 loanId) external view returns (
