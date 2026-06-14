@@ -12,9 +12,7 @@
   let { score, loading }: Props = $props();
 </script>
 
-{#if loading && !score}
-  <div class="h-12 w-48 bg-muted animate-pulse rounded-xl"></div>
-{:else if score}
+{#if score}
   {@const risk = getRiskLevel(score.score)}
   <div class="flex items-center gap-3 text-sm">
     <Gauge class="h-5 w-5 text-primary shrink-0" />
@@ -24,5 +22,14 @@
     {#if score.explanation}
       <span class="text-muted-foreground truncate">· {score.explanation}</span>
     {/if}
+  </div>
+{:else}
+  <!-- Always hold the row's space: skeleton while loading, and as a placeholder
+       when the score is unavailable (fetch failed / not yet scored). -->
+  <div class="flex items-center gap-3 text-sm" aria-busy={loading}>
+    <Gauge class="h-5 w-5 text-muted-foreground shrink-0" />
+    <span class="font-bold text-muted-foreground">Credit score</span>
+    <div class="h-7 w-12 bg-muted animate-pulse rounded-md"></div>
+    <div class="h-4 w-16 bg-muted animate-pulse rounded-md"></div>
   </div>
 {/if}
