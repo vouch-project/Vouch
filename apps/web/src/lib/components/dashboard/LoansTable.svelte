@@ -41,8 +41,14 @@
         {#if loading}
           {#each [1, 2, 3] as key (key)}
             <Table.Row>
-              {#each Array(7) as _, j (j)}
-                <Table.Cell class={cn('px-2 sm:px-4 py-4', j === 0 && 'pl-4 sm:pl-6', j === 6 && 'pr-4 sm:pr-6')}>
+              {#each Array(tableColumns.length) as _, j (j)}
+                <Table.Cell
+                  class={cn(
+                    'px-2 sm:px-4 py-4',
+                    j === 0 && 'pl-4 sm:pl-6',
+                    j === tableColumns.length - 1 && 'pr-4 sm:pr-6',
+                  )}
+                >
                   <div class="h-4 w-16 bg-muted animate-pulse rounded"></div>
                 </Table.Cell>
               {/each}
@@ -50,7 +56,7 @@
           {/each}
         {:else if loans.length === 0}
           <Table.Row>
-            <Table.Cell class="h-56 text-center" colspan={7}>
+            <Table.Cell class="h-56 text-center" colspan={tableColumns.length}>
               <div class="flex flex-col items-center justify-center space-y-3">
                 <div class="h-14 w-14 bg-muted rounded-2xl flex items-center justify-center">
                   <LayoutDashboard class="h-7 w-7 text-muted-foreground" />

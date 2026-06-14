@@ -15,6 +15,7 @@
   import { cn } from '$lib/utils';
   import { getRepaymentDetails, type RepaymentDetails } from '$lib/wallet/vouchVault';
   import { ethers } from 'ethers';
+  import { tableColumns } from '../dashboard/columns';
 
   type Props = {
     loan: LoanFull;
@@ -26,6 +27,9 @@
   const isEthPrincipal = $derived(!loan.principalToken?.address || loan.principalToken.address === ethers.ZeroAddress);
   const principalDecimals = $derived(loan.principalToken?.decimals ?? 18);
   const principalSymbol = $derived(loan.principalToken?.symbol ?? 'ETH');
+
+  const collateralDecimals = $derived(loan.collateralToken?.decimals ?? 18);
+  const collateralSymbol = $derived(loan.collateralToken?.symbol ?? 'ETH');
 
   // ── DB-derived repayment progress ─────────────────────────────────────────
   // The embedded transactions relation contains every transaction for the loan
@@ -118,6 +122,12 @@
     <span class="text-muted-foreground text-xs">{principalSymbol}</span>
   </Table.Cell>
 
+  <!-- Collateral -->
+  <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
+    {formatUint256(loan.collateralAmount ?? '0', collateralDecimals)}
+    <span class="text-muted-foreground text-xs">{collateralSymbol}</span>
+  </Table.Cell>
+
   <!-- Interest -->
   <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
     {formatUint256(interestAmount.toString(), principalDecimals)}
@@ -180,7 +190,7 @@
 
 {#if expanded && isActive && loan.onChainLoanId !== null}
   <Table.Row class="bg-muted/20 hover:bg-muted/20">
-    <Table.Cell class="px-4 sm:px-6 py-4" colspan={7}>
+    <Table.Cell class="px-4 sm:px-6 py-4" colspan={tableColumns.length}>
       {#if chainError}
         <p class="text-xs text-destructive">{chainError}</p>
       {:else}

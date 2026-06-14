@@ -46,7 +46,7 @@
         size="sm"
         variant={realtimeActive ? 'secondary' : 'outline'}
       >
-        <div class="mr-2 flex h-2 w-2 items-center justify-center">
+        <div class="relative mr-2 flex h-2 w-2 items-center justify-center">
           {#if realtimeActive}
             <span class="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-green-400 opacity-75"></span>
           {/if}

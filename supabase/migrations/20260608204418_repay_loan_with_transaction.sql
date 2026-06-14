@@ -36,6 +36,21 @@ BEGIN
             p_network_id, p_contract_address;
     END IF;
 
+    -- Ensure the loan row exists first. The listener's LoanCreated/LoanFunded
+    -- handlers catch-and-log on failure without rethrowing, so a missed write
+    -- could otherwise make a no-op UPDATE below indistinguishable from a
+    -- duplicate event — silently dropping a valid repayment. Fail loudly instead.
+    PERFORM 1
+    FROM public.loans
+    WHERE "onChainLoanId"   = p_on_chain_loan_id
+      AND "chainId"         = v_chain_id
+      AND "borrowerAddress" = p_borrower_address;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Loan not found: onChainLoanId=%, chainId=%, borrower=%',
+            p_on_chain_loan_id, v_chain_id, p_borrower_address;
+    END IF;
+
     UPDATE public.loans
     SET status          = 'repaid',
         "repaidAt"      = p_repaid_at,
@@ -46,7 +61,7 @@ BEGIN
       AND status           != 'repaid'           -- idempotent: skip if already repaid
     RETURNING id, "principalTokenId" INTO v_loan_id, v_principal_token_id;
 
-    -- Already repaid (duplicate event) — exit cleanly.
+    -- Loan exists but UPDATE matched nothing → already repaid (duplicate event). Exit cleanly.
     IF v_loan_id IS NULL THEN
         RETURN;
     END IF;
