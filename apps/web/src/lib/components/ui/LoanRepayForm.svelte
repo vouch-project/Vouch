@@ -84,7 +84,11 @@
   };
 
   const txStatusLabel = $derived(
-    txStatus === 'approving' ? 'Approving token…' : txStatus === 'confirming' ? 'Confirm in wallet…' : '',
+    txStatus === 'approving'
+      ? 'Approve token, then confirm repayment…'
+      : txStatus === 'confirming'
+        ? 'Confirm in wallet…'
+        : '',
   );
 
   // Latest repayment tx for the history link
@@ -157,7 +161,7 @@
         onclick={handleRepay}
         size="sm"
       >
-        {txStatus === 'approving' ? 'Approving…' : txStatus === 'confirming' ? 'Confirming…' : 'Confirm Repayment'}
+        {txStatus === 'approving' ? 'Approve + repay…' : txStatus === 'confirming' ? 'Confirming…' : 'Confirm Repayment'}
       </Button>
       <Button
         class="font-medium text-muted-foreground hover:text-foreground"

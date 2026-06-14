@@ -6,6 +6,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { LoansService } from '../loans/loans.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { SerialQueue } from './serial-queue';
 
 type ChainConfig = Tables<'chains'>;
 
@@ -73,24 +74,16 @@ export class BlockchainListenerService implements OnModuleInit {
     }
   }
 
-  // Serializes event processing per chain so handlers run in arrival order.
-  // Without this, ethers fires listeners concurrently and a LoanPartiallyRepaid
-  // can be processed before the corresponding LoanFunded write completes,
-  // leaving lenderAddress NULL when the repayment RPC needs it.
-  private eventQueues = new Map<string, Promise<void>>();
+  // Serializes event processing per chain so handlers run in arrival order
+  // (see SerialQueue). Without this, ethers fires listeners concurrently and a
+  // LoanPartiallyRepaid can be processed before the corresponding LoanFunded
+  // write completes, leaving lenderAddress NULL when the repayment RPC needs it.
+  private readonly queue = new SerialQueue((key, err) =>
+    this.logger.error(`Unhandled error in event queue for ${key}`, err),
+  );
 
   private enqueue(key: string, task: () => Promise<void>) {
-    const prev = this.eventQueues.get(key) ?? Promise.resolve();
-    // Ignore the previous task's outcome so one failure can't poison the chain,
-    // then run this task and swallow+log any rejection to avoid an unhandled
-    // rejection leaving the queue permanently rejected.
-    const next = prev
-      .catch(() => undefined)
-      .then(task)
-      .catch((err) => {
-        this.logger.error(`Unhandled error in event queue for ${key}`, err);
-      });
-    this.eventQueues.set(key, next);
+    this.queue.enqueue(key, task);
   }
 
   private setupEventListener(
@@ -287,7 +280,7 @@ export class BlockchainListenerService implements OnModuleInit {
     }
   }
 
-  private async handleLoanPartiallyRepaid(
+  protected async handleLoanPartiallyRepaid(
     loanId: bigint,
     borrower: string,
     paymentAmount: bigint,

@@ -36,18 +36,25 @@ export class DashboardData {
   }
 
   reset() {
+    // Tear down realtime too: on disconnect/account switch a live channel would
+    // otherwise keep filtering on the old borrower and refetch stale data.
+    this.#unsubscribe();
+    this.realtimeActive = false;
+    this.#address = null;
     this.loans = [];
     this.fetchError = '';
   }
 
   async fetch(address: string) {
-    this.#address = address;
+    const checksummed = ethers.getAddress(address);
+    const addressChanged = this.#address !== null && this.#address !== checksummed;
+    this.#address = checksummed;
     this.fetchError = '';
 
     const { data, error } = await supabase
       .from('loans')
       .select(LOAN_SELECT)
-      .eq('borrowerAddress', ethers.getAddress(address) as Address)
+      .eq('borrowerAddress', checksummed as Address)
       .order('createdAt', { ascending: false });
 
     if (error) {
@@ -55,25 +62,41 @@ export class DashboardData {
       return;
     }
     this.loans = (data ?? []) as unknown as LoanFull[];
+
+    // The realtime channel filters on the borrower address, so a wallet switch
+    // would otherwise keep streaming the previous user's changes. Rebuild it.
+    if (addressChanged && this.realtimeActive) this.#subscribe();
   }
 
   toggleRealtime() {
     if (this.realtimeActive) {
-      if (this.#channel) {
-        void supabase.removeChannel(this.#channel);
-        this.#channel = null;
-      }
+      this.#unsubscribe();
       this.realtimeActive = false;
       return;
     }
+    this.#subscribe();
+    this.realtimeActive = true;
+  }
+
+  #unsubscribe() {
+    if (this.#channel) {
+      void supabase.removeChannel(this.#channel);
+      this.#channel = null;
+    }
+  }
+
+  // (Re)builds the borrower-scoped channel for the current #address. Tears down
+  // any existing channel first so callers can use this to resubscribe in place.
+  #subscribe() {
+    this.#unsubscribe();
 
     const refetch = () => {
       if (this.#address) void this.fetch(this.#address);
     };
     // Scope the subscription to this borrower so we don't refetch on unrelated
-    // users' loan/transaction changes. Addresses are checksummed to match how
-    // they're stored (see fetch()).
-    const checksummed = this.#address ? ethers.getAddress(this.#address) : '';
+    // users' loan/transaction changes. #address is already checksummed to match
+    // how addresses are stored (see fetch()).
+    const checksummed = this.#address ?? '';
     this.#channel = supabase
       .channel('public:dashboard-loans')
       .on(
@@ -87,13 +110,9 @@ export class DashboardData {
         refetch,
       )
       .subscribe();
-    this.realtimeActive = true;
   }
 
   destroy() {
-    if (this.#channel) {
-      void supabase.removeChannel(this.#channel);
-      this.#channel = null;
-    }
+    this.#unsubscribe();
   }
 }

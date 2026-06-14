@@ -39,7 +39,10 @@
 
   const principalRaw = $derived(BigInt(loan.principalAmount ?? '0'));
   const interestRateRaw = $derived(BigInt(loan.interestRate ?? '0'));
-  const totalDueFromDB = $derived(computeTotalDue(principalRaw, interestRateRaw));
+  // Pending/unfunded loans owe nothing yet (on-chain getRepaymentDetails reports
+  // totalDue = 0 until funding); only compute once funded. Repaid loans keep the
+  // computed value since they skip chain hydration below.
+  const totalDueFromDB = $derived(loan.status === 'pending' ? 0n : computeTotalDue(principalRaw, interestRateRaw));
   const remainingFromDB = $derived(computeRemaining(totalDueFromDB, amountRepaidFromDB));
 
   // ── Chain hydration (active loans only) ───────────────────────────────────
@@ -90,7 +93,7 @@
   const displayInterestRateBps = $derived(
     chainDetails ? chainDetails.interestRateBps : interestRateToBps(interestRateRaw),
   );
-  const interestAmount = $derived(displayTotalDue - principalRaw);
+  const interestAmount = $derived(displayTotalDue > principalRaw ? displayTotalDue - principalRaw : 0n);
 
   let expanded = $state(false);
 
@@ -170,7 +173,7 @@
 
   <!-- Status -->
   <Table.Cell class="px-2 sm:px-4 py-3 whitespace-nowrap text-center">
-    <LoanStatusBadge {isOverdue} {isPending} {isRepaid} />
+    <LoanStatusBadge {isOverdue} {isPending} {isRepaid} status={loan.status} />
   </Table.Cell>
 
   <!-- Action -->

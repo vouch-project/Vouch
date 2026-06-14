@@ -85,17 +85,21 @@ BEGIN
         0
     );
 
-    INSERT INTO public.transactions (
-        "loanId", "chainId", "tokenId", "txHash", "blockNumber", "blockHash",
-        type, status, "fromAddress", "toAddress", amount, "logIndex", "txTimestamp"
-    ) VALUES (
-        v_loan_id, v_chain_id, v_principal_token_id,
-        p_tx_hash, p_block_number, p_block_hash,
-        'repayment', 'confirmed',
-        p_borrower_address, p_lender_address,
-        v_final_payment::text, p_log_index, p_repaid_at
-    )
-    ON CONFLICT ("chainId", "txHash", "logIndex") DO NOTHING;
+    -- Skip when prior LoanPartiallyRepaid events already recorded the full debt
+    -- (delta is 0): inserting would pollute repayment history with a no-op row.
+    IF v_final_payment > 0 THEN
+        INSERT INTO public.transactions (
+            "loanId", "chainId", "tokenId", "txHash", "blockNumber", "blockHash",
+            type, status, "fromAddress", "toAddress", amount, "logIndex", "txTimestamp"
+        ) VALUES (
+            v_loan_id, v_chain_id, v_principal_token_id,
+            p_tx_hash, p_block_number, p_block_hash,
+            'repayment', 'confirmed',
+            p_borrower_address, p_lender_address,
+            v_final_payment::text, p_log_index, p_repaid_at
+        )
+        ON CONFLICT ("chainId", "txHash", "logIndex") DO NOTHING;
+    END IF;
 
     INSERT INTO public.notifications (
         "recipientAddress", type, title, body, "loanId", payload
