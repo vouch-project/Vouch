@@ -1,5 +1,5 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+import { Test, TestingModule } from '@nestjs/testing';
 import { ethers } from 'ethers';
 import { LoansService } from '../loans/loans.service';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -89,8 +89,9 @@ describe('BlockchainListenerService', () => {
     it('isolates queues by key so one chain does not block another', async () => {
       const order: string[] = [];
       internals.enqueue('chainA', () => Promise.reject(new Error('a fails')));
-      internals.enqueue('chainB', async () => {
+      internals.enqueue('chainB', () => {
         order.push('b ran');
+        return Promise.resolve();
       });
 
       await Promise.all([flush(service, 'chainA'), flush(service, 'chainB')]);
