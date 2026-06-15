@@ -459,14 +459,25 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         );
     }
 
+    /// @notice Per-day simple interest accrued so far, capped at the loan duration.
+    /// @dev Annual rate; 365-day year; floors elapsed time to whole days. Zero if unfunded or no duration.
+    function _accruedInterest(Loan memory loan) internal view returns (uint256) {
+        if (!loan.funded || loan.durationSeconds == 0) return 0;
+        uint256 dueAt = loan.fundedAt + loan.durationSeconds;
+        uint256 cappedNow = block.timestamp < dueAt ? block.timestamp : dueAt;
+        uint256 elapsedDays = (cappedNow - loan.fundedAt) / 86400;
+        return (loan.principalAmount * loan.interestRateBps * elapsedDays) / (10000 * 365);
+    }
+
     /**
      * @notice Returns repayment-related details for a loan.
-     * @return interestRateBps  Agreed interest rate in basis points.
+     * @return interestRateBps  Agreed ANNUAL interest rate in basis points.
      * @return durationSeconds  Agreed loan duration in seconds (0 = no deadline).
      * @return repaid           Whether the loan has been fully repaid.
-     * @return totalDue         Principal + interest owed (0 if not funded).
+     * @return totalDue         Principal + accrued interest owed right now (0 if not funded).
      * @return amountRepaid     Cumulative amount repaid so far.
-     * @return remaining        Amount still outstanding.
+     * @return remaining        Amount still outstanding right now.
+     * @return fundDeadline     Timestamp after which the loan can no longer be funded.
      */
     function getRepaymentDetails(uint256 loanId) external view returns (
         uint16 interestRateBps,
@@ -474,18 +485,19 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         bool repaid,
         uint256 totalDue,
         uint256 amountRepaid,
-        uint256 remaining
+        uint256 remaining,
+        uint256 fundDeadline
     ) {
         Loan memory loan = loans[loanId];
-        uint256 interest = (loan.principalAmount * loan.interestRateBps) / 10000;
-        uint256 due = loan.funded ? loan.principalAmount + interest : 0;
+        uint256 due = loan.funded ? loan.principalAmount + _accruedInterest(loan) : 0;
         return (
             loan.interestRateBps,
             loan.durationSeconds,
             loan.repaid,
             due,
             loan.amountRepaid,
-            due > loan.amountRepaid ? due - loan.amountRepaid : 0
+            due > loan.amountRepaid ? due - loan.amountRepaid : 0,
+            loan.fundDeadline
         );
     }
 

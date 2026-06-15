@@ -59,6 +59,7 @@ describe('VouchVault', function () {
       expect(repaymentDetails[3]).to.equal(0);     // totalDue (not funded)
       expect(repaymentDetails[4]).to.equal(0);     // amountRepaid
       expect(repaymentDetails[5]).to.equal(0);     // remaining
+      expect(repaymentDetails[6]).to.equal(created.fundDeadline); // fundDeadline
     });
 
     it('Should fail if collateral is zero', async function () {
@@ -348,9 +349,10 @@ describe('VouchVault', function () {
       expect(loan[4]).to.equal(false); // active = false
 
       const rd = await vault.getRepaymentDetails(0);
-      expect(rd[2]).to.equal(true);     // repaid
-      expect(rd[4]).to.equal(rd[3]);    // amountRepaid == totalDue
-      expect(rd[5]).to.equal(0n);       // remaining == 0
+      expect(rd[2]).to.equal(true);        // repaid
+      // repayLoan still uses flat interest, so amountRepaid is the flat totalDue paid.
+      expect(rd[4]).to.equal(totalDue);    // amountRepaid == flat totalDue paid
+      expect(rd[5]).to.equal(0n);          // remaining == 0
     });
 
     it('Should unlock collateral tracking after full repayment', async function () {
@@ -442,7 +444,7 @@ describe('VouchVault', function () {
 
     describe('partial repayments', function () {
       it('Should release proportional collateral on each partial payment', async function () {
-        const { vault, borrower, lender, collateral, totalDue } = await deployFundedLoan(1000); // 10%
+        const { vault, borrower, lender, collateral, principal, totalDue } = await deployFundedLoan(1000); // 10%
         // totalDue = 1 ETH + 10% = 1.1 ETH, collateral = 2 ETH
         // Pay 50% of totalDue → expect ~50% collateral back
 
@@ -466,10 +468,12 @@ describe('VouchVault', function () {
         const loan = await vault.getLoan(0);
         expect(loan[4]).to.equal(true);
 
-        // getRepaymentDetails reflects progress
+        // getRepaymentDetails reflects progress. totalDue here is per-day accrued
+        // (durationSeconds=86400, 0 whole days elapsed → 0 interest → due == principal),
+        // while the flat-interest repayLoan recorded `half` of the flat totalDue as repaid.
         const rd = await vault.getRepaymentDetails(0);
-        expect(rd[4]).to.equal(half);           // amountRepaid
-        expect(rd[5]).to.equal(totalDue - half); // remaining
+        expect(rd[4]).to.equal(half);              // amountRepaid (flat half paid)
+        expect(rd[5]).to.equal(principal - half);  // remaining = accrued due(=principal) - amountRepaid
       });
 
       it('Should report remaining locked collateral via view helpers after a partial payment', async function () {
@@ -826,24 +830,71 @@ describe('VouchVault', function () {
       const principal = ethers.parseEther('1.0');
       const collateral = ethers.parseEther('2.0');
 
-      await vault.connect(borrower).createLoan(ethers.ZeroAddress, principal, 1000, 0, 7n * 86400n, { value: collateral });
+      // 3650 bps APR over a 10-day term => interest = 1.0 * 3650 * 10 / (10000*365) = 0.01 ETH,
+      // so once the full term has accrued (and is capped at it) totalDue == 1.01 ETH.
+      const durationSeconds = 10n * 86400n;
+      const expectedTotalDue = principal + (principal * 3650n * 10n) / (10000n * 365n);
+      await vault.connect(borrower).createLoan(ethers.ZeroAddress, principal, 3650, durationSeconds, 7n * 86400n, { value: collateral });
       await vault.connect(lender).fundLoan(0, { value: principal });
 
-      const rd1 = await vault.getRepaymentDetails(0);
-      expect(rd1[0]).to.equal(1000);                      // 10%
-      expect(rd1[2]).to.equal(false);                     // not repaid
-      expect(rd1[3]).to.equal(ethers.parseEther('1.1')); // totalDue
-      expect(rd1[4]).to.equal(0n);                        // amountRepaid
-      expect(rd1[5]).to.equal(ethers.parseEther('1.1')); // remaining
+      // Advance past the term so accrued interest is capped at exactly 10 whole days (deterministic).
+      await ethers.provider.send('evm_increaseTime', [11 * 86400]);
+      await ethers.provider.send('evm_mine', []);
 
-      // Partial payment
+      const rd1 = await vault.getRepaymentDetails(0);
+      expect(rd1[0]).to.equal(3650);              // 36.5% APR
+      expect(rd1[2]).to.equal(false);             // not repaid
+      expect(rd1[3]).to.equal(expectedTotalDue);  // totalDue (principal + capped accrued interest)
+      expect(rd1[4]).to.equal(0n);                // amountRepaid
+      expect(rd1[5]).to.equal(expectedTotalDue);  // remaining
+
+      // Partial payment (repayLoan still uses flat interest, but 0.5 is within remaining either way)
       const payment = ethers.parseEther('0.5');
       await vault.connect(borrower).repayLoan(0, { value: payment });
 
       const rd2 = await vault.getRepaymentDetails(0);
-      expect(rd2[4]).to.equal(payment);                                             // amountRepaid
-      expect(rd2[5]).to.equal(ethers.parseEther('1.1') - payment);                 // remaining
-      expect(rd2[2]).to.equal(false);                                               // still not repaid
+      expect(rd2[4]).to.equal(payment);                       // amountRepaid
+      expect(rd2[5]).to.equal(expectedTotalDue - payment);    // remaining (capped accrued due - amountRepaid)
+      expect(rd2[2]).to.equal(false);                          // still not repaid
+    });
+  });
+
+  describe('accrued interest (per-day APR, capped)', function () {
+    async function deployFunded(interestRateBps = 3650, durationSeconds = 30n * 86400n) {
+      const [owner, borrower, lender] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      const collateral = ethers.parseEther('5.0');
+      const principal = ethers.parseEther('1.0');
+      await vault
+        .connect(borrower)
+        .createLoan(ethers.ZeroAddress, principal, interestRateBps, durationSeconds, 7n * 86400n, { value: collateral });
+      await vault.connect(lender).fundLoan(0, { value: principal });
+      return { vault, owner, borrower, lender, principal, collateral };
+    }
+
+    it('accrues zero interest before any full day passes', async function () {
+      const { vault, principal } = await deployFunded();
+      const details = await vault.getRepaymentDetails(0);
+      expect(details[3]).to.equal(principal); // totalDue == principal at 0 whole days
+    });
+
+    it('accrues per whole day at the annual rate', async function () {
+      const { vault, principal } = await deployFunded(3650, 30n * 86400n);
+      await ethers.provider.send('evm_increaseTime', [10 * 86400]);
+      await ethers.provider.send('evm_mine', []);
+      const details = await vault.getRepaymentDetails(0);
+      const expectedInterest = (principal * 3650n * 10n) / (10000n * 365n);
+      expect(details[3]).to.equal(principal + expectedInterest);
+    });
+
+    it('caps interest at the loan duration', async function () {
+      const { vault, principal } = await deployFunded(3650, 5n * 86400n);
+      await ethers.provider.send('evm_increaseTime', [100 * 86400]);
+      await ethers.provider.send('evm_mine', []);
+      const details = await vault.getRepaymentDetails(0);
+      const cappedInterest = (principal * 3650n * 5n) / (10000n * 365n);
+      expect(details[3]).to.equal(principal + cappedInterest);
     });
   });
 });
