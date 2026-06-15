@@ -3,7 +3,9 @@ import { axiosApi } from '$api/axiosApi';
 export type CreditScore = {
   score: number;
   confidence: number;
-  factors: string[];
+  strengths: string[];
+  risk_factors: string[];
+  improvements: string[];
   explanation: string | null;
 };
 

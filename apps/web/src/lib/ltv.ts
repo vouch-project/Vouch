@@ -51,16 +51,18 @@ export const baseLtv = (
 
 /**
  * Credit-score multiplier applied on top of the base LTV.
- *   score 650 → 0.85×  (reduces LTV by 15%)
- *   score 750 → 0.975× (near-neutral)
- *   score 850 → 1.10×  (boosts LTV by 10%)
+ * Full FICO range 300–850 is used:
+ *   score 300 → 0.50× (halves base LTV)
+ *   score 580 → 0.75× (min threshold)
+ *   score 770 → 1.00× (neutral)
+ *   score 850 → 1.10× (boosts LTV by 10%)
  *
- * Linear interpolation: mult = 0.85 + (score − 650) / 200 × 0.25
+ * Linear interpolation over [300, 850]: mult = 0.50 + (score − 300) / 550 × 0.60
  */
 export const scoreMult = (score: number | null | undefined): number => {
   if (score == null) return 1;
-  const clamped = Math.max(650, Math.min(850, score));
-  return 0.85 + ((clamped - 650) / 200) * 0.25;
+  const clamped = Math.max(300, Math.min(850, score));
+  return 0.5 + ((clamped - 300) / 550) * 0.6;
 };
 
 /**
