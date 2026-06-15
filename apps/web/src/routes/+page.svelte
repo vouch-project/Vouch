@@ -1,12 +1,12 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
+  import { Badge } from '$lib/components/ui/badge';
+  import * as Card from '$lib/components/ui/card';
   import WalletButton from '$lib/components/ui/WalletButton.svelte';
   import WalletStatus from '$lib/components/ui/WalletStatus.svelte';
   import { navLinksMap } from '$lib/navLinks';
   import { wallet } from '$lib/wallet/wallet.svelte';
-  import { Badge } from '$lib/components/ui/badge';
-  import { ShieldCheck, Zap, Globe, ArrowRight } from '@lucide/svelte';
-  import * as Card from '$lib/components/ui/card';
+  import { ArrowRight, Globe, ShieldCheck, Zap } from '@lucide/svelte';
 </script>
 
 <svelte:head>
@@ -14,7 +14,7 @@
 </svelte:head>
 
 <div class="flex flex-col items-center justify-center min-h-[80vh] space-y-20 py-12 px-4">
-  <section class="max-w-[800px] text-center space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-1000">
+  <section class="max-w-[800px] text-center space-y-8 animate-in fade-in duration-700">
     <div class="flex flex-col items-center space-y-4">
       <Badge
         class="py-1 px-4 text-xs font-bold tracking-widest uppercase bg-primary/10 text-primary border-primary/20 cursor-default"
@@ -63,7 +63,7 @@
   </section>
 
   <section
-    class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-[1100px] animate-in fade-in slide-in-from-bottom-12 duration-1000 delay-300"
+    class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-[1100px] animate-in fade-in duration-1000 delay-300"
   >
     <Card.Root
       class="group bg-card/40 backdrop-blur-sm border-border/50 hover:border-primary/50 transition-all duration-300 hover:shadow-2xl hover:shadow-primary/5"

@@ -1,37 +1,123 @@
 <script lang="ts">
-  import * as Card from '$lib/components/ui/card';
-  import { LayoutDashboard } from '@lucide/svelte';
-  import { Button } from '$lib/components/ui/button';
+  import CreditScoreBar from '$lib/components/dashboard/CreditScoreBar.svelte';
+  import DashboardHeader from '$lib/components/dashboard/DashboardHeader.svelte';
+  import DashboardStats from '$lib/components/dashboard/DashboardStats.svelte';
+  import LoansTable from '$lib/components/dashboard/LoansTable.svelte';
+  import { Badge } from '$lib/components/ui/badge';
+  import * as Tabs from '$lib/components/ui/tabs';
+  import { fetchCreditScore, type CreditScore } from '$lib/loans/creditScore';
+  import { wallet } from '$lib/wallet/wallet.svelte';
+  import { WalletMinimal } from '@lucide/svelte';
+  import { onDestroy } from 'svelte';
+  import { DashboardData, type DashboardFilter } from './dashboard.svelte';
+
+  const data = new DashboardData();
+
+  let loading = $state(false);
+  let refreshing = $state(false);
+
+  // ── Credit score ──────────────────────────────────────────────────────────
+  let creditScore = $state<CreditScore | null>(null);
+  let scoreLoading = $state(false);
+
+  const loadCreditScore = async () => {
+    if (!wallet.address) return;
+    scoreLoading = true;
+    creditScore = await fetchCreditScore(wallet.address);
+    scoreLoading = false;
+  };
+
+  const handleRefresh = async () => {
+    if (!wallet.address) return;
+    refreshing = true;
+    await Promise.all([data.fetch(wallet.address), loadCreditScore()]);
+    refreshing = false;
+  };
+
+  onDestroy(() => data.destroy());
+
+  $effect(() => {
+    // Read wallet.address here so the effect re-runs when it changes; otherwise
+    // it never refetches after the wallet connects.
+    if (!wallet.address) {
+      data.reset();
+      creditScore = null;
+      return;
+    }
+    loading = true;
+    void data.fetch(wallet.address).finally(() => {
+      loading = false;
+    });
+    void loadCreditScore();
+  });
+
+  const handleRepaid = () => {
+    if (wallet.address) void data.fetch(wallet.address);
+  };
+
+  // ── Filtering ─────────────────────────────────────────────────────────────
+  let filter = $state<DashboardFilter>('active');
+  const filteredLoans = $derived(data.filter(filter));
 </script>
 
 <svelte:head>
   <title>Dashboard | Vouch</title>
 </svelte:head>
 
-<div class="flex flex-col items-center py-6 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
-  <div class="text-center space-y-4">
-    <h1 class="text-5xl font-black tracking-tight text-foreground text-center">
-      Dashboard
-    </h1>
-    <p class="text-xl text-muted-foreground font-medium max-w-lg mx-auto">
-      Manage your active loans, collateral, and rewards in one central hub.
-    </p>
-  </div>
+<div class="container mx-auto py-8 space-y-8 animate-in fade-in duration-700">
+  <DashboardHeader
+    busy={refreshing || loading}
+    isConnected={wallet.isConnected}
+    onRefresh={handleRefresh}
+    onToggleRealtime={() => data.toggleRealtime()}
+    realtimeActive={data.realtimeActive}
+  />
 
-  <div class="w-full max-w-2xl mx-auto">
-    <Card.Root class="bg-card/40 backdrop-blur-sm border-border/50 shadow-2xl shadow-primary/5 overflow-hidden">
-      <div class="h-80 flex flex-col items-center justify-center space-y-6 text-center p-8">
-        <div class="h-20 w-20 bg-primary/10 rounded-3xl flex items-center justify-center shadow-lg shadow-primary/5">
-          <LayoutDashboard class="h-10 w-10 text-primary" />
-        </div>
-        <div>
-          <h3 class="text-2xl font-black tracking-tight mb-2">Dashboard Coming Soon</h3>
-          <p class="text-muted-foreground max-w-sm mx-auto font-medium">
-            We're building a comprehensive dashboard for tracking your on-chain financial health and loan statuses.
-          </p>
-        </div>
-        <Button class="font-bold" size="lg" variant="secondary">Join Waitlist</Button>
+  {#if !wallet.isConnected}
+    <div class="flex flex-col items-center justify-center py-20 space-y-4 text-center">
+      <div class="h-16 w-16 bg-muted rounded-2xl flex items-center justify-center">
+        <WalletMinimal class="h-8 w-8 text-muted-foreground" />
       </div>
-    </Card.Root>
-  </div>
+      <div>
+        <h3 class="font-bold text-lg">Connect your wallet</h3>
+        <p class="text-muted-foreground text-sm mt-1">Connect a wallet to view your loans.</p>
+      </div>
+    </div>
+  {:else}
+    <DashboardStats
+      active={data.activeCount}
+      liquidated={data.liquidatedCount}
+      {loading}
+      repaid={data.repaidCount}
+      total={data.loans.length}
+    />
+
+    <CreditScoreBar loading={scoreLoading} score={creditScore} />
+
+    {#if data.fetchError}
+      <p class="text-sm text-destructive">{data.fetchError}</p>
+    {/if}
+
+    <Tabs.Root bind:value={filter}>
+      <Tabs.List class="mb-4">
+        <Tabs.Trigger value="active">
+          Active
+          {#if data.activeCount > 0}
+            <Badge class="ml-1.5 h-5 min-w-5 text-xs" variant="secondary">{data.activeCount}</Badge>
+          {/if}
+        </Tabs.Trigger>
+        <Tabs.Trigger value="repaid">
+          Repaid
+          {#if data.repaidCount > 0}
+            <Badge class="ml-1.5 h-5 min-w-5 text-xs" variant="secondary">{data.repaidCount}</Badge>
+          {/if}
+        </Tabs.Trigger>
+        <Tabs.Trigger value="all">All loans</Tabs.Trigger>
+      </Tabs.List>
+
+      <Tabs.Content value={filter}>
+        <LoansTable {filter} {loading} loans={filteredLoans} onRepaid={handleRepaid} />
+      </Tabs.Content>
+    </Tabs.Root>
+  {/if}
 </div>

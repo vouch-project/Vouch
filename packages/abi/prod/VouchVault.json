@@ -218,6 +218,104 @@
     "inputs": [
       {
         "indexed": true,
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "paymentAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "collateralReleased",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "totalRepaidSoFar",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "totalDue",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "name": "LoanPartiallyRepaid",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "lender",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "principalAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "interestAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "totalRepaid",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "name": "LoanRepaid",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
         "internalType": "address",
         "name": "previousOwner",
         "type": "address"
@@ -307,6 +405,16 @@
         "internalType": "uint256",
         "name": "principalAmount",
         "type": "uint256"
+      },
+      {
+        "internalType": "uint16",
+        "name": "interestRateBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "durationSeconds",
+        "type": "uint256"
       }
     ],
     "name": "createLoan",
@@ -334,6 +442,16 @@
       {
         "internalType": "uint256",
         "name": "principalAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint16",
+        "name": "interestRateBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "durationSeconds",
         "type": "uint256"
       }
     ],
@@ -509,6 +627,50 @@
   {
     "inputs": [
       {
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getRepaymentDetails",
+    "outputs": [
+      {
+        "internalType": "uint16",
+        "name": "interestRateBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "durationSeconds",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "repaid",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint256",
+        "name": "totalDue",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amountRepaid",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "remaining",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "address",
         "name": "initialOwner",
         "type": "address"
@@ -607,6 +769,31 @@
         "internalType": "uint256",
         "name": "requestedPrincipalAmount",
         "type": "uint256"
+      },
+      {
+        "internalType": "uint16",
+        "name": "interestRateBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "durationSeconds",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "repaid",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amountRepaid",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "collateralReleased",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -690,21 +877,39 @@
     "type": "function"
   },
   {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "name": "releaseLoanCollateral",
+    "inputs": [],
+    "name": "renounceOwnership",
     "outputs": [],
-    "stateMutability": "pure",
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "renounceOwnership",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      }
+    ],
+    "name": "repayLoan",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "repayLoanWithERC20",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
