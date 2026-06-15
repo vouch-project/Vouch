@@ -4,6 +4,8 @@
 
 **Goal:** Wire up `apps/ml-engine` to load the trained XGBoost model artifact from `services/ml-training` and serve real 300–850 credit scores (FICO range) with per-feature strengths, risk factors, and improvement suggestions via the existing FastAPI endpoint.
 
+> **Note:** Issue #15 originally specified a 0–1000 scale. This was intentionally changed to 300–850 (standard FICO range) during design — the FICO range is the industry standard for credit scoring and provides better UX (users recognize what 720 means). Issue #15 and any downstream consumers have been updated accordingly.
+
 **Architecture:** `scorer.py` loads `model.joblib` + `metadata.json` from a configurable artifact path at startup, runs inference using the same feature vector as `check_wallet.py`, and converts the raw `risk_probability` into a 300–850 credit score (FICO range) down-weighted by wallet age confidence. All business logic (formula, strengths/risk_factors/improvements) lives in `scorer.py`; `main.py` stays a thin FastAPI router.
 
 **Tech Stack:** FastAPI, joblib, numpy, scikit-learn (for `CalibratedPipeline` deserialization), httpx (subgraph + RPC calls reused from `services/ml-training`), pydantic-settings, pytest.
@@ -131,7 +133,7 @@ if stablecoin_balance_usd is not None and stablecoin_balance_usd < 50 and (eth_b
     risk_factors.append("Low overall assets on-chain")
 ```
 
-`explanation` field = improvements joined with "; " (empty string if no improvements).
+`explanation` field = improvements joined with "; ", or `None` if there are no improvements.
 
 **Response schema change:** `factors` is replaced by two separate fields: `strengths: list[str]` and `risk_factors: list[str]`. The `improvements: list[str]` field is also added.
 

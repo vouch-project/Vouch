@@ -125,9 +125,12 @@ async def _etherscan_call(
         if "no transactions found" not in msg:
             raise RuntimeError(f"Etherscan error: {result}")
 
-    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    with gzip.open(cache_file, "wt", encoding="utf-8") as fh:
-        json.dump(body, fh)
+    try:
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        with gzip.open(cache_file, "wt", encoding="utf-8") as fh:
+            json.dump(body, fh)
+    except OSError:
+        pass
     return body
 
 

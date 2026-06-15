@@ -18,6 +18,7 @@ def test_settings_artifact_path_default(monkeypatch, tmp_path):
     monkeypatch.setenv("AAVE_V3_SUBGRAPH_ID", "s")
     monkeypatch.setenv("ETHERSCAN_API_KEY", "e")
     monkeypatch.setenv("RPC_URL", "https://rpc.example.com")
+    monkeypatch.delenv("ARTIFACT_PATH", raising=False)
     s = Settings()
     assert s.artifact_path is None
 
