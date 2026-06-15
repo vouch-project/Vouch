@@ -247,18 +247,25 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(loan.requestedPrincipalToken == address(0), "Loan has ERC20 principal; use repayLoanWithERC20");
         require(msg.value > 0, "Payment must be > 0");
 
-        uint256 totalDue = loan.principalAmount + (loan.principalAmount * loan.interestRateBps) / 10000;
+        uint256 accrued = _accruedInterest(loan);
+        uint256 totalDue = loan.principalAmount + accrued;
         uint256 remaining = totalDue - loan.amountRepaid;
         require(msg.value <= remaining, "Payment exceeds amount owed");
 
         loan.amountRepaid += msg.value;
+
+        // Interest-first: interest paid so far = min(amountRepaid, accrued); the rest is principal.
+        uint256 interestPaid = loan.amountRepaid < accrued ? loan.amountRepaid : accrued;
+        uint256 newPrincipalRepaid = loan.amountRepaid - interestPaid;
+        uint256 principalDelta = newPrincipalRepaid - loan.principalRepaid;
+        loan.principalRepaid = newPrincipalRepaid;
+
         bool fullRepayment = loan.amountRepaid == totalDue;
 
-        // On the final payment return all remaining collateral to eliminate rounding dust;
-        // otherwise release proportionally.
+        // Collateral released proportional to principal repaid; final payment returns the dust.
         uint256 collateralToRelease = fullRepayment
             ? loan.collateralAmount - loan.collateralReleased
-            : (loan.collateralAmount * msg.value) / totalDue;
+            : (loan.collateralAmount * principalDelta) / loan.principalAmount;
 
         loan.collateralReleased += collateralToRelease;
 
@@ -268,11 +275,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             loan.collateralLocked = false;
         }
 
-        // State fully updated — now do external calls
         (bool lenderOk, ) = payable(loan.lender).call{value: msg.value}("");
         require(lenderOk, "ETH transfer to lender failed");
 
-        // Return collateral in its original form (ETH or ERC20).
         if (collateralToRelease > 0) {
             if (loan.collateralToken == address(0)) {
                 lockedEthCollateral[loan.borrower] -= collateralToRelease;
@@ -284,8 +289,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         }
 
         if (fullRepayment) {
-            uint256 interest = (loan.principalAmount * loan.interestRateBps) / 10000;
-            emit LoanRepaid(loanId, loan.borrower, loan.lender, loan.principalAmount, interest, totalDue, block.timestamp);
+            emit LoanRepaid(loanId, loan.borrower, loan.lender, loan.principalAmount, accrued, totalDue, block.timestamp);
         } else {
             emit LoanPartiallyRepaid(loanId, loan.borrower, msg.value, collateralToRelease, loan.amountRepaid, totalDue, block.timestamp);
         }
