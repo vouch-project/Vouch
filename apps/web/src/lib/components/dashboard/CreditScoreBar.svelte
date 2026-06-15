@@ -27,6 +27,7 @@
       <Badge class={cn('font-bold text-[10px]', risk.color)} variant="outline">{risk.label}</Badge>
       {#if hasDetails}
         <button
+          type="button"
           class="ml-1 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
           onclick={() => (expanded = !expanded)}
         >
@@ -42,7 +43,7 @@
           <div class="space-y-1.5">
             <p class="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Risk factors</p>
             <div class="flex flex-wrap gap-1.5">
-              {#each score.risk_factors as r}
+              {#each score.risk_factors as r (r)}
                 <Badge class="text-[10px] font-medium text-orange-700 border-orange-200 bg-orange-50 dark:text-orange-400 dark:border-orange-900 dark:bg-orange-950/40" variant="outline">{r}</Badge>
               {/each}
             </div>
@@ -52,7 +53,7 @@
           <div class="space-y-1.5">
             <p class="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Strengths</p>
             <div class="flex flex-wrap gap-1.5">
-              {#each score.strengths as s}
+              {#each score.strengths as s (s)}
                 <Badge class="text-[10px] font-medium text-green-700 border-green-200 bg-green-50 dark:text-green-400 dark:border-green-900 dark:bg-green-950/40" variant="outline">{s}</Badge>
               {/each}
             </div>
