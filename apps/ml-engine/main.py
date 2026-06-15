@@ -1,3 +1,4 @@
+# apps/ml-engine/main.py
 """Vouch Credit Scoring ML Engine."""
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -29,12 +30,14 @@ async def get_credit_score(address: str) -> CreditScoreResponse | JSONResponse:
             content={"detail": "Model not loaded — run training pipeline first."},
         )
 
-    result = scorer.score(address)
+    result = await scorer.score(address)
     return CreditScoreResponse(
         address=address,
         score=result.score,
         confidence=result.confidence,
-        factors=result.factors,
+        strengths=result.strengths,
+        risk_factors=result.risk_factors,
+        improvements=result.improvements,
         model_version=result.model_version,
         explanation=result.explanation,
     )

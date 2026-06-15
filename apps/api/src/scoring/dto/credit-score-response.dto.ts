@@ -3,7 +3,9 @@ export class CreditScoreResponseDto {
   score: number;
   confidence: number;
   modelVersion: string;
-  factors: string[];
+  strengths: string[];
+  riskFactors: string[];
+  improvements: string[];
   explanation: string | null;
   computedAt: string;
 }

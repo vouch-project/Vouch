@@ -18,7 +18,9 @@ interface MlEngineResponse {
   score: number;
   confidence: number;
   model_version: string;
-  factors: string[];
+  strengths: string[];
+  risk_factors: string[];
+  improvements: string[];
   explanation: string | null;
 }
 
@@ -57,12 +59,19 @@ export class ScoringService {
     const computedAt = new Date(data.computedAt as string).getTime();
     if (Date.now() - computedAt > SCORE_TTL_MS) return null;
 
+    const factors = data.factors as {
+      strengths: string[];
+      risk_factors: string[];
+      improvements: string[];
+    } | null;
     return {
       address: data.address as string,
       score: data.score as number,
       confidence: data.confidence as number,
       modelVersion: data.modelVersion as string,
-      factors: data.factors as string[],
+      strengths: factors?.strengths ?? [],
+      riskFactors: factors?.risk_factors ?? [],
+      improvements: factors?.improvements ?? [],
       explanation: data.explanation,
       computedAt: data.computedAt as string,
     };
@@ -95,7 +104,11 @@ export class ScoringService {
         score: mlData.score,
         confidence: mlData.confidence,
         modelVersion: mlData.model_version,
-        factors: mlData.factors,
+        factors: {
+          strengths: mlData.strengths,
+          risk_factors: mlData.risk_factors,
+          improvements: mlData.improvements,
+        },
         explanation: mlData.explanation,
         computedAt,
       });
@@ -109,7 +122,9 @@ export class ScoringService {
       score: mlData.score,
       confidence: mlData.confidence,
       modelVersion: mlData.model_version,
-      factors: mlData.factors,
+      strengths: mlData.strengths,
+      riskFactors: mlData.risk_factors,
+      improvements: mlData.improvements,
       explanation: mlData.explanation,
       computedAt,
     };

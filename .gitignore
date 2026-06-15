@@ -1,4 +1,9 @@
 # ========================
+# Superpowers brainstorming sessions
+# ========================
+.superpowers/
+
+# ========================
 # Node.js / pnpm / Turborepo
 # ========================
 node_modules/

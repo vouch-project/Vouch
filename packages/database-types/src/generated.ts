@@ -311,37 +311,70 @@ export type Database = {
       }
       training_dataset: {
         Row: {
+          aaveBorrowsCount: number | null
+          aaveDaysSinceLastBorrow: number | null
+          aaveRepayRatio: number | null
+          aaveTotalBorrowedUsd: number | null
+          address: string
+          chainId: number
           createdAt: string
-          dataSource: string
-          historicalLiquidationCount: number
+          ethBalance: number | null
+          featureSetVersion: string
+          historicalLiquidationCount: number | null
           id: string
-          totalTransactions: number
-          uniqueProtocolsUsed: number
-          walletAddress: string
-          walletAgeDays: number
-          wasLiquidated: boolean
+          labelIsRisky: boolean
+          labelSource: string
+          rawFeatures: Json
+          snapshotAt: string
+          stablecoinBalanceUsd: number | null
+          totalTransactions: number | null
+          uniqueProtocolsInteracted: number | null
+          updatedAt: string
+          walletAgeDays: number | null
         }
         Insert: {
+          aaveBorrowsCount?: number | null
+          aaveDaysSinceLastBorrow?: number | null
+          aaveRepayRatio?: number | null
+          aaveTotalBorrowedUsd?: number | null
+          address: string
+          chainId: number
           createdAt?: string
-          dataSource: string
-          historicalLiquidationCount?: number
+          ethBalance?: number | null
+          featureSetVersion?: string
+          historicalLiquidationCount?: number | null
           id?: string
-          totalTransactions: number
-          uniqueProtocolsUsed?: number
-          walletAddress: string
-          walletAgeDays: number
-          wasLiquidated: boolean
+          labelIsRisky: boolean
+          labelSource: string
+          rawFeatures?: Json
+          snapshotAt: string
+          stablecoinBalanceUsd?: number | null
+          totalTransactions?: number | null
+          uniqueProtocolsInteracted?: number | null
+          updatedAt?: string
+          walletAgeDays?: number | null
         }
         Update: {
+          aaveBorrowsCount?: number | null
+          aaveDaysSinceLastBorrow?: number | null
+          aaveRepayRatio?: number | null
+          aaveTotalBorrowedUsd?: number | null
+          address?: string
+          chainId?: number
           createdAt?: string
-          dataSource?: string
-          historicalLiquidationCount?: number
+          ethBalance?: number | null
+          featureSetVersion?: string
+          historicalLiquidationCount?: number | null
           id?: string
-          totalTransactions?: number
-          uniqueProtocolsUsed?: number
-          walletAddress?: string
-          walletAgeDays?: number
-          wasLiquidated?: boolean
+          labelIsRisky?: boolean
+          labelSource?: string
+          rawFeatures?: Json
+          snapshotAt?: string
+          stablecoinBalanceUsd?: number | null
+          totalTransactions?: number | null
+          uniqueProtocolsInteracted?: number | null
+          updatedAt?: string
+          walletAgeDays?: number | null
         }
         Relationships: []
       }
@@ -513,34 +546,34 @@ export type Database = {
       }
       record_partial_repayment: {
         Args: {
-          p_network_id: string
-          p_contract_address: unknown
-          p_on_chain_loan_id: unknown
+          p_block_hash: string
+          p_block_number: unknown
           p_borrower_address: unknown
+          p_contract_address: unknown
+          p_log_index: unknown
+          p_network_id: string
+          p_on_chain_loan_id: unknown
+          p_paid_at: string
           p_payment_amount: string
           p_tx_hash: string
-          p_block_number: unknown
-          p_block_hash: string
-          p_log_index: unknown
-          p_paid_at: string
         }
         Returns: undefined
       }
       repay_loan_with_transaction: {
         Args: {
-          p_network_id: string
-          p_contract_address: unknown
-          p_on_chain_loan_id: unknown
+          p_block_hash: string
+          p_block_number: unknown
           p_borrower_address: unknown
-          p_lender_address: unknown
-          p_principal_amount: string
+          p_contract_address: unknown
           p_interest_amount: string
+          p_lender_address: unknown
+          p_log_index: unknown
+          p_network_id: string
+          p_on_chain_loan_id: unknown
+          p_principal_amount: string
+          p_repaid_at: string
           p_total_repaid: string
           p_tx_hash: string
-          p_block_number: unknown
-          p_block_hash: string
-          p_log_index: unknown
-          p_repaid_at: string
         }
         Returns: undefined
       }
