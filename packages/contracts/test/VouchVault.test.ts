@@ -615,6 +615,72 @@ describe('VouchVault', function () {
         const loan = await vault.getLoan(0);
         expect(loan[4]).to.equal(false);
       });
+
+      it('releases collateral strictly by principal across the interest->principal boundary', async function () {
+        const [owner, borrower, lender] = await ethers.getSigners();
+        const VouchVault = await ethers.getContractFactory('VouchVault');
+        const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+
+        const principal = ethers.parseEther('1.0');
+        const collateral = ethers.parseEther('5.0');
+        const interestRateBps = 3650n; // 36.5% APR
+        const durationDays = 30n;
+        const elapsedDays = 10n;
+
+        await vault
+          .connect(borrower)
+          .createLoan(ethers.ZeroAddress, principal, Number(interestRateBps), durationDays * 86400n, 7n * 86400n, {
+            value: collateral,
+          });
+        await vault.connect(lender).fundLoan(0, { value: principal });
+
+        // Advance exactly 10 whole days (well inside the 30-day cap) and repay immediately.
+        await ethers.provider.send('evm_increaseTime', [Number(elapsedDays) * 86400]);
+        await ethers.provider.send('evm_mine', []);
+
+        // accrued = principal * rateBps * elapsedDays / (10000 * 365)
+        const accrued = (principal * interestRateBps * elapsedDays) / (10000n * 365n);
+
+        // Self-check: getRepaymentDetails reports totalDue == principal + accrued.
+        const rd = await vault.getRepaymentDetails(0);
+        expect(rd[3]).to.equal(principal + accrued);
+
+        // Payment 1: strictly LESS than accrued interest -> all interest, zero principal, zero collateral.
+        const payment1 = accrued / 5n; // < accrued
+        expect(payment1).to.be.lessThan(accrued);
+        await vault.connect(borrower).repayLoan(0, { value: payment1 });
+
+        let loan = await vault.loans(0);
+        expect(loan.amountRepaid).to.equal(payment1);
+        // interestPaid = min(amountRepaid, accrued) = payment1; principalRepaid = 0.
+        expect(loan.principalRepaid).to.equal(0n);
+        expect(loan.collateralReleased).to.equal(0n);
+        expect(loan.repaid).to.equal(false);
+
+        // Payment 2: CROSSES the boundary. amountRepaid = payment1 + payment2 > accrued.
+        // Sized so it pays the remaining interest AND reduces some principal.
+        const payment2 = (accrued - payment1) + accrued; // remaining interest + an equal principal slice
+        const amountRepaidAfter = payment1 + payment2;
+
+        // Expected interest-first split after payment 2.
+        const interestPaid = amountRepaidAfter < accrued ? amountRepaidAfter : accrued; // == accrued
+        const newPrincipalRepaid = amountRepaidAfter - interestPaid;
+        const principalDelta = newPrincipalRepaid - 0n; // previous principalRepaid was 0
+
+        // The boundary-crossing property: principal moved is strictly less than the cash paid.
+        expect(principalDelta).to.be.lessThan(payment2);
+
+        // Collateral released this payment is proportional to PRINCIPAL repaid, not cash paid.
+        const expectedCollateralReleased = (collateral * principalDelta) / principal;
+
+        await vault.connect(borrower).repayLoan(0, { value: payment2 });
+
+        loan = await vault.loans(0);
+        expect(loan.amountRepaid).to.equal(amountRepaidAfter);
+        expect(loan.principalRepaid).to.equal(newPrincipalRepaid);
+        expect(loan.collateralReleased).to.equal(expectedCollateralReleased);
+        expect(loan.repaid).to.equal(false);
+      });
     });
   });
 
