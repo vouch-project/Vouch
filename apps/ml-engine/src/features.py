@@ -267,7 +267,11 @@ async def fetch_features(address: str) -> dict[str, float | int | None]:
         if isinstance(tx_list, list) and tx_list:
             first_ts = int(tx_list[0]["timeStamp"])
             wallet_age_days = max(0, (int(time.time()) - first_ts) // 86400)
-            contracts = {(t.get("to") or "").lower() for t in tx_list if t.get("to")}
+            contracts = {
+                (t.get("to") or "").lower()
+                for t in tx_list
+                if t.get("to") and t.get("input", "0x") not in ("0x", "")
+            }
             contracts.discard("")
             unique_contracts = len(contracts)
 
