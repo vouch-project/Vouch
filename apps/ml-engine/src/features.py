@@ -106,7 +106,10 @@ async def _etherscan_call(
             with gzip.open(cache_file, "rt", encoding="utf-8") as fh:
                 return json.load(fh)  # type: ignore[no-any-return]
         except (json.JSONDecodeError, OSError):
-            cache_file.unlink(missing_ok=True)
+            try:
+                cache_file.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     await limiter.acquire()
     full_params = {
@@ -240,10 +243,20 @@ async def _fetch_aave_stats(
     return total_count, total_usd, _compute_repay_ratio(repay_count, total_count), last_borrow_ts
 
 
+_etherscan_limiter: _RateLimiter | None = None
+
+
+def _get_limiter() -> _RateLimiter:
+    global _etherscan_limiter
+    if _etherscan_limiter is None:
+        _etherscan_limiter = _RateLimiter(get_settings().etherscan_rps)
+    return _etherscan_limiter
+
+
 async def fetch_features(address: str) -> dict[str, float | int | None]:
     """Return the 9-feature dict in FEATURE_COLUMNS order."""
     settings = get_settings()
-    limiter = _RateLimiter(settings.etherscan_rps)
+    limiter = _get_limiter()
 
     async with httpx.AsyncClient() as client:
         tx_resp = await _etherscan_call(

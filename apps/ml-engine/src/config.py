@@ -15,7 +15,6 @@ class Settings(BaseSettings):
     rpc_url: str
     target_chain_id: int = 1
     etherscan_base_url: str = "https://api.etherscan.io/v2/api"
-    http_concurrency: int = 4
     etherscan_rps: float = 2.5
 
     # Path to a specific artifact dir. If None, the scorer auto-selects the latest.

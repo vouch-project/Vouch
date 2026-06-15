@@ -4,7 +4,7 @@ export type CreditScore = {
   score: number;
   confidence: number;
   strengths: string[];
-  risk_factors: string[];
+  riskFactors: string[];
   improvements: string[];
   explanation: string | null;
 };

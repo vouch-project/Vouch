@@ -13,7 +13,7 @@
 
   let expanded = $state(false);
   const hasDetails = $derived(
-    !!score && (score.risk_factors.length > 0 || score.strengths.length > 0 || !!score.explanation)
+    !!score && (score.riskFactors.length > 0 || score.strengths.length > 0 || !!score.explanation)
   );
 </script>
 
@@ -28,6 +28,8 @@
       {#if hasDetails}
         <button
           type="button"
+          aria-expanded={expanded}
+          aria-controls="credit-score-details"
           class="ml-1 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
           onclick={() => (expanded = !expanded)}
         >
@@ -38,12 +40,12 @@
     </div>
 
     {#if expanded}
-      <div class="pl-8 space-y-3">
-        {#if score.risk_factors.length > 0}
+      <div id="credit-score-details" class="pl-8 space-y-3">
+        {#if score.riskFactors.length > 0}
           <div class="space-y-1.5">
             <p class="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Risk factors</p>
             <div class="flex flex-wrap gap-1.5">
-              {#each score.risk_factors as r (r)}
+              {#each score.riskFactors as r (r)}
                 <Badge class="text-[10px] font-medium text-orange-700 border-orange-200 bg-orange-50 dark:text-orange-400 dark:border-orange-900 dark:bg-orange-950/40" variant="outline">{r}</Badge>
               {/each}
             </div>

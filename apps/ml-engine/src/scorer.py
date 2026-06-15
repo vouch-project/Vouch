@@ -59,9 +59,10 @@ class ScoringResult:
 def _compute_credit_score(
     risk_probability: float, wallet_age_days: int | None
 ) -> tuple[int, float]:
-    age = wallet_age_days or 0
+    age = max(0, wallet_age_days or 0)
+    risk = max(0.0, min(1.0, risk_probability))
     confidence_weight = min(1.0, age / 365.0)
-    additive = (1.0 - risk_probability) * MAX_ADDITIVE
+    additive = (1.0 - risk) * MAX_ADDITIVE
     return BASE_SCORE + round(additive * confidence_weight), confidence_weight
 
 
