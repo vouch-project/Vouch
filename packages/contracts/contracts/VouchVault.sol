@@ -119,15 +119,18 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @param principalAmount  The amount the borrower wants to receive
     /// @param interestRateBps  Simple interest rate in basis points (e.g. 500 = 5%); 0 = interest-free
     /// @param durationSeconds  Loan term in seconds; 0 = no deadline
+    /// @param fundWindowSeconds Seconds from creation during which the loan may be funded (must be > 0)
     function createLoan(
         address principalToken,
         uint256 principalAmount,
         uint16 interestRateBps,
-        uint256 durationSeconds
+        uint256 durationSeconds,
+        uint256 fundWindowSeconds
     ) external payable {
         require(msg.value > 0, "Collateral must be > 0");
         require(principalAmount > 0, "Principal amount must be > 0");
         require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
+        require(fundWindowSeconds > 0, "Fund window must be > 0");
 
         // Collateral is tracked separately from withdrawable deposits.
         lockedEthCollateral[msg.sender] += msg.value;
@@ -149,7 +152,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             durationSeconds: durationSeconds,
             repaid: false,
             amountRepaid: 0,
-            collateralReleased: 0
+            collateralReleased: 0,
+            fundDeadline: block.timestamp + fundWindowSeconds,
+            principalRepaid: 0
         });
 
         emit LoanCreated(nextLoanId, msg.sender, address(0), msg.value, principalToken, principalAmount, block.timestamp);
@@ -163,18 +168,21 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @param principalAmount  The amount the borrower wants to receive
     /// @param interestRateBps  Simple interest rate in basis points (e.g. 500 = 5%); 0 = interest-free
     /// @param durationSeconds  Loan term in seconds; 0 = no deadline
+    /// @param fundWindowSeconds Seconds from creation during which the loan may be funded (must be > 0)
     function createLoanWithERC20(
         address token,
         uint256 amount,
         address principalToken,
         uint256 principalAmount,
         uint16 interestRateBps,
-        uint256 durationSeconds
+        uint256 durationSeconds,
+        uint256 fundWindowSeconds
     ) external {
         require(amount > 0, "Collateral must be > 0");
         require(token != address(0), "Invalid token address");
         require(principalAmount > 0, "Principal amount must be > 0");
         require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
+        require(fundWindowSeconds > 0, "Fund window must be > 0");
 
         // Transfer tokens from user to this vault (SafeERC20 handles non-compliant tokens)
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
@@ -196,7 +204,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             durationSeconds: durationSeconds,
             repaid: false,
             amountRepaid: 0,
-            collateralReleased: 0
+            collateralReleased: 0,
+            fundDeadline: block.timestamp + fundWindowSeconds,
+            principalRepaid: 0
         });
 
         emit LoanCreated(nextLoanId, msg.sender, token, amount, principalToken, principalAmount, block.timestamp);
