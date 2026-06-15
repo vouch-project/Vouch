@@ -53,7 +53,7 @@ export const baseLtv = (
  * Credit-score multiplier applied on top of the base LTV.
  * Full FICO range 300–850 is used:
  *   score 300 → 0.50× (halves base LTV)
- *   score 580 → 0.75× (min threshold)
+ *   score 580 → 0.80× (FICO "Fair" floor)
  *   score 770 → 1.00× (neutral)
  *   score 850 → 1.10× (boosts LTV by 10%)
  *
