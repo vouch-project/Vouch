@@ -124,6 +124,7 @@ if aave_days_since_last_borrow is not None and aave_days_since_last_borrow > 180
     improvements.append("Recent borrowing activity signals active protocol engagement")
 elif aave_days_since_last_borrow is not None and aave_days_since_last_borrow > 60:
     risk_factors.append("No recent DeFi borrowing activity (60+ days)")
+    improvements.append("Recent borrowing activity signals active protocol engagement")
 
 # Balance
 if eth_balance is not None and eth_balance < 0.05:

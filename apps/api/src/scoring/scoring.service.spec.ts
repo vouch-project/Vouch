@@ -15,7 +15,7 @@ const MOCK_ML_RESPONSE = {
   confidence: 0.87,
   model_version: 'v1',
   strengths: ['Long wallet history (1+ year)'],
-  riskFactors: ['No DeFi borrowing history'],
+  risk_factors: ['No DeFi borrowing history'],
   improvements: ['Establishing a DeFi borrowing and repayment history will improve your score'],
   explanation: null,
 };
@@ -100,7 +100,7 @@ describe('ScoringService', () => {
       score: 600,
       confidence: 0.75,
       modelVersion: 'v1',
-      factors: { strengths: [], riskFactors: [], improvements: [] },
+      factors: { strengths: [], risk_factors: [], improvements: [] },
       explanation: null,
       computedAt: new Date().toISOString(),
     };
@@ -128,7 +128,7 @@ describe('ScoringService', () => {
       score: 100,
       confidence: 0.5,
       modelVersion: 'v1',
-      factors: { strengths: [], riskFactors: [], improvements: [] },
+      factors: { strengths: [], risk_factors: [], improvements: [] },
       explanation: null,
       computedAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
     };
