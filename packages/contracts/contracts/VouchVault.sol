@@ -28,11 +28,14 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         address requestedPrincipalToken;  // token borrower wants to receive
         uint256 requestedPrincipalAmount; // amount borrower wants to receive
         // V4 additions — appended to preserve storage layout
-        uint16 interestRateBps;      // simple interest rate in basis points (e.g. 500 = 5%)
-        uint256 durationSeconds;     // loan term in seconds (0 = no deadline)
+        uint16 interestRateBps;      // ANNUAL interest rate in basis points (e.g. 500 = 5% APR)
+        uint256 durationSeconds;     // loan term in seconds (0 = no deadline / no time-based interest)
         bool repaid;                 // true once the loan has been fully repaid
         uint256 amountRepaid;        // cumulative debt repaid so far (principal token units)
         uint256 collateralReleased;  // cumulative collateral already returned to borrower
+        // V5 additions — appended to preserve storage layout
+        uint256 fundDeadline;        // absolute timestamp after which the loan can no longer be funded
+        uint256 principalRepaid;     // cumulative principal repaid (interest-first amortization)
     }
 
     // --- State Variables ---
