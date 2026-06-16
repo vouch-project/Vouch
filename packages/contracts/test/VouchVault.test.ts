@@ -1211,4 +1211,78 @@ describe('VouchVault', function () {
       expect(details[3]).to.equal(principal + cappedInterest);
     });
   });
+
+  describe('cancelLoan', function () {
+    async function deployUnfunded() {
+      const [owner, borrower, lender] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      const collateral = ethers.parseEther('2.0');
+      const principal = ethers.parseEther('1.0');
+      await vault
+        .connect(borrower)
+        .createLoan(ethers.ZeroAddress, principal, 500, 86400, 7n * 86400n, { value: collateral });
+      return { vault, owner, borrower, lender, collateral, principal };
+    }
+
+    it('lets the borrower cancel an unfunded loan and returns ETH collateral', async function () {
+      const { vault, borrower, collateral } = await deployUnfunded();
+      const before = await ethers.provider.getBalance(borrower.address);
+      const tx = await vault.connect(borrower).cancelLoan(0);
+      const receipt = await tx.wait();
+      const gas = receipt!.gasUsed * receipt!.gasPrice;
+      const after = await ethers.provider.getBalance(borrower.address);
+      expect(after).to.equal(before + collateral - gas);
+
+      const loan = await vault.loans(0);
+      expect(loan.active).to.equal(false);
+      expect(loan.collateralLocked).to.equal(false);
+      expect(await vault.lockedBalanceOf(borrower.address)).to.equal(0);
+    });
+
+    it('emits LoanCancelled', async function () {
+      const { vault, borrower } = await deployUnfunded();
+      await expect(vault.connect(borrower).cancelLoan(0))
+        .to.emit(vault, 'LoanCancelled')
+        .withArgs(0, borrower.address, (t: bigint) => t > 0n);
+    });
+
+    it('reverts if a non-borrower tries to cancel', async function () {
+      const { vault, lender } = await deployUnfunded();
+      await expect(vault.connect(lender).cancelLoan(0)).to.be.revertedWith('Only borrower can cancel');
+    });
+
+    it('reverts if the loan is already funded', async function () {
+      const { vault, borrower, lender, principal } = await deployUnfunded();
+      await vault.connect(lender).fundLoan(0, { value: principal });
+      await expect(vault.connect(borrower).cancelLoan(0)).to.be.revertedWith('Cannot cancel a funded loan');
+    });
+
+    it('returns ERC20 collateral when the borrower cancels', async function () {
+      const [owner, borrower] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const MockERC20 = await ethers.getContractFactory('MockERC20');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+
+      const totalSupply = ethers.parseUnits('1000', 18);
+      const collateral = ethers.parseUnits('50', 18);
+      const principal = ethers.parseUnits('100', 18);
+      const token = await MockERC20.deploy('Mock', 'MOCK', 18, totalSupply);
+
+      await token.transfer(borrower.address, collateral);
+      await token.connect(borrower).approve(await vault.getAddress(), collateral);
+      await vault
+        .connect(borrower)
+        .createLoanWithERC20(await token.getAddress(), collateral, ethers.ZeroAddress, principal, 500, 86400, 7n * 86400n);
+
+      const before = await token.balanceOf(borrower.address);
+      await vault.connect(borrower).cancelLoan(0);
+      const after = await token.balanceOf(borrower.address);
+
+      expect(after - before).to.equal(collateral);
+      const loan = await vault.loans(0);
+      expect(loan.active).to.equal(false);
+      expect(loan.collateralLocked).to.equal(false);
+    });
+  });
 });

@@ -86,6 +86,12 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 timestamp
     );
 
+    event LoanCancelled(
+        uint256 indexed loanId,
+        address indexed borrower,
+        uint256 timestamp
+    );
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         // Prevents the implementation contract from being initialized directly
@@ -211,6 +217,33 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         emit LoanCreated(nextLoanId, msg.sender, token, amount, principalToken, principalAmount, block.timestamp);
         nextLoanId++;
+    }
+
+    /// @notice Cancel an unfunded loan and return locked collateral to the borrower.
+    /// @dev Callable any time before the loan is funded. Returns collateral in its original form.
+    function cancelLoan(uint256 loanId) external {
+        Loan storage loan = loans[loanId];
+        require(loan.active, "Loan is not active");
+        require(msg.sender == loan.borrower, "Only borrower can cancel");
+        require(!loan.funded, "Cannot cancel a funded loan");
+
+        uint256 amount = loan.collateralAmount - loan.collateralReleased;
+
+        loan.active = false;
+        loan.collateralLocked = false;
+        loan.collateralReleased = loan.collateralAmount;
+
+        if (amount > 0) {
+            if (loan.collateralToken == address(0)) {
+                lockedEthCollateral[loan.borrower] -= amount;
+                (bool ok, ) = payable(loan.borrower).call{value: amount}("");
+                require(ok, "ETH collateral return failed");
+            } else {
+                IERC20(loan.collateralToken).safeTransfer(loan.borrower, amount);
+            }
+        }
+
+        emit LoanCancelled(loanId, loan.borrower, block.timestamp);
     }
 
     function withdraw(uint256 amount) external {
