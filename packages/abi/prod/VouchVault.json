@@ -144,6 +144,31 @@
       },
       {
         "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "name": "LoanCancelled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      },
+      {
+        "indexed": false,
         "internalType": "address",
         "name": "collateralToken",
         "type": "address"
@@ -397,6 +422,19 @@
   {
     "inputs": [
       {
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      }
+    ],
+    "name": "cancelLoan",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "address",
         "name": "principalToken",
         "type": "address"
@@ -414,6 +452,11 @@
       {
         "internalType": "uint256",
         "name": "durationSeconds",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "fundWindowSeconds",
         "type": "uint256"
       }
     ],
@@ -452,6 +495,11 @@
       {
         "internalType": "uint256",
         "name": "durationSeconds",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "fundWindowSeconds",
         "type": "uint256"
       }
     ],
@@ -663,6 +711,11 @@
         "internalType": "uint256",
         "name": "remaining",
         "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "fundDeadline",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -793,6 +846,16 @@
       {
         "internalType": "uint256",
         "name": "collateralReleased",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "fundDeadline",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "principalRepaid",
         "type": "uint256"
       }
     ],
