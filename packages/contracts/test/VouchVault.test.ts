@@ -237,6 +237,20 @@ describe('VouchVault', function () {
       );
     });
 
+    it('reverts when funding after the fund window has passed', async function () {
+      const [owner, borrower, lender] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      const collateral = ethers.parseEther('2.0');
+      const principal = ethers.parseEther('1.0');
+      await vault
+        .connect(borrower)
+        .createLoan(ethers.ZeroAddress, principal, 500, 86400, 3n * 86400n, { value: collateral }); // 3-day window
+      await ethers.provider.send('evm_increaseTime', [4 * 86400]); // past the window
+      await ethers.provider.send('evm_mine', []);
+      await expect(vault.connect(lender).fundLoan(0, { value: principal })).to.be.revertedWith('Funding window passed');
+    });
+
     it('Should not affect collateral tracking when funded', async function () {
       const { vault, borrower, lender, collateral } = await deployWithLoan();
       const principal = ethers.parseEther('1.0');
@@ -300,6 +314,33 @@ describe('VouchVault', function () {
       await expect(
         vault.connect(lender).fundLoanWithERC20(0, await token.getAddress(), principalAmount),
       ).to.be.revertedWith('Loan requires native ETH principal; use fundLoan');
+    });
+
+    it('reverts when funding after the fund window has passed', async function () {
+      const [owner, borrower, lender] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const MockERC20 = await ethers.getContractFactory('MockERC20');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+
+      const totalSupply = ethers.parseUnits('1000', 18);
+      const token = await MockERC20.deploy('Mock', 'MOCK', 18, totalSupply);
+
+      const collateral = ethers.parseEther('0.5');
+      const principalAmount = ethers.parseUnits('100', 18);
+
+      await vault
+        .connect(borrower)
+        .createLoan(await token.getAddress(), principalAmount, 0, 0, 3n * 86400n, { value: collateral }); // 3-day window
+
+      await token.transfer(lender.address, principalAmount);
+      await token.connect(lender).approve(await vault.getAddress(), principalAmount);
+
+      await ethers.provider.send('evm_increaseTime', [4 * 86400]); // past the window
+      await ethers.provider.send('evm_mine', []);
+
+      await expect(
+        vault.connect(lender).fundLoanWithERC20(0, await token.getAddress(), principalAmount),
+      ).to.be.revertedWith('Funding window passed');
     });
   });
 

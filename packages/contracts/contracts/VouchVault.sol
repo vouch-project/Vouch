@@ -419,6 +419,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(loan.active, "Loan is not active");
         require(!loan.funded, "Loan already funded");
         require(msg.sender != loan.borrower, "Borrower cannot fund own loan");
+        require(block.timestamp <= loan.fundDeadline, "Funding window passed");
         require(loan.requestedPrincipalToken == address(0), "Token does not match requested principal token");
         require(msg.value == loan.requestedPrincipalAmount, "msg.value must equal requested principal amount");
 
@@ -443,6 +444,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(loan.active, "Loan is not active");
         require(!loan.funded, "Loan already funded");
         require(msg.sender != loan.borrower, "Borrower cannot fund own loan");
+        require(block.timestamp <= loan.fundDeadline, "Funding window passed");
         require(loan.requestedPrincipalToken != address(0), "Loan requires native ETH principal; use fundLoan");
         require(amount > 0, "Funding amount must be > 0");
         require(token == loan.requestedPrincipalToken, "Token does not match requested principal token");
