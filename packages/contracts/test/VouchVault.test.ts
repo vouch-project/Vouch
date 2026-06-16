@@ -681,6 +681,57 @@ describe('VouchVault', function () {
         expect(loan.collateralReleased).to.equal(expectedCollateralReleased);
         expect(loan.repaid).to.equal(false);
       });
+
+      it('does not revert when interest accrues further between an early principal payment and a later small payment', async function () {
+        // Regression: previously the cumulative split recomputed principalRepaid from the
+        // current (growing) accrued, so a small later payment could make the new principal
+        // figure drop below the stored one and underflow principalDelta, reverting the borrower's
+        // payment. principalRepaid must be monotonic.
+        const [owner, borrower, lender] = await ethers.getSigners();
+        const VouchVault = await ethers.getContractFactory('VouchVault');
+        const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+
+        const principal = ethers.parseEther('1.0');
+        const collateral = ethers.parseEther('5.0');
+        const interestRateBps = 3650n; // 36.5% APR
+
+        await vault
+          .connect(borrower)
+          .createLoan(ethers.ZeroAddress, principal, Number(interestRateBps), 60n * 86400n, 7n * 86400n, {
+            value: collateral,
+          });
+        await vault.connect(lender).fundLoan(0, { value: principal });
+
+        // Day 5: accrued5 = principal * 3650 * 5 / (10000*365) = 0.005 ETH.
+        await ethers.provider.send('evm_increaseTime', [5 * 86400]);
+        await ethers.provider.send('evm_mine', []);
+        const accrued5 = (principal * interestRateBps * 5n) / (10000n * 365n);
+
+        // Pay slightly more than the accrued interest so some principal is credited.
+        const payment1 = accrued5 + ethers.parseEther('0.001');
+        await vault.connect(borrower).repayLoan(0, { value: payment1 });
+
+        let loan = await vault.loans(0);
+        const principalRepaidAfter1 = payment1 - accrued5; // 0.001 ETH credited to principal
+        expect(loan.principalRepaid).to.equal(principalRepaidAfter1);
+        const collateralAfter1 = (collateral * principalRepaidAfter1) / principal;
+        expect(loan.collateralReleased).to.equal(collateralAfter1);
+
+        // Day 20: accrued grows to 0.02 ETH (>> interest already paid). A tiny payment that is
+        // entirely interest must NOT revert and must NOT reduce principalRepaid.
+        await ethers.provider.send('evm_increaseTime', [15 * 86400]);
+        await ethers.provider.send('evm_mine', []);
+
+        const payment2 = ethers.parseEther('0.0005');
+        await expect(vault.connect(borrower).repayLoan(0, { value: payment2 })).to.not.be.reverted;
+
+        loan = await vault.loans(0);
+        // principalRepaid unchanged (payment2 was all interest), collateralReleased unchanged.
+        expect(loan.principalRepaid).to.equal(principalRepaidAfter1);
+        expect(loan.collateralReleased).to.equal(collateralAfter1);
+        expect(loan.amountRepaid).to.equal(payment1 + payment2);
+        expect(loan.repaid).to.equal(false);
+      });
     });
   });
 

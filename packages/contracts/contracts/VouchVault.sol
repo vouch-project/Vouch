@@ -228,14 +228,20 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /**
      * @notice Repay some or all of a funded ETH-principal loan.
      * @dev    Accepts any msg.value between 1 wei and the remaining balance (totalDue - amountRepaid).
-     *         Each payment proportionally releases collateral: floor(collateralAmount * payment / totalDue).
-     *         On the final payment, any dust left from rounding is also returned so all collateral
-     *         is eventually recovered.
+     *         Interest accrues as per-day simple interest on the principal: the annual rate
+     *         (`interestRateBps`) is applied over the elapsed time floored to whole days and
+     *         capped at `durationSeconds` (see `_accruedInterest`). `totalDue` = principal +
+     *         accrued interest right now, so it grows over time until the duration cap is reached.
      *
-     *         Interest is a fixed flat amount agreed at creation: totalDue =
-     *         principal + principal * interestRateBps / 10000. It does NOT accrue
-     *         over time — `durationSeconds` is informational (display / off-chain
-     *         deadline & liquidation signals) and is intentionally not used here.
+     *         Amortization is interest-first: each payment first covers the interest that has
+     *         accrued since the last payment, and only the remainder reduces principal. As a
+     *         result `principalRepaid` is monotonic (never decreases) even though `accrued`
+     *         keeps growing between payments.
+     *
+     *         Collateral is released proportional to principal repaid:
+     *         floor(collateralAmount * principalDelta / principalAmount). On the final payment
+     *         (amountRepaid == totalDue) any rounding dust is also returned so all collateral is
+     *         recovered.
      * @param loanId The ID of the loan to repay.
      */
     function repayLoan(uint256 loanId) external payable {
@@ -252,13 +258,22 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 remaining = totalDue - loan.amountRepaid;
         require(msg.value <= remaining, "Payment exceeds amount owed");
 
-        loan.amountRepaid += msg.value;
+        // Interest-first amortization with a monotonic principalRepaid.
+        // Interest already paid in prior payments == amountRepaid - principalRepaid.
+        // Interest still outstanding now == accrued - interestAlreadyPaid (>= 0 because accrued only grows
+        // and is capped at duration; principalRepaid never exceeds principal).
+        uint256 interestAlreadyPaid = loan.amountRepaid - loan.principalRepaid;
+        uint256 interestOutstanding = accrued > interestAlreadyPaid ? accrued - interestAlreadyPaid : 0;
 
-        // Interest-first: interest paid so far = min(amountRepaid, accrued); the rest is principal.
-        uint256 interestPaid = loan.amountRepaid < accrued ? loan.amountRepaid : accrued;
-        uint256 newPrincipalRepaid = loan.amountRepaid - interestPaid;
-        uint256 principalDelta = newPrincipalRepaid - loan.principalRepaid;
-        loan.principalRepaid = newPrincipalRepaid;
+        uint256 principalDelta;
+        if (msg.value > interestOutstanding) {
+            principalDelta = msg.value - interestOutstanding;
+        } else {
+            principalDelta = 0;
+        }
+
+        loan.amountRepaid += msg.value;
+        loan.principalRepaid += principalDelta;
 
         bool fullRepayment = loan.amountRepaid == totalDue;
 
