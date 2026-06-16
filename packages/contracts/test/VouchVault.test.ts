@@ -745,14 +745,26 @@ describe('VouchVault', function () {
       const token = await MockERC20.deploy('Mock', 'MOCK', 18, ethers.parseUnits('10000', 18));
       const collateral = ethers.parseEther('1.0');
       const principalAmount = ethers.parseUnits('100', 18);
+      // Interest is now per-day simple interest capped at durationSeconds. Use a 30-day duration
+      // so a single fixed amount of interest accrues once the cap is reached (see below).
+      const durationSeconds = 30n * 86400n;
 
-      await vault.connect(borrower).createLoan(await token.getAddress(), principalAmount, interestRateBps, 86400, 7n * 86400n, { value: collateral });
+      await vault
+        .connect(borrower)
+        .createLoan(await token.getAddress(), principalAmount, interestRateBps, durationSeconds, 7n * 86400n, {
+          value: collateral,
+        });
 
       await token.transfer(lender.address, principalAmount);
       await token.connect(lender).approve(await vault.getAddress(), principalAmount);
       await vault.connect(lender).fundLoanWithERC20(0, await token.getAddress(), principalAmount);
 
-      const interest = (principalAmount * BigInt(interestRateBps)) / 10000n;
+      // Advance past the duration so accrued interest reaches its cap and is fixed thereafter.
+      await ethers.provider.send('evm_increaseTime', [Number(durationSeconds) + 86400]);
+      await ethers.provider.send('evm_mine', []);
+
+      // Per-day simple interest, floored to whole days and capped at durationSeconds (30 days).
+      const interest = (principalAmount * BigInt(interestRateBps) * 30n) / (10000n * 365n);
       const totalDue = principalAmount + interest;
 
       // Give borrower enough to cover interest (they already received the principal)
@@ -797,8 +809,7 @@ describe('VouchVault', function () {
       const collateral = ethers.parseUnits('200', 18);
       const principalAmount = ethers.parseUnits('100', 18);
       const interestRateBps = 500;
-      const interest = (principalAmount * BigInt(interestRateBps)) / 10000n;
-      const totalDue = principalAmount + interest;
+      const durationSeconds = 30n * 86400n;
 
       await collateralToken.transfer(borrower.address, collateral);
       await collateralToken.connect(borrower).approve(await vault.getAddress(), collateral);
@@ -810,13 +821,19 @@ describe('VouchVault', function () {
           await principalToken.getAddress(),
           principalAmount,
           interestRateBps,
-          0,
+          durationSeconds,
           7n * 86400n,
         );
 
       await principalToken.transfer(lender.address, principalAmount);
       await principalToken.connect(lender).approve(await vault.getAddress(), principalAmount);
       await vault.connect(lender).fundLoanWithERC20(0, await principalToken.getAddress(), principalAmount);
+
+      // Advance past the duration so per-day interest accrues to its cap (fixed thereafter).
+      await ethers.provider.send('evm_increaseTime', [Number(durationSeconds) + 86400]);
+      await ethers.provider.send('evm_mine', []);
+      const interest = (principalAmount * BigInt(interestRateBps) * 30n) / (10000n * 365n);
+      const totalDue = principalAmount + interest;
 
       await principalToken.transfer(borrower.address, interest);
       await principalToken.connect(borrower).approve(await vault.getAddress(), totalDue);
@@ -890,6 +907,36 @@ describe('VouchVault', function () {
       );
     });
 
+    it('ERC20: full repayment after accrual closes loan and returns collateral', async function () {
+      const [owner, borrower, lender] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      const Token = await ethers.getContractFactory('MockERC20');
+      const token = await Token.deploy('Mock', 'MOCK', 18, 0);
+      const collateral = ethers.parseEther('5.0');
+      const principal = ethers.parseEther('1.0');
+      await vault
+        .connect(borrower)
+        .createLoan(await token.getAddress(), principal, 3650, 30n * 86400n, 7n * 86400n, { value: collateral });
+      await token.mint(lender.address, principal);
+      await token.connect(lender).approve(await vault.getAddress(), principal);
+      await vault.connect(lender).fundLoanWithERC20(0, await token.getAddress(), principal);
+
+      await ethers.provider.send('evm_increaseTime', [10 * 86400]);
+      await ethers.provider.send('evm_mine', []);
+      const interest = (principal * 3650n * 10n) / (10000n * 365n);
+      const totalDue = principal + interest;
+
+      await token.mint(borrower.address, totalDue);
+      await token.connect(borrower).approve(await vault.getAddress(), totalDue);
+      await vault.connect(borrower).repayLoanWithERC20(0, totalDue);
+
+      const loan = await vault.loans(0);
+      expect(loan.repaid).to.equal(true);
+      expect(loan.principalRepaid).to.equal(principal);
+      expect(loan.collateralReleased).to.equal(collateral);
+    });
+
     describe('partial repayments', function () {
       it('Should release proportional ERC20 collateral on partial payment and forward tokens to lender', async function () {
         const [owner, borrower, lender] = await ethers.getSigners();
@@ -902,8 +949,10 @@ describe('VouchVault', function () {
 
         const collateral = ethers.parseUnits('200', 18);
         const principalAmount = ethers.parseUnits('100', 18);
-        const interestRateBps = 1000; // 10%
-        const interest = (principalAmount * BigInt(interestRateBps)) / 10000n;
+        const interestRateBps = 1000; // 10% annual
+        // durationSeconds == 0 below means no interest accrues (see _accruedInterest), so the
+        // amount owed is exactly the principal under the per-day model.
+        const interest = 0n;
         const totalDue = principalAmount + interest;
 
         await collateralToken.transfer(borrower.address, collateral);
@@ -927,9 +976,10 @@ describe('VouchVault', function () {
         // Give borrower tokens for interest portion
         await principalToken.transfer(borrower.address, interest);
 
-        // Pay half
+        // Pay half. With accrued interest 0, principalDelta == half, so collateral release is
+        // proportional to principal: collateral * half / principalAmount.
         const half = totalDue / 2n;
-        const expectedCollateralRelease = (collateral * half) / totalDue;
+        const expectedCollateralRelease = (collateral * half) / principalAmount;
 
         await principalToken.connect(borrower).approve(await vault.getAddress(), half);
 
@@ -984,6 +1034,63 @@ describe('VouchVault', function () {
         const rd = await vault.getRepaymentDetails(0);
         expect(rd[2]).to.equal(true);
         expect(rd[5]).to.equal(0n);
+      });
+
+      it('ERC20: does not revert when interest accrues further between an early principal payment and a later small payment', async function () {
+        // Regression mirror of the ETH case: a small later payment that is entirely interest must
+        // NOT revert and must NOT reduce principalRepaid. principalRepaid must be monotonic.
+        const [owner, borrower, lender] = await ethers.getSigners();
+        const VouchVault = await ethers.getContractFactory('VouchVault');
+        const MockERC20 = await ethers.getContractFactory('MockERC20');
+        const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+
+        const token = await MockERC20.deploy('Mock', 'MOCK', 18, 0);
+        const principal = ethers.parseEther('1.0');
+        const collateral = ethers.parseEther('5.0');
+        const interestRateBps = 3650n; // 36.5% APR
+
+        await vault
+          .connect(borrower)
+          .createLoan(await token.getAddress(), principal, Number(interestRateBps), 60n * 86400n, 7n * 86400n, {
+            value: collateral,
+          });
+        await token.mint(lender.address, principal);
+        await token.connect(lender).approve(await vault.getAddress(), principal);
+        await vault.connect(lender).fundLoanWithERC20(0, await token.getAddress(), principal);
+
+        // Pre-fund the borrower with enough tokens (and allowance) for both payments upfront.
+        const payment1 = (principal * interestRateBps * 5n) / (10000n * 365n) + ethers.parseEther('0.001');
+        const payment2 = ethers.parseEther('0.0005');
+        await token.mint(borrower.address, payment1 + payment2);
+        await token.connect(borrower).approve(await vault.getAddress(), payment1 + payment2);
+
+        // Day 5: accrued5 = principal * 3650 * 5 / (10000*365) = 0.005 ETH.
+        await ethers.provider.send('evm_increaseTime', [5 * 86400]);
+        await ethers.provider.send('evm_mine', []);
+        const accrued5 = (principal * interestRateBps * 5n) / (10000n * 365n);
+
+        // Pay slightly more than the accrued interest so some principal is credited.
+        await vault.connect(borrower).repayLoanWithERC20(0, payment1);
+
+        let loan = await vault.loans(0);
+        const principalRepaidAfter1 = payment1 - accrued5; // 0.001 ETH credited to principal
+        expect(loan.principalRepaid).to.equal(principalRepaidAfter1);
+        const collateralAfter1 = (collateral * principalRepaidAfter1) / principal;
+        expect(loan.collateralReleased).to.equal(collateralAfter1);
+
+        // Day 20: accrued grows to 0.02 ETH (>> interest already paid). A tiny payment that is
+        // entirely interest must NOT revert and must NOT reduce principalRepaid.
+        await ethers.provider.send('evm_increaseTime', [15 * 86400]);
+        await ethers.provider.send('evm_mine', []);
+
+        await expect(vault.connect(borrower).repayLoanWithERC20(0, payment2)).to.not.be.reverted;
+
+        loan = await vault.loans(0);
+        // principalRepaid unchanged (payment2 was all interest), collateralReleased unchanged.
+        expect(loan.principalRepaid).to.equal(principalRepaidAfter1);
+        expect(loan.collateralReleased).to.equal(collateralAfter1);
+        expect(loan.amountRepaid).to.equal(payment1 + payment2);
+        expect(loan.repaid).to.equal(false);
       });
     });
   });

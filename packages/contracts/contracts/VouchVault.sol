@@ -313,12 +313,20 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /**
      * @notice Repay some or all of a funded ERC20-principal loan.
      * @dev    The borrower must approve this contract for at least `amount` of the principal token
-     *         before calling. Collateral is released proportionally each payment and returned in its
-     *         original form (ETH or ERC20). On the final payment, any rounding dust is also returned.
+     *         before calling. Interest accrues as per-day simple interest on the principal: the annual
+     *         rate (`interestRateBps`) is applied over the elapsed time floored to whole days and
+     *         capped at `durationSeconds` (see `_accruedInterest`). `totalDue` = principal +
+     *         accrued interest right now, so it grows over time until the duration cap is reached.
      *
-     *         Interest is a fixed flat amount agreed at creation (principal +
-     *         principal * interestRateBps / 10000); it does NOT accrue over time.
-     *         `durationSeconds` is informational only and is intentionally unused here.
+     *         Amortization is interest-first: each payment first covers the interest that has
+     *         accrued since the last payment, and only the remainder reduces principal. As a
+     *         result `principalRepaid` is monotonic (never decreases) even though `accrued`
+     *         keeps growing between payments.
+     *
+     *         Collateral is released proportional to principal repaid:
+     *         floor(collateralAmount * principalDelta / principalAmount), returned in its original
+     *         form (ETH or ERC20). On the final payment (amountRepaid == totalDue) any rounding dust
+     *         is also returned so all collateral is recovered.
      * @param loanId  The ID of the loan to repay.
      * @param amount  The token amount to repay this call (must be > 0 and <= remaining balance).
      */
@@ -331,16 +339,34 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(loan.requestedPrincipalToken != address(0), "Loan has ETH principal; use repayLoan");
         require(amount > 0, "Payment must be > 0");
 
-        uint256 totalDue = loan.principalAmount + (loan.principalAmount * loan.interestRateBps) / 10000;
+        uint256 accrued = _accruedInterest(loan);
+        uint256 totalDue = loan.principalAmount + accrued;
         uint256 remaining = totalDue - loan.amountRepaid;
         require(amount <= remaining, "Payment exceeds amount owed");
 
+        // Interest-first amortization with a monotonic principalRepaid.
+        // Interest already paid in prior payments == amountRepaid - principalRepaid.
+        // Interest still outstanding now == accrued - interestAlreadyPaid (>= 0 because accrued only grows
+        // and is capped at duration; principalRepaid never exceeds principal).
+        uint256 interestAlreadyPaid = loan.amountRepaid - loan.principalRepaid;
+        uint256 interestOutstanding = accrued > interestAlreadyPaid ? accrued - interestAlreadyPaid : 0;
+
+        uint256 principalDelta;
+        if (amount > interestOutstanding) {
+            principalDelta = amount - interestOutstanding;
+        } else {
+            principalDelta = 0;
+        }
+
         loan.amountRepaid += amount;
+        loan.principalRepaid += principalDelta;
+
         bool fullRepayment = loan.amountRepaid == totalDue;
 
+        // Collateral released proportional to principal repaid; final payment returns the dust.
         uint256 collateralToRelease = fullRepayment
             ? loan.collateralAmount - loan.collateralReleased
-            : (loan.collateralAmount * amount) / totalDue;
+            : (loan.collateralAmount * principalDelta) / loan.principalAmount;
 
         loan.collateralReleased += collateralToRelease;
 
@@ -364,8 +390,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         }
 
         if (fullRepayment) {
-            uint256 interest = (loan.principalAmount * loan.interestRateBps) / 10000;
-            emit LoanRepaid(loanId, loan.borrower, loan.lender, loan.principalAmount, interest, totalDue, block.timestamp);
+            emit LoanRepaid(loanId, loan.borrower, loan.lender, loan.principalAmount, accrued, totalDue, block.timestamp);
         } else {
             emit LoanPartiallyRepaid(loanId, loan.borrower, amount, collateralToRelease, loan.amountRepaid, totalDue, block.timestamp);
         }
