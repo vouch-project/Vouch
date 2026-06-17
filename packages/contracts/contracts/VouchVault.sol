@@ -123,8 +123,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @notice Create a new loan by depositing ETH collateral
     /// @param principalToken   The token the borrower wants to receive (address(0) = native ETH)
     /// @param principalAmount  The amount the borrower wants to receive
-    /// @param interestRateBps  Simple interest rate in basis points (e.g. 500 = 5%); 0 = interest-free
-    /// @param durationSeconds  Loan term in seconds; 0 = no deadline
+    /// @param interestRateBps  Annual interest rate in basis points (e.g. 500 = 5% APR); 0 = interest-free
+    /// @param durationSeconds  Loan term in seconds; caps interest accrual; 0 = no deadline / no time-based interest
     /// @param fundWindowSeconds Seconds from creation during which the loan may be funded (must be > 0)
     function createLoan(
         address principalToken,
@@ -172,8 +172,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @param amount           The amount of collateral to deposit
     /// @param principalToken   The token the borrower wants to receive (address(0) = native ETH)
     /// @param principalAmount  The amount the borrower wants to receive
-    /// @param interestRateBps  Simple interest rate in basis points (e.g. 500 = 5%); 0 = interest-free
-    /// @param durationSeconds  Loan term in seconds; 0 = no deadline
+    /// @param interestRateBps  Annual interest rate in basis points (e.g. 500 = 5% APR); 0 = interest-free
+    /// @param durationSeconds  Loan term in seconds; caps interest accrual; 0 = no deadline / no time-based interest
     /// @param fundWindowSeconds Seconds from creation during which the loan may be funded (must be > 0)
     function createLoanWithERC20(
         address token,
