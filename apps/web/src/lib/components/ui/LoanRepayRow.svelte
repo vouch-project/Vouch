@@ -9,11 +9,10 @@
     computeRemaining,
     computeTotalDue,
     formatDueDateLabel,
-    interestRateToBps,
   } from '$lib/loans/loanMath';
   import type { LoanFull } from '$lib/types';
   import { cn } from '$lib/utils';
-  import { getRepaymentDetails, type RepaymentDetails } from '$lib/wallet/vouchVault';
+  import { cancelLoan, getRepaymentDetails, type RepaymentDetails } from '$lib/wallet/vouchVault';
   import { ethers } from 'ethers';
   import { tableColumns } from '../dashboard/columns';
 
@@ -39,10 +38,20 @@
 
   const principalRaw = $derived(BigInt(loan.principalAmount ?? '0'));
   const interestRateRaw = $derived(BigInt(loan.interestRate ?? '0'));
-  // Pending/unfunded loans owe nothing yet (on-chain getRepaymentDetails reports
-  // totalDue = 0 until funding); only compute once funded. Repaid loans keep the
-  // computed value since they skip chain hydration below.
-  const totalDueFromDB = $derived(loan.status === 'pending' ? 0n : computeTotalDue(principalRaw, interestRateRaw));
+  const fundedAtMs = $derived(loan.fundedAt ? new Date(loan.fundedAt).getTime() : 0);
+  const durationSecondsFromDB = $derived(
+    loan.dueAt && loan.fundedAt
+      ? BigInt(Math.max(0, Math.floor((new Date(loan.dueAt).getTime() - new Date(loan.fundedAt).getTime()) / 1000)))
+      : 0n,
+  );
+  // `loan.interestRate` is stored as annual basis points. Pending/unfunded loans owe nothing
+  // yet (chain getRepaymentDetails reports 0 until funding); compute the per-day accrued total
+  // only once funded. Chain data overrides this once hydrated (see displayTotalDue).
+  const totalDueFromDB = $derived(
+    loan.status === 'pending'
+      ? 0n
+      : computeTotalDue(principalRaw, interestRateRaw, fundedAtMs, durationSecondsFromDB),
+  );
   const remainingFromDB = $derived(computeRemaining(totalDueFromDB, amountRepaidFromDB));
 
   // ── Chain hydration (active loans only) ───────────────────────────────────
@@ -91,17 +100,33 @@
   const displayTotalDue = $derived(chainDetails ? chainDetails.totalDue : totalDueFromDB);
   const displayAmountRepaid = $derived(chainDetails ? chainDetails.amountRepaid : amountRepaidFromDB);
   const displayInterestRateBps = $derived(
-    chainDetails ? chainDetails.interestRateBps : interestRateToBps(interestRateRaw),
+    chainDetails ? chainDetails.interestRateBps : Number(interestRateRaw),
   );
   const interestAmount = $derived(displayTotalDue > principalRaw ? displayTotalDue - principalRaw : 0n);
 
   let expanded = $state(false);
+  let cancelling = $state(false);
+  let cancelError = $state('');
 
   const handlePaid = (details: RepaymentDetails) => {
     chainDetails = details;
     if (details.repaid) {
       expanded = false;
       onRepaid?.();
+    }
+  };
+
+  const handleCancel = async () => {
+    if (loan.onChainLoanId === null) return;
+    cancelling = true;
+    cancelError = '';
+    try {
+      await cancelLoan(BigInt(loan.onChainLoanId));
+      onRepaid?.(); // reuse the row-refresh hook so the parent reloads the list
+    } catch (e) {
+      cancelError = (e as Error).message;
+    } finally {
+      cancelling = false;
     }
   };
 </script>
@@ -187,6 +212,19 @@
       >
         {expanded ? 'Close' : 'Repay'}
       </Button>
+    {:else if isPending && loan.onChainLoanId !== null}
+      <Button
+        class="font-bold h-8 px-3 text-xs"
+        disabled={cancelling}
+        onclick={handleCancel}
+        size="sm"
+        variant="destructive"
+      >
+        {cancelling ? 'Cancelling…' : 'Cancel request'}
+      </Button>
+      {#if cancelError}
+        <p class="text-[10px] text-destructive">{cancelError}</p>
+      {/if}
     {/if}
   </Table.Cell>
 </Table.Row>
