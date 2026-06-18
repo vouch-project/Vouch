@@ -17,6 +17,7 @@ export const load: PageLoad = () => {
     `,
     )
     .eq('status', 'pending')
+    .gt('fundDeadline', new Date().toISOString())
     .order('createdAt', { ascending: false })
     .then(({ data, error }) => {
       if (error) throw error;

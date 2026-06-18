@@ -12,7 +12,7 @@
   import { supabase } from '$lib/supabase';
   import type { LoanWithTokens } from '$lib/types';
   import { cn } from '$lib/utils';
-  import { fundLoan } from '$lib/wallet/vouchVault';
+  import { cancelLoan, fundLoan } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Info, RefreshCw, ShieldCheck, TrendingUp, Wallet, Zap } from '@lucide/svelte';
   import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -31,6 +31,7 @@
   let channel: RealtimeChannel | null = $state(null);
   let activeTab: string = $state('borrow');
   let fundingLoanId: string | null = $state(null);
+  let cancellingLoanId: string | null = $state(null);
 
   const getRiskLevel = (score: number) => {
     if (score > 800) return { label: 'Low', color: 'bg-green-100 text-green-700 border-green-200' };
@@ -82,6 +83,7 @@
         `,
         )
         .eq('status', 'pending')
+        .gt('fundDeadline', new Date().toISOString())
         .order('createdAt', { ascending: false });
 
       if (error) throw error;
@@ -169,6 +171,25 @@
       errorMsg = getErrorMessage(e);
     } finally {
       fundingLoanId = null;
+    }
+  };
+
+  const handleCancelLoan = async (loan: LoanWithTokens) => {
+    if (loan.onChainLoanId == null) {
+      errorMsg = 'Loan is missing on-chain ID.';
+      return;
+    }
+
+    cancellingLoanId = loan.id;
+    errorMsg = null;
+
+    try {
+      await cancelLoan(ethers.getBigInt(loan.onChainLoanId));
+      loans = loans.filter((l) => l.id !== loan.id);
+    } catch (e) {
+      errorMsg = getErrorMessage(e);
+    } finally {
+      cancellingLoanId = null;
     }
   };
 </script>
@@ -372,7 +393,7 @@
                     <Table.Cell
                       class="px-1 sm:px-3 lg:px-6 py-4 font-bold text-indigo-600 text-left underline-offset-4 whitespace-nowrap text-[10px] sm:text-sm min-w-max"
                     >
-                      {formatUint256(loan.interestRate)}%
+                      {(Number(loan.interestRate ?? 0) / 100).toFixed(2)}% APR
                     </Table.Cell>
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left min-w-max">
                       {#if risk}
@@ -392,6 +413,20 @@
                           <span class="text-[10px] sm:text-xs font-semibold text-muted-foreground italic">
                             Your loan
                           </span>
+                          <Button
+                            class="font-bold transition-transform group-hover:scale-105 h-7 sm:h-9 py-0 px-2 sm:px-3 text-[10px] sm:text-xs"
+                            disabled={cancellingLoanId === loan.id}
+                            onclick={() => handleCancelLoan(loan)}
+                            size="sm"
+                            variant="destructive"
+                          >
+                            {#if cancellingLoanId === loan.id}
+                              <RefreshCw class="mr-1.5 h-3 w-3 animate-spin" />
+                              Cancelling…
+                            {:else}
+                              Cancel request
+                            {/if}
+                          </Button>
                         {:else}
                           <Button
                             class="font-bold transition-transform group-hover:scale-105 h-7 sm:h-9 py-0 px-2 sm:px-3 text-[10px] sm:text-xs"
