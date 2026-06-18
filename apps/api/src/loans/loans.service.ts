@@ -37,6 +37,12 @@ export class LoansService {
         p_collateral_block_hash: createLoanDto.collateralBlockHash,
         p_log_index: createLoanDto.logIndex,
         p_collateral_locked_at: collateralLockedAt.toISOString(),
+        p_interest_rate_bps: createLoanDto.interestRateBps,
+        p_duration_seconds: createLoanDto.durationSeconds,
+        p_fund_deadline: new Date(
+          collateralLockedAt.getTime() +
+            createLoanDto.fundWindowSeconds * 1000,
+        ).toISOString(),
       },
     );
 

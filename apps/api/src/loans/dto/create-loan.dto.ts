@@ -42,4 +42,13 @@ export class CreateLoanDto {
 
   @IsString()
   contractAddress!: string;
+
+  @IsNumber()
+  interestRateBps!: number;
+
+  @IsNumber()
+  durationSeconds!: number;
+
+  @IsNumber()
+  fundWindowSeconds!: number;
 }
