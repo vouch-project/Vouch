@@ -19,12 +19,19 @@ class TestableListener extends BlockchainListenerService {
   ) {
     return this.handleLoanCreated(...args);
   }
+
+  callHandleLoanCancelled(
+    ...args: Parameters<BlockchainListenerService['handleLoanCancelled']>
+  ) {
+    return this.handleLoanCancelled(...args);
+  }
 }
 
 describe('BlockchainListenerService', () => {
   let service: TestableListener;
   let partialRepay: jest.Mock;
   let create: jest.Mock;
+  let cancel: jest.Mock;
 
   const log = {
     transactionHash: '0xtx',
@@ -48,13 +55,17 @@ describe('BlockchainListenerService', () => {
   beforeEach(async () => {
     partialRepay = jest.fn().mockResolvedValue(undefined);
     create = jest.fn().mockResolvedValue(undefined);
+    cancel = jest.fn().mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TestableListener,
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: SupabaseService, useValue: { client: {} } },
-        { provide: LoansService, useValue: { partialRepay, create } },
+        {
+          provide: LoansService,
+          useValue: { partialRepay, create, cancel },
+        },
       ],
     }).compile();
 
@@ -120,6 +131,28 @@ describe('BlockchainListenerService', () => {
           interestRateBps: 500,
           durationSeconds: 2592000,
           fundWindowSeconds: 604800,
+        }),
+      );
+    });
+  });
+
+  describe('handleLoanCancelled', () => {
+    it('forwards event data to loanService.cancel', async () => {
+      await service.callHandleLoanCancelled(
+        5n,
+        '0xborrower',
+        1700000000n,
+        log,
+        network,
+        '0xcontract',
+      );
+      expect(cancel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          onChainLoanId: 5n,
+          borrowerAddress: '0xborrower',
+          txHash: '0xtx',
+          logIndex: 0,
+          cancelledAt: new Date(Number(1700000000n) * 1000),
         }),
       );
     });

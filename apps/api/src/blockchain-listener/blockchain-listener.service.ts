@@ -206,6 +206,27 @@ export class BlockchainListenerService implements OnModuleInit {
         );
       },
     );
+
+    void contract.on(
+      'LoanCancelled',
+      (
+        loanId: bigint,
+        borrower: string,
+        timestamp: bigint,
+        { log: eventLog }: ethers.ContractEventPayload,
+      ) => {
+        this.enqueue(queueKey, () =>
+          this.handleLoanCancelled(
+            loanId,
+            borrower,
+            timestamp,
+            eventLog,
+            network,
+            config.contractAddress,
+          ),
+        );
+      },
+    );
   }
 
   protected async handleLoanCreated(
@@ -294,6 +315,37 @@ export class BlockchainListenerService implements OnModuleInit {
       this.logger.log(`Loan ${loanId.toString()} funded by ${lender}`);
     } catch (error) {
       this.logger.error('Failed to update funded loan in DB', error);
+    }
+  }
+
+  protected async handleLoanCancelled(
+    loanId: bigint,
+    borrower: string,
+    timestamp: bigint,
+    {
+      transactionHash,
+      blockNumber,
+      blockHash,
+      index: logIndex,
+    }: ethers.EventLog,
+    network: ethers.Network,
+    contractAddress: string,
+  ) {
+    try {
+      await this.loanService.cancel({
+        onChainLoanId: loanId,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        borrowerAddress: borrower,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        cancelledAt: new Date(Number(timestamp) * 1000),
+      });
+      this.logger.log(`Loan ${loanId.toString()} cancelled by ${borrower}`);
+    } catch (error) {
+      this.logger.error('Failed to cancel loan in DB', error);
     }
   }
 

@@ -57,4 +57,31 @@ describe('LoansService', () => {
       }),
     );
   });
+
+  it('forwards cancellation data to the cancel RPC', async () => {
+    const cancelledAt = new Date('2026-02-01T00:00:00.000Z');
+    await service.cancel({
+      onChainLoanId: 3n,
+      networkId: '31337',
+      contractAddress: '0x' + '4'.repeat(40),
+      borrowerAddress: '0x' + '1'.repeat(40),
+      txHash: '0xhash',
+      blockNumber: 12,
+      blockHash: '0xblock',
+      logIndex: 0,
+      cancelledAt,
+    });
+
+    expect(rpc).toHaveBeenCalledWith('cancel_loan_with_transaction', {
+      p_network_id: '31337',
+      p_contract_address: expect.any(String),
+      p_on_chain_loan_id: '3',
+      p_borrower_address: expect.any(String),
+      p_tx_hash: '0xhash',
+      p_block_number: '12',
+      p_block_hash: '0xblock',
+      p_log_index: '0',
+      p_cancelled_at: cancelledAt.toISOString(),
+    });
+  });
 });
