@@ -13,6 +13,13 @@
   let selectedCollateralToken = $state('ETH');
   let selectedBorrowToken = $state('MOCK');
 
+  // Interest (annual %) and timing. Presets in days; "custom" reveals a number input.
+  let interestRatePct = $state('5');
+  let durationDays = $state('30');
+  let durationCustom = $state(false);
+  let fundWindowDays = $state('7');
+  let fundWindowCustom = $state(false);
+
   // Credit score (fetched once when address is known)
   let creditScore = $state<number | null>(null);
 
@@ -63,6 +70,25 @@
       return;
     }
 
+    const ratePct = Number(interestRatePct);
+    if (!isFinite(ratePct) || ratePct < 0 || ratePct > 100) {
+      status = 'Enter a valid interest rate between 0 and 100% APR.';
+      return;
+    }
+    const durDays = Number(durationDays);
+    if (!Number.isInteger(durDays) || durDays <= 0) {
+      status = 'Loan duration must be a positive whole number of days.';
+      return;
+    }
+    const windowDays = Number(fundWindowDays);
+    if (!Number.isInteger(windowDays) || windowDays <= 0) {
+      status = 'Funding window must be a positive whole number of days.';
+      return;
+    }
+    const interestRateBps = Math.round(ratePct * 100); // 5% -> 500 bps
+    const durationSeconds = durDays * 86400;
+    const fundWindowSeconds = windowDays * 86400;
+
     status = 'Waiting for wallet confirmation...';
 
     const collateralToken = chainInfo.tokens.find((t) => t.symbol === selectedCollateralToken);
@@ -78,7 +104,15 @@
     }
 
     try {
-      await createLoan(collateralAmount, collateralToken, borrowToken, borrowAmount);
+      await createLoan(
+        collateralAmount,
+        collateralToken,
+        borrowToken,
+        borrowAmount,
+        interestRateBps,
+        durationSeconds,
+        fundWindowSeconds,
+      );
       status = 'Loan created!';
     } catch (e: unknown) {
       if (e && typeof e === 'object' && 'code' in e && e.code === 'ACTION_REJECTED') {
@@ -129,6 +163,72 @@
     <span class="text-xs text-gray-400 min-h-4 block">
       {borrowUsd > 0 ? `≈ $${borrowUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''}
     </span>
+  </label>
+
+  <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
+    <span>Interest Rate (APR %):</span>
+    <input
+      class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
+      inputmode="decimal"
+      placeholder="5"
+      type="text"
+      bind:value={interestRatePct}
+    />
+  </label>
+
+  <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
+    <span>Loan Duration:</span>
+    <select
+      class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
+      onchange={(e) => {
+        const v = (e.currentTarget as HTMLSelectElement).value;
+        durationCustom = v === 'custom';
+        if (!durationCustom) durationDays = v;
+      }}
+    >
+      <option value="7">7 days</option>
+      <option value="14">14 days</option>
+      <option value="30" selected>30 days</option>
+      <option value="60">60 days</option>
+      <option value="90">90 days</option>
+      <option value="custom">Custom…</option>
+    </select>
+    {#if durationCustom}
+      <input
+        class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
+        inputmode="numeric"
+        placeholder="Days"
+        type="text"
+        bind:value={durationDays}
+      />
+    {/if}
+  </label>
+
+  <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
+    <span>Fund Within:</span>
+    <select
+      class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
+      onchange={(e) => {
+        const v = (e.currentTarget as HTMLSelectElement).value;
+        fundWindowCustom = v === 'custom';
+        if (!fundWindowCustom) fundWindowDays = v;
+      }}
+    >
+      <option value="1">1 day</option>
+      <option value="3">3 days</option>
+      <option value="7" selected>7 days</option>
+      <option value="14">14 days</option>
+      <option value="custom">Custom…</option>
+    </select>
+    {#if fundWindowCustom}
+      <input
+        class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
+        inputmode="numeric"
+        placeholder="Days"
+        type="text"
+        bind:value={fundWindowDays}
+      />
+    {/if}
   </label>
 
   <!-- LTV Indicator -->
