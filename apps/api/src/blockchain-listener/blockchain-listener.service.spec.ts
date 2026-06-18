@@ -13,11 +13,18 @@ class TestableListener extends BlockchainListenerService {
   ) {
     return this.handleLoanPartiallyRepaid(...args);
   }
+
+  callHandleLoanCreated(
+    ...args: Parameters<BlockchainListenerService['handleLoanCreated']>
+  ) {
+    return this.handleLoanCreated(...args);
+  }
 }
 
 describe('BlockchainListenerService', () => {
   let service: TestableListener;
   let partialRepay: jest.Mock;
+  let create: jest.Mock;
 
   const log = {
     transactionHash: '0xtx',
@@ -40,13 +47,14 @@ describe('BlockchainListenerService', () => {
 
   beforeEach(async () => {
     partialRepay = jest.fn().mockResolvedValue(undefined);
+    create = jest.fn().mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TestableListener,
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: SupabaseService, useValue: { client: {} } },
-        { provide: LoansService, useValue: { partialRepay } },
+        { provide: LoansService, useValue: { partialRepay, create } },
       ],
     }).compile();
 
@@ -78,6 +86,42 @@ describe('BlockchainListenerService', () => {
       );
 
       await expect(invoke()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('handleLoanCreated', () => {
+    it('reads loan terms from the contract and forwards them to loanService.create', async () => {
+      const createdAt = 1700000000n;
+      const fundDeadline = createdAt + 604800n; // +7 days
+      const contract = {
+        getRepaymentDetails: jest
+          .fn()
+          .mockResolvedValue([500n, 2592000n, false, 0n, 0n, 0n, fundDeadline]),
+      } as unknown as ethers.Contract;
+
+      await service.callHandleLoanCreated(
+        1n, // loanId
+        '0xborrower', // borrower
+        '0xcollateralToken', // collateralTokenAddress
+        1000n, // collateralAmount
+        '0xprincipalToken', // requestedPrincipalToken
+        500n, // requestedPrincipalAmount
+        createdAt, // timestamp
+        log, // eventLog
+        network, // network
+        '0xcontract', // contractAddress
+        contract, // NEW final arg
+      );
+
+      expect(contract.getRepaymentDetails).toHaveBeenCalledWith(1n);
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          loanId: 1n,
+          interestRateBps: 500,
+          durationSeconds: 2592000,
+          fundWindowSeconds: 604800,
+        }),
+      );
     });
   });
 });

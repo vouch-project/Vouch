@@ -121,6 +121,7 @@ export class BlockchainListenerService implements OnModuleInit {
             eventLog,
             network,
             config.contractAddress,
+            contract,
           ),
         );
       },
@@ -207,7 +208,7 @@ export class BlockchainListenerService implements OnModuleInit {
     );
   }
 
-  private async handleLoanCreated(
+  protected async handleLoanCreated(
     loanId: bigint,
     borrower: string,
     collateralTokenAddress: string,
@@ -223,7 +224,20 @@ export class BlockchainListenerService implements OnModuleInit {
     }: ethers.EventLog,
     network: ethers.Network,
     contractAddress: string,
+    contract: ethers.Contract,
   ) {
+    let interestRateBps = 0;
+    let durationSeconds = 0;
+    let fundWindowSeconds = 0;
+    try {
+      const details = await contract.getRepaymentDetails(loanId);
+      interestRateBps = Number(details[0]);
+      durationSeconds = Number(details[1]);
+      fundWindowSeconds = Number(BigInt(details[6]) - timestamp);
+    } catch (error) {
+      this.logger.error('Failed to read loan terms from contract', error);
+    }
+
     try {
       await this.loanService.create({
         loanId: loanId,
@@ -239,6 +253,9 @@ export class BlockchainListenerService implements OnModuleInit {
         networkId: network.chainId.toString(),
         contractAddress,
         logIndex,
+        interestRateBps,
+        durationSeconds,
+        fundWindowSeconds,
       });
     } catch (error) {
       this.logger.error('Failed to create loan in DB', error);
