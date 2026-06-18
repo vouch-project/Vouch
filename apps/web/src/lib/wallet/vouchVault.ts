@@ -25,11 +25,21 @@ const createEthLoan = async (
   collateralAmount: string,
   principalToken: Token,
   principalAmount: string,
+  interestRateBps: number,
+  durationSeconds: number,
+  fundWindowSeconds: number,
 ): Promise<ethers.TransactionResponse> => {
   const value = ethers.parseEther(collateralAmount);
   const principalTokenAddress = isNativeToken(principalToken) ? ethers.ZeroAddress : principalToken.address;
   const principalAmountParsed = ethers.parseUnits(principalAmount, principalToken.decimals ?? 18);
-  return contract.createLoan(principalTokenAddress, principalAmountParsed, 0, 0, { value });
+  return contract.createLoan(
+    principalTokenAddress,
+    principalAmountParsed,
+    interestRateBps,
+    durationSeconds,
+    fundWindowSeconds,
+    { value },
+  );
 };
 
 const ERC20_ABI = [
@@ -43,6 +53,9 @@ const createErc20Loan = async (
   collateralAmount: string,
   principalToken: Token,
   principalAmount: string,
+  interestRateBps: number,
+  durationSeconds: number,
+  fundWindowSeconds: number,
 ): Promise<ethers.TransactionResponse> => {
   const amount = ethers.parseUnits(collateralAmount, token.decimals ?? 18);
 
@@ -57,7 +70,15 @@ const createErc20Loan = async (
 
   const principalTokenAddress = isNativeToken(principalToken) ? ethers.ZeroAddress : principalToken.address;
   const principalAmountParsed = ethers.parseUnits(principalAmount, principalToken.decimals ?? 18);
-  return contract.createLoanWithERC20(token.address, amount, principalTokenAddress, principalAmountParsed, 0, 0);
+  return contract.createLoanWithERC20(
+    token.address,
+    amount,
+    principalTokenAddress,
+    principalAmountParsed,
+    interestRateBps,
+    durationSeconds,
+    fundWindowSeconds,
+  );
 };
 
 export type CreateLoanResult = {
@@ -70,12 +91,15 @@ export const createLoan = async (
   collateralToken: Token,
   principalToken: Token,
   principalAmount: string,
+  interestRateBps: number,
+  durationSeconds: number,
+  fundWindowSeconds: number,
 ): Promise<CreateLoanResult> => {
   const contract = await getVouchVaultContract();
 
   const tx = await (isNativeToken(collateralToken)
-    ? createEthLoan(contract, collateralAmount, principalToken, principalAmount)
-    : createErc20Loan(contract, collateralToken, collateralAmount, principalToken, principalAmount));
+    ? createEthLoan(contract, collateralAmount, principalToken, principalAmount, interestRateBps, durationSeconds, fundWindowSeconds)
+    : createErc20Loan(contract, collateralToken, collateralAmount, principalToken, principalAmount, interestRateBps, durationSeconds, fundWindowSeconds));
 
   const receipt = await tx.wait();
   if (!receipt) throw new Error('Transaction failed');
@@ -105,6 +129,7 @@ export type RepaymentDetails = {
   totalDue: bigint;
   amountRepaid: bigint;
   remaining: bigint;
+  fundDeadline: bigint;
 };
 
 export const getRepaymentDetails = async (onChainLoanId: bigint): Promise<RepaymentDetails> => {
@@ -117,6 +142,7 @@ export const getRepaymentDetails = async (onChainLoanId: bigint): Promise<Repaym
     totalDue: result[3] as bigint,
     amountRepaid: result[4] as bigint,
     remaining: result[5] as bigint,
+    fundDeadline: result[6] as bigint,
   };
 };
 
@@ -196,6 +222,20 @@ export const fundLoan = async (
     tx = await contract.fundLoanWithERC20(onChainLoanId, principalTokenAddress, principalRawAmount);
   }
 
+  const receipt = await tx.wait();
+  if (!receipt) throw new Error('Transaction failed');
+  return receipt;
+};
+
+/**
+ * Cancel an unfunded loan and reclaim collateral. Only the borrower may call this on-chain.
+ * @param onChainLoanId - The on-chain uint256 loan ID.
+ */
+export const cancelLoan = async (
+  onChainLoanId: bigint,
+): Promise<ethers.TransactionReceipt> => {
+  const contract = await getVouchVaultContract();
+  const tx: ethers.TransactionResponse = await contract.cancelLoan(onChainLoanId);
   const receipt = await tx.wait();
   if (!receipt) throw new Error('Transaction failed');
   return receipt;
