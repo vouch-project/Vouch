@@ -74,8 +74,10 @@ describe('LoansService', () => {
 
     expect(rpc).toHaveBeenCalledWith('cancel_loan_with_transaction', {
       p_network_id: '31337',
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       p_contract_address: expect.any(String),
       p_on_chain_loan_id: '3',
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       p_borrower_address: expect.any(String),
       p_tx_hash: '0xhash',
       p_block_number: '12',

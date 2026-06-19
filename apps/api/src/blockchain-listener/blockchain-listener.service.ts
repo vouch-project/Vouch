@@ -251,10 +251,18 @@ export class BlockchainListenerService implements OnModuleInit {
     let durationSeconds = 0;
     let fundWindowSeconds = 0;
     try {
-      const details = await contract.getRepaymentDetails(loanId);
+      const details = (await contract.getRepaymentDetails(loanId)) as [
+        bigint,
+        bigint,
+        boolean,
+        bigint,
+        bigint,
+        bigint,
+        bigint,
+      ];
       interestRateBps = Number(details[0]);
       durationSeconds = Number(details[1]);
-      fundWindowSeconds = Number(BigInt(details[6]) - timestamp);
+      fundWindowSeconds = Number(details[6] - timestamp);
     } catch (error) {
       this.logger.error('Failed to read loan terms from contract', error);
     }

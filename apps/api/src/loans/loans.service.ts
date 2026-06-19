@@ -41,8 +41,7 @@ export class LoansService {
         p_interest_rate_bps: createLoanDto.interestRateBps,
         p_duration_seconds: createLoanDto.durationSeconds,
         p_fund_deadline: new Date(
-          collateralLockedAt.getTime() +
-            createLoanDto.fundWindowSeconds * 1000,
+          collateralLockedAt.getTime() + createLoanDto.fundWindowSeconds * 1000,
         ).toISOString(),
       },
     );
