@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
+import type { VouchVault } from '@vouch/contracts';
 import { ethers } from 'ethers';
 import { LoansService } from '../loans/loans.service';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -16,7 +17,7 @@ class TestableListener extends BlockchainListenerService {
 
   callHandleLoanCreated(
     ...args: Parameters<BlockchainListenerService['handleLoanCreated']>
-  ) {
+  ): ReturnType<BlockchainListenerService['handleLoanCreated']> {
     return this.handleLoanCreated(...args);
   }
 
@@ -38,7 +39,7 @@ describe('BlockchainListenerService', () => {
     blockNumber: 100,
     blockHash: '0xblock',
     index: 0,
-  } as ethers.EventLog;
+  } as ethers.Log;
   const network = { chainId: 1n } as ethers.Network;
 
   const invoke = () =>
@@ -105,10 +106,16 @@ describe('BlockchainListenerService', () => {
       const createdAt = 1700000000n;
       const fundDeadline = createdAt + 604800n; // +7 days
       const contract = {
-        getRepaymentDetails: jest
-          .fn()
-          .mockResolvedValue([500n, 2592000n, false, 0n, 0n, 0n, fundDeadline]),
-      } as unknown as ethers.Contract;
+        getRepaymentDetails: jest.fn().mockResolvedValue({
+          interestRateBps: 500n,
+          durationSeconds: 2592000n,
+          repaid: false,
+          totalDue: 0n,
+          amountRepaid: 0n,
+          remaining: 0n,
+          fundDeadline,
+        }),
+      } as unknown as VouchVault;
 
       await service.callHandleLoanCreated(
         1n, // loanId

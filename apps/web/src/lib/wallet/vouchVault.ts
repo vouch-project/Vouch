@@ -1,13 +1,10 @@
-import { dev } from '$app/environment';
+import { VouchVault__factory } from '@vouch/contracts';
+import type { VouchVault } from '@vouch/contracts';
 import { ethers } from 'ethers';
-import VouchVaultAbiDev from '../../../../../packages/abi/VouchVault.json';
-import VouchVaultAbiProd from '../../../../../packages/abi/prod/VouchVault.json';
 import type { Token } from '../../api/chain';
 import { chainInfo } from '../stores/chainInfo.svelte';
 
-const VouchVaultAbi = dev ? VouchVaultAbiDev : VouchVaultAbiProd;
-
-export const getVouchVaultContract = async (): Promise<ethers.Contract> => {
+export const getVouchVaultContract = async (): Promise<VouchVault> => {
   if (!window.ethereum) throw new Error('No wallet found');
   if (!chainInfo.contractAddress) throw new Error('No contract address found for current chain');
   if (!ethers.isAddress(chainInfo.contractAddress)) throw new Error('Invalid contract address');
@@ -15,13 +12,13 @@ export const getVouchVaultContract = async (): Promise<ethers.Contract> => {
   const provider = new ethers.BrowserProvider(window.ethereum as unknown as ethers.Eip1193Provider);
   const signer = await provider.getSigner();
 
-  return new ethers.Contract(chainInfo.contractAddress, VouchVaultAbi, signer);
+  return VouchVault__factory.connect(chainInfo.contractAddress, signer);
 };
 
 const isNativeToken = (token: Token): boolean => !token.address || token.address === ethers.ZeroAddress;
 
 const createEthLoan = async (
-  contract: ethers.Contract,
+  contract: VouchVault,
   collateralAmount: string,
   principalToken: Token,
   principalAmount: string,
@@ -48,7 +45,7 @@ const ERC20_ABI = [
 ];
 
 const createErc20Loan = async (
-  contract: ethers.Contract,
+  contract: VouchVault,
   token: Token,
   collateralAmount: string,
   principalToken: Token,
@@ -136,13 +133,13 @@ export const getRepaymentDetails = async (onChainLoanId: bigint): Promise<Repaym
   const contract = await getVouchVaultContract();
   const result = await contract.getRepaymentDetails(onChainLoanId);
   return {
-    interestRateBps: Number(result[0]),
-    durationSeconds: result[1] as bigint,
-    repaid: result[2] as boolean,
-    totalDue: result[3] as bigint,
-    amountRepaid: result[4] as bigint,
-    remaining: result[5] as bigint,
-    fundDeadline: result[6] as bigint,
+    interestRateBps: Number(result.interestRateBps),
+    durationSeconds: result.durationSeconds,
+    repaid: result.repaid,
+    totalDue: result.totalDue,
+    amountRepaid: result.amountRepaid,
+    remaining: result.remaining,
+    fundDeadline: result.fundDeadline,
   };
 };
 
