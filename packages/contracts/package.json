@@ -2,18 +2,19 @@
   "name": "@vouch/contracts",
   "version": "0.0.0",
   "private": true,
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/cjs/index.js",
+  "types": "./dist/cjs/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./dist/cjs/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
     }
   },
   "scripts": {
     "dev": "concurrently \"hardhat node\" \"sleep 10s && bash ./dev-setup.sh\"",
-    "build": "hardhat compile && node scripts/extract-abi.mjs && tsc -p tsconfig.build.json",
-    "build:types": "tsc -p tsconfig.build.json",
+    "build": "hardhat compile && node scripts/extract-abi.mjs && tsc -p tsconfig.build.json && tsc -p tsconfig.build.esm.json",
+    "build:types": "tsc -p tsconfig.build.json && tsc -p tsconfig.build.esm.json",
     "test": "hardhat test",
     "clean": "hardhat clean"
   },
