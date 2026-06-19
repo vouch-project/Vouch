@@ -1,10 +1,10 @@
 <script lang="ts">
   import { axiosApi } from '$api/axiosApi';
-  import { chainInfo } from '$lib/stores/chainInfo.svelte';
-  import { wallet } from '$lib/wallet/wallet.svelte';
-  import { createLoan } from '$lib/wallet/vouchVault';
-  import TokenAutocomplete from './TokenAutocomplete.svelte';
   import { getTokenMeta, maxLtv } from '$lib/ltv';
+  import { chainInfo } from '$lib/stores/chainInfo.svelte';
+  import { createLoan } from '$lib/wallet/vouchVault';
+  import { wallet } from '$lib/wallet/wallet.svelte';
+  import TokenAutocomplete from './TokenAutocomplete.svelte';
 
   // ── Form state ────────────────────────────────────────────────────────────
   let collateralAmount = $state('1.0');
@@ -188,7 +188,7 @@
     >
       <option value="7">7 days</option>
       <option value="14">14 days</option>
-      <option value="30" selected>30 days</option>
+      <option selected value="30">30 days</option>
       <option value="60">60 days</option>
       <option value="90">90 days</option>
       <option value="custom">Custom…</option>
@@ -216,7 +216,7 @@
     >
       <option value="1">1 day</option>
       <option value="3">3 days</option>
-      <option value="7" selected>7 days</option>
+      <option selected value="7">7 days</option>
       <option value="14">14 days</option>
       <option value="custom">Custom…</option>
     </select>
