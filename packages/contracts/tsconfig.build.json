@@ -4,6 +4,7 @@
     "module": "commonjs",
     "declaration": true,
     "declarationMap": true,
+    "rootDir": "./typechain-types",
     "outDir": "./dist/cjs",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,

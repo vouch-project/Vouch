@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "declaration": true,
     "declarationMap": true,
+    "rootDir": "./typechain-types",
     "outDir": "./dist/esm",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
