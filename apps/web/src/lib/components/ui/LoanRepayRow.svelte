@@ -48,9 +48,9 @@
   // yet (chain getRepaymentDetails reports 0 until funding); compute the per-day accrued total
   // only once funded. Chain data overrides this once hydrated (see displayTotalDue).
   const totalDueFromDB = $derived(
-    loan.status === 'pending'
-      ? 0n
-      : computeTotalDue(principalRaw, interestRateRaw, fundedAtMs, durationSecondsFromDB),
+    loan.fundedAt
+      ? computeTotalDue(principalRaw, interestRateRaw, fundedAtMs, durationSecondsFromDB)
+      : 0n,
   );
   const remainingFromDB = $derived(computeRemaining(totalDueFromDB, amountRepaidFromDB));
 
@@ -158,10 +158,10 @@
 
   <!-- Interest -->
   <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
-    {formatUint256(interestAmount.toString(), principalDecimals)}
-    <span class="text-muted-foreground text-xs">
-      ({(displayInterestRateBps / 100).toFixed(2)}%)
-    </span>
+    <span class="font-medium">{(displayInterestRateBps / 100).toFixed(2)}% APR</span>
+    <div class="text-xs text-muted-foreground">
+      +{formatUint256(interestAmount.toString(), principalDecimals)} accrued
+    </div>
   </Table.Cell>
 
   <!-- Repaid so far -->

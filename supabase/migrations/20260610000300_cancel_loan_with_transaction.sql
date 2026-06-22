@@ -23,6 +23,7 @@ DECLARE
     v_chain_id             uuid;
     v_loan_id              uuid;
     v_collateral_token_id  uuid;
+    v_collateral_amount    text;
 BEGIN
     SELECT id INTO v_chain_id
     FROM public.chains
@@ -38,8 +39,8 @@ BEGIN
     -- NOT NULL, so the cancellation transaction is attributed to the returned
     -- collateral token. Fail loudly if the loan row is missing so a missed
     -- LoanCreated write isn't silently swallowed by a no-op UPDATE below.
-    SELECT id, "collateralTokenId"
-    INTO v_loan_id, v_collateral_token_id
+    SELECT id, "collateralTokenId", "collateralAmount"
+    INTO v_loan_id, v_collateral_token_id, v_collateral_amount
     FROM public.loans
     WHERE "onChainLoanId"   = p_on_chain_loan_id
       AND "chainId"         = v_chain_id
@@ -63,7 +64,7 @@ BEGIN
         p_tx_hash, p_block_number, p_block_hash,
         'withdrawal', 'confirmed',
         p_contract_address, p_borrower_address,
-        '0', p_log_index, p_cancelled_at
+        COALESCE(v_collateral_amount, '0'), p_log_index, p_cancelled_at
     )
     ON CONFLICT ("chainId", "txHash", "logIndex") DO NOTHING;
 

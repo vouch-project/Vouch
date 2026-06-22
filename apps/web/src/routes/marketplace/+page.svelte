@@ -146,6 +146,25 @@
     return 'An unexpected error occurred.';
   };
 
+  const handleCancelLoan = async (loan: LoanWithTokens) => {
+    if (loan.onChainLoanId == null) {
+      errorMsg = 'Loan is missing on-chain ID.';
+      return;
+    }
+
+    cancellingLoanId = loan.id;
+    errorMsg = null;
+
+    try {
+      await cancelLoan(ethers.getBigInt(loan.onChainLoanId));
+      loans = loans.filter((l) => l.id !== loan.id);
+    } catch (e) {
+      errorMsg = getErrorMessage(e);
+    } finally {
+      cancellingLoanId = null;
+    }
+  };
+
   const handleFundLoan = async (loan: LoanWithTokens) => {
     if (loan.onChainLoanId == null) {
       errorMsg = 'Loan is missing on-chain ID.';
@@ -174,24 +193,7 @@
     }
   };
 
-  const handleCancelLoan = async (loan: LoanWithTokens) => {
-    if (loan.onChainLoanId == null) {
-      errorMsg = 'Loan is missing on-chain ID.';
-      return;
-    }
 
-    cancellingLoanId = loan.id;
-    errorMsg = null;
-
-    try {
-      await cancelLoan(ethers.getBigInt(loan.onChainLoanId));
-      loans = loans.filter((l) => l.id !== loan.id);
-    } catch (e) {
-      errorMsg = getErrorMessage(e);
-    } finally {
-      cancellingLoanId = null;
-    }
-  };
 </script>
 
 <svelte:head>
@@ -408,42 +410,24 @@
                       {/if}
                     </Table.Cell>
                     <Table.Cell class="pr-4 sm:pr-10 py-4 text-right min-w-max">
-                      <div class="flex items-center justify-end gap-1.5">
-                        {#if isOwnLoan}
-                          <span class="text-[10px] sm:text-xs font-semibold text-muted-foreground italic">
-                            Your loan
-                          </span>
-                          <Button
-                            class="font-bold transition-transform group-hover:scale-105 h-7 sm:h-9 py-0 px-2 sm:px-3 text-[10px] sm:text-xs"
-                            disabled={cancellingLoanId === loan.id}
-                            onclick={() => handleCancelLoan(loan)}
-                            size="sm"
-                            variant="destructive"
-                          >
-                            {#if cancellingLoanId === loan.id}
-                              <RefreshCw class="mr-1.5 h-3 w-3 animate-spin" />
-                              Cancelling…
-                            {:else}
-                              Cancel request
-                            {/if}
-                          </Button>
-                        {:else}
-                          <Button
-                            class="font-bold transition-transform group-hover:scale-105 h-7 sm:h-9 py-0 px-2 sm:px-3 text-[10px] sm:text-xs"
-                            disabled={fundingLoanId === loan.id}
-                            onclick={() => handleFundLoan(loan)}
-                            size="sm"
-                            variant="default"
-                          >
-                            {#if fundingLoanId === loan.id}
-                              <RefreshCw class="mr-1.5 h-3 w-3 animate-spin" />
-                              Funding…
-                            {:else}
-                              Fund
-                            {/if}
-                          </Button>
-                        {/if}
-                      </div>
+                      {#if isOwnLoan}
+                        <span class="text-[10px] sm:text-xs font-semibold text-muted-foreground italic">Your loan</span>
+                      {:else}
+                        <Button
+                          class="font-bold transition-transform group-hover:scale-105 h-7 sm:h-9 py-0 px-2 sm:px-3 text-[10px] sm:text-xs"
+                          disabled={fundingLoanId === loan.id}
+                          onclick={() => handleFundLoan(loan)}
+                          size="sm"
+                          variant="default"
+                        >
+                          {#if fundingLoanId === loan.id}
+                            <RefreshCw class="mr-1.5 h-3 w-3 animate-spin" />
+                            Funding…
+                          {:else}
+                            Fund
+                          {/if}
+                        </Button>
+                      {/if}
                     </Table.Cell>
                   </Table.Row>
                 {/each}

@@ -71,7 +71,7 @@
 
 <div class="relative w-full">
   <input
-    class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
+    class="border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring transition w-full bg-background text-foreground"
     autocomplete="off"
     onblur={() =>
       setTimeout(() => {
@@ -91,19 +91,18 @@
     bind:value
   />
   {#if showDropdown && filteredTokens.length > 0}
-    <ul class="absolute z-10 w-full bg-white border border-gray-200 rounded-lg mt-1 max-h-48 overflow-auto shadow-lg">
+    <ul class="absolute z-10 w-full bg-popover border border-border rounded-lg mt-1 max-h-48 overflow-auto shadow-lg">
       {#each filteredTokens as token, i (`${token.chainId}:${token.address}`)}
         <li>
           <button
             bind:this={optionRefs[i]}
-            class="w-full text-left px-4 py-2 cursor-pointer flex items-center"
-            class:bg-blue-100={focusedIndex === i}
+            class="w-full text-left px-3 py-2 text-sm cursor-pointer flex items-center hover:bg-accent hover:text-accent-foreground {focusedIndex === i ? 'bg-accent text-accent-foreground' : ''}"
             onmousedown={() => selectToken(token.symbol)}
             tabindex="-1"
             type="button"
           >
-            <span class="font-mono">{token.symbol}</span>
-            <span class="ml-2 text-xs text-gray-500">{token.name}</span>
+            <span class="font-mono text-foreground">{token.symbol}</span>
+            <span class="ml-2 text-xs text-muted-foreground">{token.name}</span>
           </button>
         </li>
       {/each}

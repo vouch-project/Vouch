@@ -40,7 +40,7 @@ export class BlockchainListenerService implements OnModuleInit {
       try {
         const provider = config.rpcUrl.startsWith('ws')
           ? new ethers.WebSocketProvider(config.rpcUrl)
-          : new ethers.JsonRpcProvider(config.rpcUrl);
+          : new ethers.JsonRpcProvider(config.rpcUrl, undefined, { polling: true });
         const network = await provider.getNetwork();
 
         this.logger.log(
@@ -88,7 +88,7 @@ export class BlockchainListenerService implements OnModuleInit {
     const queueKey = `${network.chainId.toString()}:${config.contractAddress}`;
 
     void contract.on(
-      contract.filters.LoanCreated(),
+      contract.getEvent('LoanCreated'),
       (
         loanId,
         borrower,
@@ -118,7 +118,7 @@ export class BlockchainListenerService implements OnModuleInit {
     );
 
     void contract.on(
-      contract.filters.LoanFunded(),
+      contract.getEvent('LoanFunded'),
       (loanId, lender, borrower, principalAmount, timestamp, event) => {
         this.enqueue(queueKey, () =>
           this.handleLoanFunded(
@@ -136,7 +136,7 @@ export class BlockchainListenerService implements OnModuleInit {
     );
 
     void contract.on(
-      contract.filters.LoanRepaid(),
+      contract.getEvent('LoanRepaid'),
       (
         loanId,
         borrower,
@@ -165,7 +165,7 @@ export class BlockchainListenerService implements OnModuleInit {
     );
 
     void contract.on(
-      contract.filters.LoanPartiallyRepaid(),
+      contract.getEvent('LoanPartiallyRepaid'),
       (
         loanId,
         borrower,
@@ -191,7 +191,7 @@ export class BlockchainListenerService implements OnModuleInit {
     );
 
     void contract.on(
-      contract.filters.LoanCancelled(),
+      contract.getEvent('LoanCancelled'),
       (loanId, borrower, timestamp, event) => {
         this.enqueue(queueKey, () =>
           this.handleLoanCancelled(
@@ -228,8 +228,20 @@ export class BlockchainListenerService implements OnModuleInit {
       interestRateBps = Number(details.interestRateBps);
       durationSeconds = Number(details.durationSeconds);
       fundWindowSeconds = Number(details.fundDeadline - timestamp);
-    } catch (error) {
-      this.logger.error('Failed to read loan terms from contract', error);
+    } catch (primaryError) {
+      this.logger.error(
+        'Failed to read loan terms from getRepaymentDetails; falling back to loans(loanId)',
+        primaryError,
+      );
+      try {
+        const loan = await contract.loans(loanId);
+        interestRateBps = Number(loan.interestRateBps);
+        durationSeconds = Number(loan.durationSeconds);
+        fundWindowSeconds = Number(loan.fundDeadline - timestamp);
+      } catch (fallbackError) {
+        this.logger.error('Failed to read loan terms from loans(); aborting handler', fallbackError);
+        throw fallbackError;
+      }
     }
 
     try {

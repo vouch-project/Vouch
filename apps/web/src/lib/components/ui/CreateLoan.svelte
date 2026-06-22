@@ -13,12 +13,9 @@
   let selectedCollateralToken = $state('ETH');
   let selectedBorrowToken = $state('MOCK');
 
-  // Interest (annual %) and timing. Presets in days; "custom" reveals a number input.
   let interestRatePct = $state('5');
   let durationDays = $state('30');
-  let durationCustom = $state(false);
   let fundWindowDays = $state('7');
-  let fundWindowCustom = $state(false);
 
   // Credit score (fetched once when address is known)
   let creditScore = $state<number | null>(null);
@@ -127,150 +124,109 @@
   };
 
   const isSubmitting = $derived(status === 'Waiting for wallet confirmation...');
+
+  const inputClass = 'border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring transition w-full bg-background';
+  const sectionClass = 'flex flex-col gap-3 p-4 rounded-lg border border-border/60 bg-muted/20';
 </script>
 
-<form class="flex flex-col items-center gap-4 w-full max-w-sm" onsubmit={handleCreateLoan}>
-  <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
-    <span>Collateral Token:</span>
-    <TokenAutocomplete tokens={chainInfo.tokens} bind:value={selectedCollateralToken} />
-  </label>
-  <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
-    <span>Collateral to Deposit ({selectedCollateralToken}):</span>
-    <input
-      class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
-      inputmode="decimal"
-      placeholder="0.0"
-      type="text"
-      bind:value={collateralAmount}
-    />
-    <span class="text-xs text-gray-400 min-h-4 block">
-      {collateralUsd > 0 ? `≈ $${collateralUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''}
-    </span>
-  </label>
-  <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
-    <span>Borrow Currency:</span>
-    <TokenAutocomplete tokens={chainInfo.tokens} bind:value={selectedBorrowToken} />
-  </label>
-  <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
-    <span>Amount to Borrow ({selectedBorrowToken}):</span>
-    <input
-      class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
-      inputmode="decimal"
-      placeholder="0.0"
-      type="text"
-      bind:value={borrowAmount}
-    />
-    <span class="text-xs text-gray-400 min-h-4 block">
-      {borrowUsd > 0 ? `≈ $${borrowUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''}
-    </span>
-  </label>
+<form class="flex flex-col gap-5 w-full" onsubmit={handleCreateLoan}>
+  <!-- Collateral + Borrow side-by-side -->
+  <div class="grid grid-cols-2 gap-4">
+    <div class={sectionClass}>
+      <p class="text-sm font-semibold text-foreground">Collateral</p>
+      <div class="flex flex-col gap-1.5">
+        <span class="text-xs text-muted-foreground font-medium">Token</span>
+        <TokenAutocomplete tokens={chainInfo.tokens} bind:value={selectedCollateralToken} />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <span class="text-xs text-muted-foreground font-medium">Amount</span>
+        <input class={inputClass} inputmode="decimal" placeholder="0.0" type="text" bind:value={collateralAmount} />
+        <span class="text-xs text-muted-foreground min-h-4">
+          {collateralUsd > 0 ? `≈ $${collateralUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''}
+        </span>
+      </div>
+    </div>
 
-  <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
-    <span>Interest Rate (APR %):</span>
-    <input
-      class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
-      inputmode="decimal"
-      placeholder="5"
-      type="text"
-      bind:value={interestRatePct}
-    />
-  </label>
+    <div class={sectionClass}>
+      <p class="text-sm font-semibold text-foreground">Borrow</p>
+      <div class="flex flex-col gap-1.5">
+        <span class="text-xs text-muted-foreground font-medium">Token</span>
+        <TokenAutocomplete tokens={chainInfo.tokens} bind:value={selectedBorrowToken} />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <span class="text-xs text-muted-foreground font-medium">Amount</span>
+        <input class={inputClass} inputmode="decimal" placeholder="0.0" type="text" bind:value={borrowAmount} />
+        <span class="text-xs text-muted-foreground min-h-4">
+          {borrowUsd > 0 ? `≈ $${borrowUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''}
+        </span>
+      </div>
+    </div>
+  </div>
 
-  <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
-    <span>Loan Duration:</span>
-    <select
-      class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
-      onchange={(e) => {
-        const v = (e.currentTarget as HTMLSelectElement).value;
-        durationCustom = v === 'custom';
-        if (!durationCustom) durationDays = v;
-      }}
-    >
-      <option value="7">7 days</option>
-      <option value="14">14 days</option>
-      <option selected value="30">30 days</option>
-      <option value="60">60 days</option>
-      <option value="90">90 days</option>
-      <option value="custom">Custom…</option>
-    </select>
-    {#if durationCustom}
-      <input
-        class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
-        inputmode="numeric"
-        placeholder="Days"
-        type="text"
-        bind:value={durationDays}
-      />
-    {/if}
-  </label>
+  <!-- Loan Terms: APR, Duration, Fund Window in one row -->
+  <div class={sectionClass}>
+    <p class="text-sm font-semibold text-foreground">Loan Terms</p>
+    <div class="grid grid-cols-3 gap-3">
+      <div class="flex flex-col gap-1.5">
+        <span class="text-xs text-muted-foreground font-medium">APR %</span>
+        <input class={inputClass} inputmode="decimal" placeholder="5" type="text" bind:value={interestRatePct} />
+      </div>
 
-  <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
-    <span>Fund Within:</span>
-    <select
-      class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
-      onchange={(e) => {
-        const v = (e.currentTarget as HTMLSelectElement).value;
-        fundWindowCustom = v === 'custom';
-        if (!fundWindowCustom) fundWindowDays = v;
-      }}
-    >
-      <option value="1">1 day</option>
-      <option value="3">3 days</option>
-      <option selected value="7">7 days</option>
-      <option value="14">14 days</option>
-      <option value="custom">Custom…</option>
-    </select>
-    {#if fundWindowCustom}
-      <input
-        class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
-        inputmode="numeric"
-        placeholder="Days"
-        type="text"
-        bind:value={fundWindowDays}
-      />
-    {/if}
-  </label>
+      <div class="flex flex-col gap-1.5">
+        <span class="text-xs text-muted-foreground font-medium">Duration</span>
+        <div class="relative">
+          <input class="{inputClass} pr-10" inputmode="numeric" min="1" placeholder="30" type="number" bind:value={durationDays} />
+          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">days</span>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <span class="text-xs text-muted-foreground font-medium">Fund within</span>
+        <div class="relative">
+          <input class="{inputClass} pr-10" inputmode="numeric" min="1" placeholder="7" type="number" bind:value={fundWindowDays} />
+          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">days</span>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- LTV Indicator -->
   <div
     class="w-full rounded-lg border px-4 py-3 space-y-2 {ltvExceeded
-      ? 'border-red-300 bg-red-50'
-      : 'border-gray-200 bg-gray-50'}"
+      ? 'border-destructive/50 bg-destructive/5'
+      : 'border-border/60 bg-muted/20'}"
   >
-    <div class="flex justify-between text-xs font-semibold {ltvExceeded ? 'text-red-600' : 'text-gray-500'}">
+    <div class="flex justify-between text-xs font-semibold {ltvExceeded ? 'text-destructive' : 'text-muted-foreground'}">
       <span>Loan-to-Value (LTV)</span>
       <span>Max: {computedMaxLtv.toFixed(1)}%{creditScore !== null ? ` (score ${creditScore})` : ''}</span>
     </div>
 
-    <!-- Bar -->
-    <div class="relative w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-      <!-- Max LTV marker -->
+    <div class="relative w-full h-2 bg-muted rounded-full overflow-hidden">
       <div
         style:left="{(computedMaxLtv / (computedMaxLtv + 5)) * 100}%"
-        class="absolute top-0 h-full w-0.5 bg-gray-400 z-10"
+        class="absolute top-0 h-full w-0.5 bg-muted-foreground/40 z-10"
       ></div>
-      <!-- Current LTV fill -->
       <div
         style:width="{collateralUsd > 0 ? Math.min((currentLtv / (computedMaxLtv + 5)) * 100, 100) : 0}%"
-        class="h-full rounded-full transition-all duration-300 {ltvExceeded ? 'bg-red-500' : 'bg-blue-500'}"
+        class="h-full rounded-full transition-all duration-300 {ltvExceeded ? 'bg-destructive' : 'bg-primary'}"
       ></div>
     </div>
 
     <div class="flex justify-between items-center">
-      <span class="text-sm font-bold {ltvExceeded ? 'text-red-600' : 'text-gray-700'}">
+      <span class="text-sm font-bold {ltvExceeded ? 'text-destructive' : 'text-foreground'}">
         {currentLtv > 0 ? `${currentLtv.toFixed(1)}%` : '—'}
       </span>
       {#if ltvExceeded}
-        <span class="text-xs font-semibold text-red-500">Exceeds max LTV ↑</span>
+        <span class="text-xs font-semibold text-destructive">Exceeds max LTV ↑</span>
       {:else if currentLtv > 0}
-        <span class="text-xs text-gray-400">{(computedMaxLtv - currentLtv).toFixed(1)}% remaining</span>
+        <span class="text-xs text-muted-foreground">{(computedMaxLtv - currentLtv).toFixed(1)}% remaining</span>
       {/if}
     </div>
   </div>
 
   <button
-    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-2 rounded-lg shadow transition disabled:opacity-60 disabled:cursor-not-allowed {ltvExceeded
-      ? '!bg-red-500 hover:!bg-red-600'
+    class="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-6 py-2.5 rounded-lg shadow transition disabled:opacity-60 disabled:cursor-not-allowed {ltvExceeded
+      ? '!bg-destructive hover:!bg-destructive/90'
       : ''}"
     disabled={isSubmitting || ltvExceeded}
     type="submit"
@@ -280,11 +236,11 @@
 
   {#if status}
     <p
-      class="text-sm mt-2 {status === 'Loan created!'
+      class="text-sm {status === 'Loan created!'
         ? 'text-green-600'
         : ltvExceeded || status.includes('exceeds')
-          ? 'text-red-500'
-          : 'text-gray-500'} text-center"
+          ? 'text-destructive'
+          : 'text-muted-foreground'} text-center"
     >
       {status}
     </p>

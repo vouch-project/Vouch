@@ -83,7 +83,10 @@ BEGIN
         "collateralAmount"  = EXCLUDED."collateralAmount",
         "collateralTokenId" = EXCLUDED."collateralTokenId",
         "principalTokenId"  = EXCLUDED."principalTokenId",
-        "principalAmount"   = EXCLUDED."principalAmount"
+        "principalAmount"   = EXCLUDED."principalAmount",
+        "interestRate"      = EXCLUDED."interestRate",
+        duration            = EXCLUDED.duration,
+        "fundDeadline"      = EXCLUDED."fundDeadline"
     RETURNING id INTO v_loan_id;
 
     INSERT INTO public.transactions (

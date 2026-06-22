@@ -568,7 +568,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 fundDeadline
     ) {
         Loan memory loan = loans[loanId];
-        uint256 due = loan.funded ? loan.principalAmount + _accruedInterest(loan) : 0;
+        uint256 due = loan.repaid
+            ? loan.amountRepaid
+            : loan.funded ? loan.principalAmount + _accruedInterest(loan) : 0;
         return (
             loan.interestRateBps,
             loan.durationSeconds,
