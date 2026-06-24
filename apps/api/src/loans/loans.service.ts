@@ -33,7 +33,9 @@ export class LoansService {
         p_requested_principal_amount:
           createLoanDto.requestedPrincipalAmount.toString(),
         p_collateral_tx_hash: createLoanDto.collateralTxHash ?? '',
-        p_collateral_block_number: String(createLoanDto.collateralBlockNumber ?? 0),
+        p_collateral_block_number: String(
+          createLoanDto.collateralBlockNumber ?? 0,
+        ),
         p_collateral_block_hash: createLoanDto.collateralBlockHash ?? '',
         p_log_index: createLoanDto.logIndex ?? 0,
         p_collateral_locked_at: collateralLockedAt.toISOString(),

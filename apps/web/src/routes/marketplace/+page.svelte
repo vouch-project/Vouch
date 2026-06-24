@@ -12,7 +12,7 @@
   import { supabase } from '$lib/supabase';
   import type { LoanWithTokens } from '$lib/types';
   import { cn } from '$lib/utils';
-  import { cancelLoan, fundLoan } from '$lib/wallet/vouchVault';
+  import { fundLoan } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Info, RefreshCw, ShieldCheck, TrendingUp, Wallet, Zap } from '@lucide/svelte';
   import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -31,7 +31,6 @@
   let channel: RealtimeChannel | null = $state(null);
   let activeTab: string = $state('borrow');
   let fundingLoanId: string | null = $state(null);
-  let cancellingLoanId: string | null = $state(null);
 
   const getRiskLevel = (score: number) => {
     if (score > 800) return { label: 'Low', color: 'bg-green-100 text-green-700 border-green-200' };
@@ -146,25 +145,6 @@
     return 'An unexpected error occurred.';
   };
 
-  const handleCancelLoan = async (loan: LoanWithTokens) => {
-    if (loan.onChainLoanId == null) {
-      errorMsg = 'Loan is missing on-chain ID.';
-      return;
-    }
-
-    cancellingLoanId = loan.id;
-    errorMsg = null;
-
-    try {
-      await cancelLoan(ethers.getBigInt(loan.onChainLoanId));
-      loans = loans.filter((l) => l.id !== loan.id);
-    } catch (e) {
-      errorMsg = getErrorMessage(e);
-    } finally {
-      cancellingLoanId = null;
-    }
-  };
-
   const handleFundLoan = async (loan: LoanWithTokens) => {
     if (loan.onChainLoanId == null) {
       errorMsg = 'Loan is missing on-chain ID.';
@@ -192,8 +172,6 @@
       fundingLoanId = null;
     }
   };
-
-
 </script>
 
 <svelte:head>

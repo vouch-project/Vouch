@@ -1,8 +1,8 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Tables } from '@vouch/database-types';
-import { VouchVault__factory } from '@vouch/contracts';
 import type { VouchVault } from '@vouch/contracts';
+import { VouchVault__factory } from '@vouch/contracts';
+import type { Tables } from '@vouch/database-types';
 import { ethers } from 'ethers';
 import { LoansService } from '../loans/loans.service';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -40,7 +40,9 @@ export class BlockchainListenerService implements OnModuleInit {
       try {
         const provider = config.rpcUrl.startsWith('ws')
           ? new ethers.WebSocketProvider(config.rpcUrl)
-          : new ethers.JsonRpcProvider(config.rpcUrl, undefined, { polling: true });
+          : new ethers.JsonRpcProvider(config.rpcUrl, undefined, {
+              polling: true,
+            });
         const network = await provider.getNetwork();
 
         this.logger.log(
@@ -239,7 +241,10 @@ export class BlockchainListenerService implements OnModuleInit {
         durationSeconds = Number(loan.durationSeconds);
         fundWindowSeconds = Number(loan.fundDeadline - timestamp);
       } catch (fallbackError) {
-        this.logger.error('Failed to read loan terms from loans(); aborting handler', fallbackError);
+        this.logger.error(
+          'Failed to read loan terms from loans(); aborting handler',
+          fallbackError,
+        );
         throw fallbackError;
       }
     }
