@@ -27,6 +27,9 @@ if [ $? -eq 0 ]; then
     MOCK_ERC20_ADDRESS=$(grep HARDCODED_MOCK_ERC20_ADDRESS ../../.env | cut -d '=' -f2 | tr -d '\r\n')
     HARDCODED_MOCK_ERC20_ADDRESS="$MOCK_ERC20_ADDRESS" npx hardhat run scripts/mint-mock-to-wallets.ts --network localhost
 
+    # Deploy mock Chainlink price feeds and register them on VouchVault
+    npx hardhat run scripts/deploy-mock-aggregators.ts --network localhost
+
     # Write deployment timestamp so other services know to reload
     TIMESTAMP=$(node -e "process.stdout.write(String(Date.now()))")
     ENV_FILE="../../.env"
