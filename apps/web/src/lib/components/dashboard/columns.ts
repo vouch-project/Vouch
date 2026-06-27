@@ -11,6 +11,7 @@ export const tableColumns: readonly TableColumn[] = [
   { label: 'Interest', width: 'w-[13%]', align: 'center' },
   { label: 'Repaid', width: 'w-[14%]', align: 'center' },
   { label: 'Due', width: 'w-[16%]', align: 'center' },
+  { label: 'Health Factor', width: 'w-36', align: 'center' },
   { label: 'Status', width: 'w-[11%]', align: 'center' },
   { label: 'Action', width: 'w-[8%]', align: 'right' },
 ];

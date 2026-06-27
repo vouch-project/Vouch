@@ -164,6 +164,16 @@ export const repayLoanWithERC20 = async (
 };
 
 /**
+ * Returns the health factor for a funded, non-repaid loan.
+ * Scaled to 1e18: 1e18n = 1.0, 1.5e18n = 1.5, etc.
+ * Reverts if loan is not funded or already repaid.
+ */
+export const getHealthFactor = async (onChainLoanId: bigint): Promise<bigint> => {
+  const contract = await getVouchVaultContract();
+  return contract.getHealthFactor(onChainLoanId) as Promise<bigint>;
+};
+
+/**
  * Fund an active loan by sending its requested principal to the borrower.
  * Handles both native ETH (principalTokenAddress == address(0)) and ERC20 tokens.
  *

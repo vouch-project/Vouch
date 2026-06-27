@@ -13,7 +13,8 @@
   } from '$lib/loans/loanMath';
   import type { LoanFull } from '$lib/types';
   import { cn } from '$lib/utils';
-  import { getRepaymentDetails, type RepaymentDetails } from '$lib/wallet/vouchVault';
+  import { getHealthFactor, getRepaymentDetails, type RepaymentDetails } from '$lib/wallet/vouchVault';
+  import HealthFactorBadge from './HealthFactorBadge.svelte';
   import { ethers } from 'ethers';
   import { tableColumns } from '../dashboard/columns';
 
@@ -50,6 +51,8 @@
   // the precise remaining balance. Repaid / pending loans skip this entirely.
   let chainDetails = $state<RepaymentDetails | null>(null);
   let chainError = $state('');
+  let healthFactor = $state<bigint | null>(null);
+  let hfLoading = $state(false);
 
   // Chain state is authoritative once loaded; DB status is the initial fallback
   // while the blockchain listener hasn't yet written the update.
@@ -70,6 +73,21 @@
       })
       .catch((e) => {
         chainError = (e as Error).message;
+      });
+  });
+
+  $effect(() => {
+    if (!loan.onChainLoanId || loan.status !== 'active') return;
+    hfLoading = true;
+    getHealthFactor(BigInt(loan.onChainLoanId))
+      .then((hf) => {
+        healthFactor = hf;
+      })
+      .catch(() => {
+        healthFactor = null;
+      })
+      .finally(() => {
+        hfLoading = false;
       });
   });
 
@@ -169,6 +187,11 @@
     {:else}
       {dueDateLabel}
     {/if}
+  </Table.Cell>
+
+  <!-- Health Factor -->
+  <Table.Cell class="px-2 sm:px-4 py-3 whitespace-nowrap text-center">
+    <HealthFactorBadge {healthFactor} loading={hfLoading} />
   </Table.Cell>
 
   <!-- Status -->
