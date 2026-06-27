@@ -31,8 +31,14 @@
   <div class="h-5 w-16 bg-muted animate-pulse rounded"></div>
 {:else if status && formatted}
   <Badge
-    variant={status === 'Warning' ? 'outline' : variant}
-    class={status === 'Warning' ? 'border-yellow-500 text-yellow-600' : ''}
+    variant="outline"
+    class={
+      status === 'Safe'
+        ? 'border-green-500 text-green-600'
+        : status === 'Warning'
+          ? 'border-yellow-500 text-yellow-600'
+          : 'border-destructive text-destructive'
+    }
   >
     {formatted} · {status}
   </Badge>
