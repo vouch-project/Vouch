@@ -9,6 +9,7 @@
   import { navigating } from '$app/stores';
   import Header from '$lib/components/layout/Header.svelte';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
+  import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
   import { initWalletSubscriptions, wallet } from '$lib/wallet/wallet.svelte';
   import { ModeWatcher } from 'mode-watcher';
   import { onMount } from 'svelte';
@@ -49,15 +50,18 @@
           const chainData = await getChainInfo(wallet.networkId, controller.signal);
           chainInfo.contractAddress = chainData.contractAddress;
           chainInfo.tokens = chainData.tokens;
+          tokenPrices.sync();
         } else {
           chainInfo.contractAddress = undefined;
           chainInfo.tokens = [];
+          tokenPrices.sync();
         }
       } catch (e) {
         if (controller.signal.aborted) return;
         console.error('Failed to fetch token list', e);
         chainInfo.contractAddress = undefined;
         chainInfo.tokens = [];
+        tokenPrices.sync();
       }
     };
 
