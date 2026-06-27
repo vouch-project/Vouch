@@ -93,7 +93,7 @@ export type Database = MergeDeep<
             p_collateral_block_number: string;
             p_collateral_token_address: Address;
             p_contract_address: Address;
-            p_log_index: number;
+            p_log_index: string;
             p_on_chain_loan_id: string;
           };
           Returns: string;

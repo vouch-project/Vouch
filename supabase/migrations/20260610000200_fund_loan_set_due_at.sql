@@ -10,7 +10,7 @@ CREATE OR REPLACE FUNCTION fund_loan_with_transaction (
     p_block_hash text,
     p_log_index uint256,
     p_funded_at timestamptz
-) RETURNS void LANGUAGE plpgsql
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
 SET
     search_path = '' AS $$
 DECLARE
@@ -58,6 +58,22 @@ BEGIN
         p_borrower_address, p_principal_amount, p_log_index, p_funded_at
     )
     ON CONFLICT ("chainId", "txHash", "logIndex") DO NOTHING;
+
+    -- Notify the borrower in their inbox.
+    INSERT INTO public.notifications (
+        "recipientAddress", type, title, body, "loanId", payload
+    ) VALUES (
+        p_borrower_address,
+        'loan_funded',
+        'Your loan was funded',
+        'A lender funded your loan request.',
+        v_loan_id,
+        jsonb_build_object(
+            'lenderAddress', p_lender_address,
+            'principalAmount', p_principal_amount,
+            'txHash', p_tx_hash
+        )
+    );
 END;
 $$;
 

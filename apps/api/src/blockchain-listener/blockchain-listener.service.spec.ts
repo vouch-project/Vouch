@@ -42,6 +42,13 @@ describe('BlockchainListenerService', () => {
   } as ethers.Log;
   const network = { chainId: 1n } as ethers.Network;
 
+  const repayContract = {
+    loans: jest.fn().mockResolvedValue({
+      principalRepaid: 300n,
+      collateralReleased: 600n,
+    }),
+  } as unknown as VouchVault;
+
   const invoke = () =>
     service.callHandleLoanPartiallyRepaid(
       7n,
@@ -51,6 +58,7 @@ describe('BlockchainListenerService', () => {
       log,
       network,
       '0xcontract',
+      repayContract,
     );
 
   beforeEach(async () => {
@@ -86,6 +94,8 @@ describe('BlockchainListenerService', () => {
           onChainLoanId: 7n,
           borrowerAddress: '0xborrower',
           paymentAmount: 500n,
+          principalRepaid: 300n,
+          collateralReleased: 600n,
           txHash: '0xtx',
           logIndex: 0,
         }),

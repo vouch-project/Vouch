@@ -161,6 +161,7 @@ export class BlockchainListenerService implements OnModuleInit {
             event,
             network,
             config.contractAddress,
+            contract,
           ),
         );
       },
@@ -187,6 +188,7 @@ export class BlockchainListenerService implements OnModuleInit {
             event,
             network,
             config.contractAddress,
+            contract,
           ),
         );
       },
@@ -337,14 +339,22 @@ export class BlockchainListenerService implements OnModuleInit {
     { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
     network: ethers.Network,
     contractAddress: string,
+    contract: VouchVault,
   ) {
     try {
+      // principalRepaid/collateralReleased are cumulative, monotonic struct
+      // fields not carried by the event; read them live so the DB cache matches
+      // the chain exactly.
+      const { principalRepaid, collateralReleased } =
+        await this.readRepaidAmounts(contract, loanId);
       await this.loanService.partialRepay({
         onChainLoanId: loanId,
         networkId: network.chainId.toString(),
         contractAddress,
         borrowerAddress: borrower,
         paymentAmount,
+        principalRepaid,
+        collateralReleased,
         txHash: transactionHash,
         blockNumber,
         blockHash,
@@ -373,8 +383,11 @@ export class BlockchainListenerService implements OnModuleInit {
     { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
     network: ethers.Network,
     contractAddress: string,
+    contract: VouchVault,
   ) {
     try {
+      const { principalRepaid, collateralReleased } =
+        await this.readRepaidAmounts(contract, loanId);
       await this.loanService.repay({
         onChainLoanId: loanId,
         networkId: network.chainId.toString(),
@@ -384,6 +397,8 @@ export class BlockchainListenerService implements OnModuleInit {
         principalAmount,
         interestAmount,
         totalRepaid,
+        principalRepaid,
+        collateralReleased,
         txHash: transactionHash,
         blockNumber,
         blockHash,
@@ -396,6 +411,33 @@ export class BlockchainListenerService implements OnModuleInit {
         `Failed to mark loan ${loanId.toString()} as repaid in DB`,
         error,
       );
+    }
+  }
+
+  /**
+   * Read the cumulative, monotonic repayment-progress fields from the on-chain
+   * loan struct (the public `loans` getter). These are not carried by the
+   * repayment events, so caching them in the DB requires a live read. On failure
+   * we fall back to 0 — the SQL caches with GREATEST(...) so a 0 can never
+   * regress an already-cached value, and the next event (or the UI's live chain
+   * hydration) will reconcile it.
+   */
+  private async readRepaidAmounts(
+    contract: VouchVault,
+    loanId: bigint,
+  ): Promise<{ principalRepaid: bigint; collateralReleased: bigint }> {
+    try {
+      const loan = await contract.loans(loanId);
+      return {
+        principalRepaid: loan.principalRepaid,
+        collateralReleased: loan.collateralReleased,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to read repaid amounts for loan ${loanId.toString()} from chain`,
+        error,
+      );
+      return { principalRepaid: 0n, collateralReleased: 0n };
     }
   }
 }

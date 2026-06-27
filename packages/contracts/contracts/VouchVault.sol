@@ -13,37 +13,84 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     using SafeERC20 for IERC20;
     
     struct Loan {
+        // Borrower & collateral
         address borrower;
-        address collateralToken;  // address(0) = native ETH
+        address collateralToken;     // address(0) = native ETH
         uint256 collateralAmount;
+        bool collateralLocked;
+        uint256 collateralReleased;  // cumulative collateral already returned to borrower
+        // Lifecycle
         uint256 createdAt;
         bool active;
-        bool collateralLocked;
-        // V2 additions — appended to preserve storage layout
-        address lender;
-        uint256 principalAmount;
         bool funded;
-        uint256 fundedAt;
-        // V3 additions — appended to preserve storage layout
+        bool repaid;                 // true once the loan has been fully repaid
+        uint256 fundDeadline;        // absolute timestamp after which the loan can no longer be funded
+        // Lender & principal
+        address lender;
         address requestedPrincipalToken;  // token borrower wants to receive
         uint256 requestedPrincipalAmount; // amount borrower wants to receive
-        // V4 additions — appended to preserve storage layout
-        uint16 interestRateBps;      // ANNUAL interest rate in basis points (e.g. 500 = 5% APR)
+        uint256 principalAmount;          // principal actually lent
+        uint256 fundedAt;
+        // Repayment terms & accounting
+        uint16 interestRateBps;      // ANNUAL interest rate in basis points (e.g. 500 = 5% APR), max 10000 = 100%
         uint256 durationSeconds;     // loan term in seconds (0 = no deadline / no time-based interest)
-        bool repaid;                 // true once the loan has been fully repaid
         uint256 amountRepaid;        // cumulative debt repaid so far (principal token units)
-        uint256 collateralReleased;  // cumulative collateral already returned to borrower
-        // V5 additions — appended to preserve storage layout
-        uint256 fundDeadline;        // absolute timestamp after which the loan can no longer be funded
         uint256 principalRepaid;     // cumulative principal repaid (interest-first amortization)
+        uint256 interestAccrued;     // interest crystallized into the debt up to lastAccrualAt
+        uint256 lastAccrualAt;       // timestamp up to which interest has been crystallized
     }
 
     // --- State Variables ---
-    // IMPORTANT: Never reorder these in future versions (V2, V3)
+
     mapping(address => uint256) public deposits;
     mapping(uint256 => Loan) public loans;         // single source of truth for all loan/collateral data
     uint256 public nextLoanId;
     mapping(address => uint256) public lockedEthCollateral; // per-borrower ETH aggregate
+
+    // --- Interest accrual cadence ---
+    // Interest recomputes once per accrual period. The annual rate is preserved:
+    // PERIODS_PER_YEAR = number of accrual periods in a 365-day year.
+    uint256 private constant ACCRUAL_PERIOD = 86400;        // 1 day in seconds
+    uint256 private constant PERIODS_PER_YEAR = 365;        // days per year
+
+    // --- Protocol fee ---
+    // A percentage of the *interest* portion of each repayment is routed to the
+    // protocol treasury; the lender receives the remainder. Principal is never
+    // taxed. If `protocolTreasury` is unset (address(0)) or `protocolFeeBps` is 0,
+    // no fee is taken and the lender receives the full payment.
+    address public protocolTreasury;
+    uint256 public protocolFeeBps;                        // 1000 = 10% of interest
+    uint256 public constant MAX_PROTOCOL_FEE_BPS = 5000;  // hard cap: 50% of interest
+
+    // --- Pull-over-push payouts ---
+    // Lender principal+interest and treasury fees are CREDITED here during repayment
+    // instead of being pushed to the recipient. Recipients later pull their funds via
+    // `withdrawPayments`, so a recipient that reverts on receipt can never block a
+    // borrower's repayment. `token == address(0)` represents native ETH.
+    mapping(address => mapping(address => uint256)) public pendingPayments; // account => token => amount
+
+    // --- Reentrancy guard ---
+    // Minimal inline non-reentrant guard (the installed OpenZeppelin upgradeable package
+    // does not ship ReentrancyGuardUpgradeable).
+    uint256 private constant _NOT_ENTERED = 1;
+    uint256 private constant _ENTERED = 2;
+    uint256 private _reentrancyStatus;
+
+    // --- Minimum interest floor ---
+    // Interest accrues on the OUTSTANDING principal (principal - principalRepaid), so a
+    // borrower who repays early pays proportionally less interest. To stop an instant repayment
+    // from undercutting lenders entirely, an optional origination floor of
+    // `principal * minInterestBps / 10000` is charged as interest the moment a loan is funded.
+    // 0 (the default) disables the floor, giving pure time-based outstanding-balance interest.
+    uint256 public minInterestBps;
+    uint256 public constant MAX_MIN_INTEREST_BPS = 10000; // hard cap: 100% of principal
+
+    modifier nonReentrant() {
+        require(_reentrancyStatus != _ENTERED, "ReentrancyGuard: reentrant call");
+        _reentrancyStatus = _ENTERED;
+        _;
+        _reentrancyStatus = _NOT_ENTERED;
+    }
 
     // --- Events ---
     event Deposited(address indexed user, uint256 amount);
@@ -92,6 +139,14 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 timestamp
     );
 
+    event ProtocolTreasuryUpdated(address indexed treasury);
+    event ProtocolFeeUpdated(uint256 feeBps);
+    event ProtocolFeeCollected(uint256 indexed loanId, address indexed token, uint256 amount);
+    event MinInterestUpdated(uint256 minInterestBps);
+
+    event PaymentCredited(address indexed account, address indexed token, uint256 amount);
+    event PaymentWithdrawn(address indexed account, address indexed token, uint256 amount);
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         // Prevents the implementation contract from being initialized directly
@@ -105,12 +160,109 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     function initialize(address initialOwner) public initializer {
         __Ownable_init(initialOwner);
         // __UUPSUpgradeable_init() removed: not required in latest OpenZeppelin
+        _reentrancyStatus = _NOT_ENTERED;
+        protocolTreasury = initialOwner; // default treasury; owner can change later
+        protocolFeeBps = 1000;           // default 10% of interest
     }
 
     /**
      * @dev Required by UUPSUpgradeable to restrict who can upgrade the contract.
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    /**
+     * @notice Set the address that receives protocol fees.
+     * @param newTreasury The new treasury address (cannot be the zero address).
+     */
+    function setProtocolTreasury(address newTreasury) external onlyOwner {
+        require(newTreasury != address(0), "Treasury cannot be zero address");
+        protocolTreasury = newTreasury;
+        emit ProtocolTreasuryUpdated(newTreasury);
+    }
+
+    /**
+     * @notice Set the protocol fee taken from the interest portion of repayments.
+     * @param newFeeBps Fee in basis points (1000 = 10%), capped at MAX_PROTOCOL_FEE_BPS.
+     */
+    function setProtocolFeeBps(uint256 newFeeBps) external onlyOwner {
+        require(newFeeBps <= MAX_PROTOCOL_FEE_BPS, "Fee exceeds max");
+        protocolFeeBps = newFeeBps;
+        emit ProtocolFeeUpdated(newFeeBps);
+    }
+
+    /**
+     * @notice Set the minimum interest floor charged as an origination fee when a loan is funded.
+     * @dev Charged as `principal * minInterestBps / 10000` interest at funding time, on top of
+     *      time-based outstanding-balance interest. Protects lenders from instant-repayment
+     *      undercutting. 0 disables the floor. Only affects loans funded after this is set.
+     * @param newMinInterestBps Floor in basis points of principal (1000 = 10%), capped at MAX_MIN_INTEREST_BPS.
+     */
+    function setMinInterestBps(uint256 newMinInterestBps) external onlyOwner {
+        require(newMinInterestBps <= MAX_MIN_INTEREST_BPS, "Min interest exceeds max");
+        minInterestBps = newMinInterestBps;
+        emit MinInterestUpdated(newMinInterestBps);
+    }
+
+    /**
+     * @dev Compute the protocol fee on the interest portion of a single payment.
+     *      Returns 0 when the treasury is unset or the fee rate is 0.
+     */
+    function _protocolFee(uint256 interestPortion) internal view returns (uint256) {
+        if (protocolTreasury == address(0) || protocolFeeBps == 0 || interestPortion == 0) {
+            return 0;
+        }
+        return (interestPortion * protocolFeeBps) / 10000;
+    }
+
+    /// @dev Credit a pull-payment to `account` for `token` (address(0) = native ETH).
+    function _creditPayment(address account, address token, uint256 amount) internal {
+        if (amount == 0) return;
+        pendingPayments[account][token] += amount;
+        emit PaymentCredited(account, token, amount);
+    }
+
+    /// @dev Pay `amount` of native ETH to `recipient`. Attempts a direct transfer first
+    ///      (instant for well-behaved recipients) and falls back to a credited pull-payment
+    ///      if the recipient rejects the ETH, so a reverting recipient can never block the
+    ///      calling operation (e.g. a borrower's repayment).
+    function _payoutEth(address recipient, uint256 amount) internal {
+        if (amount == 0) return;
+        (bool ok, ) = payable(recipient).call{value: amount}("");
+        if (!ok) {
+            _creditPayment(recipient, address(0), amount);
+        }
+    }
+
+    /// @dev Pay `amount` of `token` (already held by this contract) to `recipient`.
+    ///      Attempts a direct transfer first and falls back to a credited pull-payment if
+    ///      the transfer fails. Uses a low-level call so a failed transfer cannot revert the
+    ///      calling operation, and tolerates non-standard ERC20s that don't return a bool.
+    function _payoutToken(address token, address recipient, uint256 amount) internal {
+        if (amount == 0) return;
+        (bool success, bytes memory data) = token.call(abi.encodeCall(IERC20.transfer, (recipient, amount)));
+        if (!success || (data.length != 0 && !abi.decode(data, (bool)))) {
+            _creditPayment(recipient, token, amount);
+        }
+    }
+
+    /**
+     * @notice Withdraw funds credited to the caller (lender repayments/interest or
+     *         protocol fees). Uses the pull-payment pattern so a recipient that reverts
+     *         on receipt can never block a borrower's repayment.
+     * @param token The token to withdraw (address(0) for native ETH).
+     */
+    function withdrawPayments(address token) external nonReentrant {
+        uint256 amount = pendingPayments[msg.sender][token];
+        require(amount > 0, "Nothing to withdraw");
+        pendingPayments[msg.sender][token] = 0;
+        if (token == address(0)) {
+            (bool ok, ) = payable(msg.sender).call{value: amount}("");
+            require(ok, "ETH withdraw failed");
+        } else {
+            IERC20(token).safeTransfer(msg.sender, amount);
+        }
+        emit PaymentWithdrawn(msg.sender, token, amount);
+    }
 
     // --- Logic Functions ---
 
@@ -135,8 +287,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     ) external payable {
         require(msg.value > 0, "Collateral must be > 0");
         require(principalAmount > 0, "Principal amount must be > 0");
-        require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
         require(fundWindowSeconds > 0, "Fund window must be > 0");
+        require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
 
         // Collateral is tracked separately from withdrawable deposits.
         lockedEthCollateral[msg.sender] += msg.value;
@@ -160,7 +312,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             amountRepaid: 0,
             collateralReleased: 0,
             fundDeadline: block.timestamp + fundWindowSeconds,
-            principalRepaid: 0
+            principalRepaid: 0,
+            interestAccrued: 0,
+            lastAccrualAt: 0
         });
 
         emit LoanCreated(nextLoanId, msg.sender, address(0), msg.value, principalToken, principalAmount, block.timestamp);
@@ -187,8 +341,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(amount > 0, "Collateral must be > 0");
         require(token != address(0), "Invalid token address");
         require(principalAmount > 0, "Principal amount must be > 0");
-        require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
         require(fundWindowSeconds > 0, "Fund window must be > 0");
+        require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
 
         // Transfer tokens from user to this vault (SafeERC20 handles non-compliant tokens)
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
@@ -212,7 +366,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             amountRepaid: 0,
             collateralReleased: 0,
             fundDeadline: block.timestamp + fundWindowSeconds,
-            principalRepaid: 0
+            principalRepaid: 0,
+            interestAccrued: 0,
+            lastAccrualAt: 0
         });
 
         emit LoanCreated(nextLoanId, msg.sender, token, amount, principalToken, principalAmount, block.timestamp);
@@ -221,7 +377,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     /// @notice Cancel an unfunded loan and return locked collateral to the borrower.
     /// @dev Callable any time before the loan is funded. Returns collateral in its original form.
-    function cancelLoan(uint256 loanId) external {
+    function cancelLoan(uint256 loanId) external nonReentrant {
         Loan storage loan = loans[loanId];
         require(loan.active, "Loan is not active");
         require(msg.sender == loan.borrower, "Only borrower can cancel");
@@ -246,7 +402,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         emit LoanCancelled(loanId, loan.borrower, block.timestamp);
     }
 
-    function withdraw(uint256 amount) external {
+    function withdraw(uint256 amount) external nonReentrant {
         require(deposits[msg.sender] >= amount, "Insufficient balance");
         
         deposits[msg.sender] -= amount;
@@ -260,24 +416,20 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     /**
      * @notice Repay some or all of a funded ETH-principal loan.
-     * @dev    Accepts any msg.value between 1 wei and the remaining balance (totalDue - amountRepaid).
-     *         Interest accrues as per-day simple interest on the principal: the annual rate
-     *         (`interestRateBps`) is applied over the elapsed time floored to whole days and
-     *         capped at `durationSeconds` (see `_accruedInterest`). `totalDue` = principal +
-     *         accrued interest right now, so it grows over time until the duration cap is reached.
+     * @dev    Accepts any msg.value between 1 wei and the current remaining balance.
+     *         Interest accrues per-day on the OUTSTANDING principal (principal - principalRepaid),
+     *         so reducing principal lowers future interest (see `_accrue`). An optional origination
+     *         floor (`minInterestBps`) may have been charged at funding.
      *
-     *         Amortization is interest-first: each payment first covers the interest that has
-     *         accrued since the last payment, and only the remainder reduces principal. As a
-     *         result `principalRepaid` is monotonic (never decreases) even though `accrued`
-     *         keeps growing between payments.
+     *         Amortization is interest-first: each payment first covers the interest crystallized
+     *         up to now, and only the remainder reduces principal. `principalRepaid` is monotonic.
      *
      *         Collateral is released proportional to principal repaid:
-     *         floor(collateralAmount * principalDelta / principalAmount). On the final payment
-     *         (amountRepaid == totalDue) any rounding dust is also returned so all collateral is
-     *         recovered.
+     *         floor(collateralAmount * principalDelta / principalAmount). On the final payment any
+     *         rounding dust is also returned so all collateral is recovered.
      * @param loanId The ID of the loan to repay.
      */
-    function repayLoan(uint256 loanId) external payable {
+    function repayLoan(uint256 loanId) external payable nonReentrant {
         Loan storage loan = loans[loanId];
         require(!loan.repaid, "Loan already repaid");
         require(loan.active, "Loan is not active");
@@ -286,29 +438,25 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(loan.requestedPrincipalToken == address(0), "Loan has ERC20 principal; use repayLoanWithERC20");
         require(msg.value > 0, "Payment must be > 0");
 
-        uint256 accrued = _accruedInterest(loan);
-        uint256 totalDue = loan.principalAmount + accrued;
-        uint256 remaining = totalDue - loan.amountRepaid;
-        require(msg.value <= remaining, "Payment exceeds amount owed");
+        // Crystallize interest on the current outstanding principal up to now.
+        _accrue(loan);
 
         // Interest-first amortization with a monotonic principalRepaid.
         // Interest already paid in prior payments == amountRepaid - principalRepaid.
-        // Interest still outstanding now == accrued - interestAlreadyPaid (>= 0 because accrued only grows
-        // and is capped at duration; principalRepaid never exceeds principal).
         uint256 interestAlreadyPaid = loan.amountRepaid - loan.principalRepaid;
-        uint256 interestOutstanding = accrued > interestAlreadyPaid ? accrued - interestAlreadyPaid : 0;
+        uint256 interestOutstanding = loan.interestAccrued > interestAlreadyPaid
+            ? loan.interestAccrued - interestAlreadyPaid
+            : 0;
+        uint256 outstandingPrincipal = loan.principalAmount - loan.principalRepaid;
+        uint256 remaining = interestOutstanding + outstandingPrincipal;
+        require(msg.value <= remaining, "Payment exceeds amount owed");
 
-        uint256 principalDelta;
-        if (msg.value > interestOutstanding) {
-            principalDelta = msg.value - interestOutstanding;
-        } else {
-            principalDelta = 0;
-        }
+        uint256 principalDelta = msg.value > interestOutstanding ? msg.value - interestOutstanding : 0;
 
         loan.amountRepaid += msg.value;
         loan.principalRepaid += principalDelta;
 
-        bool fullRepayment = loan.amountRepaid == totalDue;
+        bool fullRepayment = msg.value == remaining;
 
         // Collateral released proportional to principal repaid; final payment returns the dust.
         uint256 collateralToRelease = fullRepayment
@@ -323,8 +471,18 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             loan.collateralLocked = false;
         }
 
-        (bool lenderOk, ) = payable(loan.lender).call{value: msg.value}("");
-        require(lenderOk, "ETH transfer to lender failed");
+        // Split the payment: protocol fee on the interest portion to treasury, rest to lender.
+        // Each payout is attempted directly first and falls back to a credited pull-payment
+        // (withdrawPayments) only if the recipient rejects the ETH, so a reverting
+        // lender/treasury can never block the borrower's repayment.
+        uint256 interestPortion = msg.value - principalDelta;
+        uint256 protocolFee = _protocolFee(interestPortion);
+
+        _payoutEth(loan.lender, msg.value - protocolFee);
+        if (protocolFee > 0) {
+            _payoutEth(protocolTreasury, protocolFee);
+            emit ProtocolFeeCollected(loanId, address(0), protocolFee);
+        }
 
         if (collateralToRelease > 0) {
             if (loan.collateralToken == address(0)) {
@@ -337,33 +495,33 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         }
 
         if (fullRepayment) {
-            emit LoanRepaid(loanId, loan.borrower, loan.lender, loan.principalAmount, accrued, totalDue, block.timestamp);
+            uint256 totalInterest = loan.amountRepaid - loan.principalAmount;
+            emit LoanRepaid(loanId, loan.borrower, loan.lender, loan.principalAmount, totalInterest, loan.amountRepaid, block.timestamp);
         } else {
-            emit LoanPartiallyRepaid(loanId, loan.borrower, msg.value, collateralToRelease, loan.amountRepaid, totalDue, block.timestamp);
+            uint256 totalDueSnapshot = loan.principalAmount + loan.interestAccrued;
+            emit LoanPartiallyRepaid(loanId, loan.borrower, msg.value, collateralToRelease, loan.amountRepaid, totalDueSnapshot, block.timestamp);
         }
     }
 
     /**
      * @notice Repay some or all of a funded ERC20-principal loan.
      * @dev    The borrower must approve this contract for at least `amount` of the principal token
-     *         before calling. Interest accrues as per-day simple interest on the principal: the annual
-     *         rate (`interestRateBps`) is applied over the elapsed time floored to whole days and
-     *         capped at `durationSeconds` (see `_accruedInterest`). `totalDue` = principal +
-     *         accrued interest right now, so it grows over time until the duration cap is reached.
+     *         before calling. Interest accrues per-day on the OUTSTANDING principal
+     *         (principal - principalRepaid), so reducing principal lowers future interest (see
+     *         `_accrue`). An optional origination floor (`minInterestBps`) may have been charged
+     *         at funding.
      *
-     *         Amortization is interest-first: each payment first covers the interest that has
-     *         accrued since the last payment, and only the remainder reduces principal. As a
-     *         result `principalRepaid` is monotonic (never decreases) even though `accrued`
-     *         keeps growing between payments.
+     *         Amortization is interest-first: each payment first covers the interest crystallized
+     *         up to now, and only the remainder reduces principal. `principalRepaid` is monotonic.
      *
      *         Collateral is released proportional to principal repaid:
      *         floor(collateralAmount * principalDelta / principalAmount), returned in its original
-     *         form (ETH or ERC20). On the final payment (amountRepaid == totalDue) any rounding dust
-     *         is also returned so all collateral is recovered.
+     *         form (ETH or ERC20). On the final payment any rounding dust is also returned so all
+     *         collateral is recovered.
      * @param loanId  The ID of the loan to repay.
      * @param amount  The token amount to repay this call (must be > 0 and <= remaining balance).
      */
-    function repayLoanWithERC20(uint256 loanId, uint256 amount) external {
+    function repayLoanWithERC20(uint256 loanId, uint256 amount) external nonReentrant {
         Loan storage loan = loans[loanId];
         require(!loan.repaid, "Loan already repaid");
         require(loan.active, "Loan is not active");
@@ -372,29 +530,24 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(loan.requestedPrincipalToken != address(0), "Loan has ETH principal; use repayLoan");
         require(amount > 0, "Payment must be > 0");
 
-        uint256 accrued = _accruedInterest(loan);
-        uint256 totalDue = loan.principalAmount + accrued;
-        uint256 remaining = totalDue - loan.amountRepaid;
-        require(amount <= remaining, "Payment exceeds amount owed");
+        // Crystallize interest on the current outstanding principal up to now.
+        _accrue(loan);
 
         // Interest-first amortization with a monotonic principalRepaid.
-        // Interest already paid in prior payments == amountRepaid - principalRepaid.
-        // Interest still outstanding now == accrued - interestAlreadyPaid (>= 0 because accrued only grows
-        // and is capped at duration; principalRepaid never exceeds principal).
         uint256 interestAlreadyPaid = loan.amountRepaid - loan.principalRepaid;
-        uint256 interestOutstanding = accrued > interestAlreadyPaid ? accrued - interestAlreadyPaid : 0;
+        uint256 interestOutstanding = loan.interestAccrued > interestAlreadyPaid
+            ? loan.interestAccrued - interestAlreadyPaid
+            : 0;
+        uint256 outstandingPrincipal = loan.principalAmount - loan.principalRepaid;
+        uint256 remaining = interestOutstanding + outstandingPrincipal;
+        require(amount <= remaining, "Payment exceeds amount owed");
 
-        uint256 principalDelta;
-        if (amount > interestOutstanding) {
-            principalDelta = amount - interestOutstanding;
-        } else {
-            principalDelta = 0;
-        }
+        uint256 principalDelta = amount > interestOutstanding ? amount - interestOutstanding : 0;
 
         loan.amountRepaid += amount;
         loan.principalRepaid += principalDelta;
 
-        bool fullRepayment = loan.amountRepaid == totalDue;
+        bool fullRepayment = amount == remaining;
 
         // Collateral released proportional to principal repaid; final payment returns the dust.
         uint256 collateralToRelease = fullRepayment
@@ -409,8 +562,19 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             loan.collateralLocked = false;
         }
 
-        // Pull payment tokens from borrower and forward to lender
-        IERC20(loan.requestedPrincipalToken).safeTransferFrom(msg.sender, loan.lender, amount);
+        // Pull the full payment into the vault, then pay out: protocol fee on the interest
+        // portion to the treasury, the remainder to the lender. Each payout is attempted
+        // directly first and falls back to a credited pull-payment (withdrawPayments) only if
+        // the transfer fails, so a reverting lender/treasury can never block repayment.
+        uint256 interestPortion = amount - principalDelta;
+        uint256 protocolFee = _protocolFee(interestPortion);
+
+        IERC20(loan.requestedPrincipalToken).safeTransferFrom(msg.sender, address(this), amount);
+        _payoutToken(loan.requestedPrincipalToken, loan.lender, amount - protocolFee);
+        if (protocolFee > 0) {
+            _payoutToken(loan.requestedPrincipalToken, protocolTreasury, protocolFee);
+            emit ProtocolFeeCollected(loanId, loan.requestedPrincipalToken, protocolFee);
+        }
 
         if (collateralToRelease > 0) {
             if (loan.collateralToken == address(0)) {
@@ -423,9 +587,11 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         }
 
         if (fullRepayment) {
-            emit LoanRepaid(loanId, loan.borrower, loan.lender, loan.principalAmount, accrued, totalDue, block.timestamp);
+            uint256 totalInterest = loan.amountRepaid - loan.principalAmount;
+            emit LoanRepaid(loanId, loan.borrower, loan.lender, loan.principalAmount, totalInterest, loan.amountRepaid, block.timestamp);
         } else {
-            emit LoanPartiallyRepaid(loanId, loan.borrower, amount, collateralToRelease, loan.amountRepaid, totalDue, block.timestamp);
+            uint256 totalDueSnapshot = loan.principalAmount + loan.interestAccrued;
+            emit LoanPartiallyRepaid(loanId, loan.borrower, amount, collateralToRelease, loan.amountRepaid, totalDueSnapshot, block.timestamp);
         }
     }
 
@@ -447,7 +613,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      *
      * Emits a {LoanFunded} event.
      */
-    function fundLoan(uint256 loanId) external payable {
+    function fundLoan(uint256 loanId) external payable nonReentrant {
         Loan storage loan = loans[loanId];
         require(loan.active, "Loan is not active");
         require(!loan.funded, "Loan already funded");
@@ -460,6 +626,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         loan.principalAmount = loan.requestedPrincipalAmount;
         loan.funded = true;
         loan.fundedAt = block.timestamp;
+        // Start the interest clock and apply the optional origination floor.
+        loan.lastAccrualAt = block.timestamp;
+        loan.interestAccrued = (loan.principalAmount * minInterestBps) / 10000;
 
         // Transfer principal directly to the borrower.
         (bool success, ) = payable(loan.borrower).call{value: loan.requestedPrincipalAmount}("");
@@ -472,7 +641,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @param loanId The ID of the loan to fund
     /// @param token  The ERC20 token address to send as principal (must match requestedPrincipalToken)
     /// @param amount The amount of tokens to send (must match requestedPrincipalAmount)
-    function fundLoanWithERC20(uint256 loanId, address token, uint256 amount) external {
+    function fundLoanWithERC20(uint256 loanId, address token, uint256 amount) external nonReentrant {
         Loan storage loan = loans[loanId];
         require(loan.active, "Loan is not active");
         require(!loan.funded, "Loan already funded");
@@ -487,6 +656,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         loan.principalAmount = amount;
         loan.funded = true;
         loan.fundedAt = block.timestamp;
+        // Start the interest clock and apply the optional origination floor.
+        loan.lastAccrualAt = block.timestamp;
+        loan.interestAccrued = (loan.principalAmount * minInterestBps) / 10000;
 
         // Transfer principal directly to the borrower.
         IERC20(token).safeTransferFrom(msg.sender, loan.borrower, amount);
@@ -538,14 +710,41 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         );
     }
 
-    /// @notice Per-day simple interest accrued so far, capped at the loan duration.
-    /// @dev Annual rate; 365-day year; floors elapsed time to whole days. Zero if unfunded or no duration.
-    function _accruedInterest(Loan memory loan) internal view returns (uint256) {
-        if (!loan.funded || loan.durationSeconds == 0) return 0;
+    /// @notice Total interest charged so far on the OUTSTANDING principal, plus any origination floor.
+    /// @dev View-only mirror of `_accrue`: returns crystallized interest (`interestAccrued`) plus the
+    ///      whole-day interest pending since `lastAccrualAt`, computed on the current outstanding
+    ///      principal and capped at the loan duration. Used by views; repayment uses `_accrue`.
+    function _currentInterestOwed(Loan memory loan) internal view returns (uint256) {
+        if (!loan.funded) return 0;
+        uint256 owed = loan.interestAccrued;
+        if (loan.durationSeconds == 0) return owed; // floor only; no time-based interest
+        uint256 from = loan.lastAccrualAt;
         uint256 dueAt = loan.fundedAt + loan.durationSeconds;
         uint256 cappedNow = block.timestamp < dueAt ? block.timestamp : dueAt;
-        uint256 elapsedDays = (cappedNow - loan.fundedAt) / 86400;
-        return (loan.principalAmount * loan.interestRateBps * elapsedDays) / (10000 * 365);
+        if (cappedNow > from) {
+            uint256 periods = (cappedNow - from) / ACCRUAL_PERIOD;
+            uint256 outstanding = loan.principalAmount - loan.principalRepaid;
+            owed += (outstanding * loan.interestRateBps * periods) / (10000 * PERIODS_PER_YEAR);
+        }
+        return owed;
+    }
+
+    /// @notice Crystallize interest accrued on the current outstanding principal up to now.
+    /// @dev Advances `lastAccrualAt` only by whole elapsed days so the sub-day remainder carries
+    ///      forward (frequent payments cannot dodge interest). Interest is charged on the
+    ///      outstanding balance (principal - principalRepaid), so repaying principal lowers future
+    ///      accrual. No-op once the duration cap is reached or for unfunded / zero-duration loans.
+    function _accrue(Loan storage loan) internal {
+        if (!loan.funded || loan.durationSeconds == 0) return;
+        uint256 from = loan.lastAccrualAt;
+        uint256 dueAt = loan.fundedAt + loan.durationSeconds;
+        uint256 cappedNow = block.timestamp < dueAt ? block.timestamp : dueAt;
+        if (cappedNow <= from) return;
+        uint256 periods = (cappedNow - from) / ACCRUAL_PERIOD;
+        if (periods == 0) return; // preserve the remainder toward the next whole day
+        uint256 outstanding = loan.principalAmount - loan.principalRepaid;
+        loan.interestAccrued += (outstanding * loan.interestRateBps * periods) / (10000 * PERIODS_PER_YEAR);
+        loan.lastAccrualAt = from + periods * ACCRUAL_PERIOD;
     }
 
     /**
@@ -570,7 +769,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         Loan memory loan = loans[loanId];
         uint256 due = loan.repaid
             ? loan.amountRepaid
-            : loan.funded ? loan.principalAmount + _accruedInterest(loan) : 0;
+            : loan.funded ? loan.principalAmount + _currentInterestOwed(loan) : 0;
         return (
             loan.interestRateBps,
             loan.durationSeconds,

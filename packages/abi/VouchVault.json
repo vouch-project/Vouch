@@ -340,6 +340,19 @@
     "anonymous": false,
     "inputs": [
       {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "minInterestBps",
+        "type": "uint256"
+      }
+    ],
+    "name": "MinInterestUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
         "indexed": true,
         "internalType": "address",
         "name": "previousOwner",
@@ -353,6 +366,107 @@
       }
     ],
     "name": "OwnershipTransferred",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "PaymentCredited",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "PaymentWithdrawn",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "ProtocolFeeCollected",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "feeBps",
+        "type": "uint256"
+      }
+    ],
+    "name": "ProtocolFeeUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "treasury",
+        "type": "address"
+      }
+    ],
+    "name": "ProtocolTreasuryUpdated",
     "type": "event"
   },
   {
@@ -386,6 +500,32 @@
     ],
     "name": "Withdrawn",
     "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_MIN_INTEREST_BPS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_PROTOCOL_FEE_BPS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
   },
   {
     "inputs": [],
@@ -779,6 +919,16 @@
         "type": "uint256"
       },
       {
+        "internalType": "bool",
+        "name": "collateralLocked",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint256",
+        "name": "collateralReleased",
+        "type": "uint256"
+      },
+      {
         "internalType": "uint256",
         "name": "createdAt",
         "type": "uint256"
@@ -790,28 +940,23 @@
       },
       {
         "internalType": "bool",
-        "name": "collateralLocked",
+        "name": "funded",
         "type": "bool"
+      },
+      {
+        "internalType": "bool",
+        "name": "repaid",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint256",
+        "name": "fundDeadline",
+        "type": "uint256"
       },
       {
         "internalType": "address",
         "name": "lender",
         "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "principalAmount",
-        "type": "uint256"
-      },
-      {
-        "internalType": "bool",
-        "name": "funded",
-        "type": "bool"
-      },
-      {
-        "internalType": "uint256",
-        "name": "fundedAt",
-        "type": "uint256"
       },
       {
         "internalType": "address",
@@ -821,6 +966,16 @@
       {
         "internalType": "uint256",
         "name": "requestedPrincipalAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "principalAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "fundedAt",
         "type": "uint256"
       },
       {
@@ -834,28 +989,23 @@
         "type": "uint256"
       },
       {
-        "internalType": "bool",
-        "name": "repaid",
-        "type": "bool"
-      },
-      {
         "internalType": "uint256",
         "name": "amountRepaid",
         "type": "uint256"
       },
       {
         "internalType": "uint256",
-        "name": "collateralReleased",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "fundDeadline",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
         "name": "principalRepaid",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "interestAccrued",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "lastAccrualAt",
         "type": "uint256"
       }
     ],
@@ -902,6 +1052,19 @@
   },
   {
     "inputs": [],
+    "name": "minInterestBps",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "nextLoanId",
     "outputs": [
       {
@@ -916,6 +1079,56 @@
   {
     "inputs": [],
     "name": "owner",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "pendingPayments",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "protocolFeeBps",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "protocolTreasury",
     "outputs": [
       {
         "internalType": "address",
@@ -980,6 +1193,45 @@
   {
     "inputs": [
       {
+        "internalType": "uint256",
+        "name": "newMinInterestBps",
+        "type": "uint256"
+      }
+    ],
+    "name": "setMinInterestBps",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "newFeeBps",
+        "type": "uint256"
+      }
+    ],
+    "name": "setProtocolFeeBps",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newTreasury",
+        "type": "address"
+      }
+    ],
+    "name": "setProtocolTreasury",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "address",
         "name": "newOwner",
         "type": "address"
@@ -1017,6 +1269,19 @@
       }
     ],
     "name": "withdraw",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "withdrawPayments",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

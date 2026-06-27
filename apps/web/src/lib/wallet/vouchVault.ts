@@ -1,5 +1,5 @@
-import { VouchVault__factory } from '@vouch/contracts';
 import type { VouchVault } from '@vouch/contracts';
+import { VouchVault__factory } from '@vouch/contracts';
 import { ethers } from 'ethers';
 import type { Token } from '../../api/chain';
 import { chainInfo } from '../stores/chainInfo.svelte';
@@ -95,8 +95,25 @@ export const createLoan = async (
   const contract = await getVouchVaultContract();
 
   const tx = await (isNativeToken(collateralToken)
-    ? createEthLoan(contract, collateralAmount, principalToken, principalAmount, interestRateBps, durationSeconds, fundWindowSeconds)
-    : createErc20Loan(contract, collateralToken, collateralAmount, principalToken, principalAmount, interestRateBps, durationSeconds, fundWindowSeconds));
+    ? createEthLoan(
+        contract,
+        collateralAmount,
+        principalToken,
+        principalAmount,
+        interestRateBps,
+        durationSeconds,
+        fundWindowSeconds,
+      )
+    : createErc20Loan(
+        contract,
+        collateralToken,
+        collateralAmount,
+        principalToken,
+        principalAmount,
+        interestRateBps,
+        durationSeconds,
+        fundWindowSeconds,
+      ));
 
   const receipt = await tx.wait();
   if (!receipt) throw new Error('Transaction failed');
@@ -127,11 +144,19 @@ export type RepaymentDetails = {
   amountRepaid: bigint;
   remaining: bigint;
   fundDeadline: bigint;
+  principalRepaid: bigint;
+  collateralReleased: bigint;
 };
 
 export const getRepaymentDetails = async (onChainLoanId: bigint): Promise<RepaymentDetails> => {
   const contract = await getVouchVaultContract();
-  const result = await contract.getRepaymentDetails(onChainLoanId);
+  // `getRepaymentDetails` gives the live-accrued totals; the public `loans` getter
+  // gives the monotonic on-chain principal-repaid / collateral-released bookkeeping
+  // (which can't be reconstructed client-side because interest keeps accruing).
+  const [result, loan] = await Promise.all([
+    contract.getRepaymentDetails(onChainLoanId),
+    contract.loans(onChainLoanId),
+  ]);
   return {
     interestRateBps: Number(result.interestRateBps),
     durationSeconds: result.durationSeconds,
@@ -140,7 +165,18 @@ export const getRepaymentDetails = async (onChainLoanId: bigint): Promise<Repaym
     amountRepaid: result.amountRepaid,
     remaining: result.remaining,
     fundDeadline: result.fundDeadline,
+    principalRepaid: loan.principalRepaid,
+    collateralReleased: loan.collateralReleased,
   };
+};
+
+/**
+ * Read the protocol fee (basis points) taken from the interest portion of repayments.
+ * 1000 = 10%. Lenders net `grossInterest * (1 - protocolFeeBps / 10000)`.
+ */
+export const getProtocolFeeBps = async (): Promise<number> => {
+  const contract = await getVouchVaultContract();
+  return Number(await contract.protocolFeeBps());
 };
 
 /**
@@ -148,10 +184,7 @@ export const getRepaymentDetails = async (onChainLoanId: bigint): Promise<Repaym
  * @param onChainLoanId   - The on-chain loan ID.
  * @param paymentWei      - Amount to pay in wei (1 to remaining balance).
  */
-export const repayLoan = async (
-  onChainLoanId: bigint,
-  paymentWei: bigint,
-): Promise<ethers.TransactionReceipt> => {
+export const repayLoan = async (onChainLoanId: bigint, paymentWei: bigint): Promise<ethers.TransactionReceipt> => {
   const contract = await getVouchVaultContract();
   const tx: ethers.TransactionResponse = await contract.repayLoan(onChainLoanId, { value: paymentWei });
   const receipt = await tx.wait();
@@ -228,11 +261,38 @@ export const fundLoan = async (
  * Cancel an unfunded loan and reclaim collateral. Only the borrower may call this on-chain.
  * @param onChainLoanId - The on-chain uint256 loan ID.
  */
-export const cancelLoan = async (
-  onChainLoanId: bigint,
-): Promise<ethers.TransactionReceipt> => {
+export const cancelLoan = async (onChainLoanId: bigint): Promise<ethers.TransactionReceipt> => {
   const contract = await getVouchVaultContract();
   const tx: ethers.TransactionResponse = await contract.cancelLoan(onChainLoanId);
+  const receipt = await tx.wait();
+  if (!receipt) throw new Error('Transaction failed');
+  return receipt;
+};
+
+/**
+ * Read the amount the connected wallet can claim for a given token. Repayments and
+ * protocol fees are normally pushed straight to the recipient; they are only credited
+ * here (for a manual pull) when that direct transfer fails — e.g. the recipient is a
+ * contract that rejects the funds. Claim credited balances with {@link withdrawPayments}.
+ * @param tokenAddress - Token to query (use ethers.ZeroAddress for native ETH).
+ * @param account      - Optional account; defaults to the connected signer.
+ */
+export const getPendingPayments = async (tokenAddress: string, account?: string): Promise<bigint> => {
+  const contract = await getVouchVaultContract();
+  const owner = account ?? (await (contract.runner as ethers.JsonRpcSigner).getAddress());
+  const token = !tokenAddress || tokenAddress === ethers.ZeroAddress ? ethers.ZeroAddress : tokenAddress;
+  return contract.pendingPayments(owner, token);
+};
+
+/**
+ * Withdraw funds credited to the connected wallet (lender repayments/interest or
+ * protocol fees that could not be delivered directly) for a given token.
+ * @param tokenAddress - Token to withdraw (use ethers.ZeroAddress for native ETH).
+ */
+export const withdrawPayments = async (tokenAddress: string): Promise<ethers.TransactionReceipt> => {
+  const contract = await getVouchVaultContract();
+  const token = !tokenAddress || tokenAddress === ethers.ZeroAddress ? ethers.ZeroAddress : tokenAddress;
+  const tx: ethers.TransactionResponse = await contract.withdrawPayments(token);
   const receipt = await tx.wait();
   if (!receipt) throw new Error('Transaction failed');
   return receipt;

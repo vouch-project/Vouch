@@ -7,14 +7,16 @@
   import * as Table from '$lib/components/ui/table';
   import * as Tabs from '$lib/components/ui/tabs';
   import { formatUint256 } from '$lib/formatUint256';
+  import { formatLoanTerm } from '$lib/loans/loanMath';
   import { maxLtv } from '$lib/ltv';
   import { navLinksMap } from '$lib/navLinks';
+  import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { supabase } from '$lib/supabase';
   import type { LoanWithTokens } from '$lib/types';
   import { cn } from '$lib/utils';
   import { fundLoan } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
-  import { Info, RefreshCw, ShieldCheck, TrendingUp, Wallet, Zap } from '@lucide/svelte';
+  import { Check, Clock, Copy, Info, RefreshCw, ShieldCheck, TrendingUp, Wallet, Zap } from '@lucide/svelte';
   import type { RealtimeChannel } from '@supabase/supabase-js';
   import type { Address } from '@vouch/database-types';
   import { ethers } from 'ethers';
@@ -31,6 +33,7 @@
   let channel: RealtimeChannel | null = $state(null);
   let activeTab: string = $state('borrow');
   let fundingLoanId: string | null = $state(null);
+  let copiedAddress: string | null = $state(null);
 
   const getRiskLevel = (score: number) => {
     if (score > 800) return { label: 'Low', color: 'bg-green-100 text-green-700 border-green-200' };
@@ -82,7 +85,7 @@
         `,
         )
         .eq('status', 'pending')
-        .gt('fundDeadline', new Date().toISOString())
+        .or(`fundDeadline.is.null,fundDeadline.gt.${new Date().toISOString()}`)
         .order('createdAt', { ascending: false });
 
       if (error) throw error;
@@ -133,6 +136,18 @@
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
   };
 
+  const copyAddress = async (addr: string) => {
+    try {
+      await navigator.clipboard.writeText(addr);
+      copiedAddress = addr;
+      setTimeout(() => {
+        if (copiedAddress === addr) copiedAddress = null;
+      }, 1500);
+    } catch {
+      // Ignore clipboard failures (e.g. permissions / insecure context).
+    }
+  };
+
   const getErrorMessage = (e: unknown): string => {
     if (e instanceof Error) {
       const err = e as { code?: unknown; reason?: unknown };
@@ -178,7 +193,7 @@
   <title>Marketplace | Vouch</title>
 </svelte:head>
 
-<div class="container mx-auto py-8 space-y-8 animate-in fade-in duration-700">
+<div class="w-full py-8 space-y-8 animate-in fade-in duration-700">
   <!-- Header Section -->
   <div class="flex flex-col md:flex-row md:items-end justify-between gap-6">
     <div class="space-y-2">
@@ -261,7 +276,7 @@
                   Score
                 </Table.Head>
                 <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
-                  Amount
+                  Loan Amount
                 </Table.Head>
                 <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
                   Collateral
@@ -271,6 +286,9 @@
                 </Table.Head>
                 <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
                   APY
+                </Table.Head>
+                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                  Term
                 </Table.Head>
                 <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
                   Risk
@@ -286,9 +304,9 @@
               {#if loading}
                 {#each Array(5) as _, i (i)}
                   <Table.Row>
-                    {#each Array(8) as _, j (j)}
+                    {#each Array(9) as _, j (j)}
                       <Table.Cell
-                        class={cn('px-1 sm:px-3 lg:px-6 py-4', j === 0 && 'pl-4 sm:pl-8', j === 7 && 'pr-4 sm:pr-10')}
+                        class={cn('px-1 sm:px-3 lg:px-6 py-4', j === 0 && 'pl-4 sm:pl-8', j === 8 && 'pr-4 sm:pr-10')}
                       >
                         <div class="h-4 w-12 sm:w-16 sm:h-5 bg-muted animate-pulse rounded"></div>
                       </Table.Cell>
@@ -297,7 +315,7 @@
                 {/each}
               {:else if loans.length === 0}
                 <Table.Row>
-                  <Table.Cell class="h-64 text-center" colspan={8}>
+                  <Table.Cell class="h-64 text-center" colspan={9}>
                     <div class="flex flex-col items-center justify-center space-y-3">
                       <Zap class="h-10 w-10 text-muted-foreground/30" />
                       <p class="text-lg font-medium text-muted-foreground">No active borrow requests</p>
@@ -311,6 +329,8 @@
                   {@const ltv = maxLtv(loan.collateralToken?.symbol, loan.principalToken?.symbol, score)}
                   {@const risk = score !== undefined ? getRiskLevel(score) : null}
                   {@const isOwnLoan = wallet.address?.toLowerCase() === loan.borrowerAddress.toLowerCase()}
+                  {@const grossApr = Number(loan.interestRate ?? 0) / 100}
+                  {@const netApr = grossApr * (1 - chainInfo.protocolFeeBps / 10000)}
                   <Table.Row class="hover:bg-muted/10 transition-colors group">
                     <Table.Cell
                       class="pl-4 sm:pl-8 py-4 font-mono text-[10px] sm:text-xs font-medium whitespace-nowrap min-w-max"
@@ -321,8 +341,24 @@
                         >
                           {loan.borrowerAddress.slice(2, 4).toUpperCase()}
                         </div>
-                        <span class="hidden xs:inline">{truncateAddress(loan.borrowerAddress)}</span>
-                        <span class="xs:hidden">{loan.borrowerAddress.slice(0, 4)}...</span>
+                        <button
+                          type="button"
+                          class="group/addr inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+                          title={copiedAddress === loan.borrowerAddress
+                            ? 'Copied!'
+                            : `${loan.borrowerAddress} (click to copy)`}
+                          onclick={() => copyAddress(loan.borrowerAddress)}
+                        >
+                          <span class="hidden xs:inline">{truncateAddress(loan.borrowerAddress)}</span>
+                          <span class="xs:hidden">{loan.borrowerAddress.slice(0, 4)}...</span>
+                          {#if copiedAddress === loan.borrowerAddress}
+                            <Check class="h-3 w-3 shrink-0 text-green-500" />
+                          {:else}
+                            <Copy
+                              class="h-3 w-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/addr:opacity-100"
+                            />
+                          {/if}
+                        </button>
                       </div>
                     </Table.Cell>
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
@@ -373,7 +409,18 @@
                     <Table.Cell
                       class="px-1 sm:px-3 lg:px-6 py-4 font-bold text-indigo-600 text-left underline-offset-4 whitespace-nowrap text-[10px] sm:text-sm min-w-max"
                     >
-                      {(Number(loan.interestRate ?? 0) / 100).toFixed(2)}% APR
+                      {netApr.toFixed(2)}% APR
+                      <div class="text-[8px] sm:text-[10px] font-normal text-muted-foreground">
+                        you earn · {grossApr.toFixed(2)}% gross − {(chainInfo.protocolFeeBps / 100).toFixed(0)}% fee
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
+                      <div
+                        class="flex items-center gap-1 sm:gap-1.5 font-semibold text-foreground/80 text-[10px] sm:text-sm"
+                      >
+                        <Clock class="h-3 w-3 sm:h-3.5 sm:w-3.5 text-muted-foreground shrink-0" />
+                        {formatLoanTerm(loan.duration)}
+                      </div>
                     </Table.Cell>
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left min-w-max">
                       {#if risk}

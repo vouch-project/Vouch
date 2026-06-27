@@ -5,6 +5,7 @@ import type { Address } from '@vouch/database-types';
 import { ethers } from 'ethers';
 
 export type DashboardFilter = 'active' | 'repaid' | 'all';
+export type DashboardRole = 'borrower' | 'lender';
 
 const LOAN_SELECT = `
   *,
@@ -22,8 +23,20 @@ export class DashboardData {
   fetchError = $state('');
   realtimeActive = $state(false);
 
+  readonly role: DashboardRole;
+  // The loans column this view filters on, and the transactions column that
+  // identifies this user's side of a transfer (borrowers send, lenders receive).
+  readonly #loanColumn: 'borrowerAddress' | 'lenderAddress';
+  readonly #txColumn: 'fromAddress' | 'toAddress';
+
   #channel: RealtimeChannel | null = null;
   #address: string | null = null;
+
+  constructor(role: DashboardRole = 'borrower') {
+    this.role = role;
+    this.#loanColumn = role === 'lender' ? 'lenderAddress' : 'borrowerAddress';
+    this.#txColumn = role === 'lender' ? 'toAddress' : 'fromAddress';
+  }
 
   activeCount = $derived(this.loans.filter((l) => l.status === 'active' || l.status === 'pending').length);
   repaidCount = $derived(this.loans.filter((l) => l.status === 'repaid').length);
@@ -54,7 +67,7 @@ export class DashboardData {
     const { data, error } = await supabase
       .from('loans')
       .select(LOAN_SELECT)
-      .eq('borrowerAddress', checksummed as Address)
+      .eq(this.#loanColumn, checksummed as Address)
       .order('createdAt', { ascending: false });
 
     if (error) {
@@ -98,15 +111,15 @@ export class DashboardData {
     // how addresses are stored (see fetch()).
     const checksummed = this.#address ?? '';
     this.#channel = supabase
-      .channel('public:dashboard-loans')
+      .channel(`public:dashboard-loans-${this.role}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'loans', filter: `borrowerAddress=eq.${checksummed}` },
+        { event: '*', schema: 'public', table: 'loans', filter: `${this.#loanColumn}=eq.${checksummed}` },
         refetch,
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'transactions', filter: `fromAddress=eq.${checksummed}` },
+        { event: '*', schema: 'public', table: 'transactions', filter: `${this.#txColumn}=eq.${checksummed}` },
         refetch,
       )
       .subscribe();

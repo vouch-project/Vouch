@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tableColumns } from '$lib/components/dashboard/columns';
+  import { getTableColumns } from '$lib/components/dashboard/columns';
   import LoanRepayRow from '$lib/components/ui/LoanRepayRow.svelte';
   import * as Card from '$lib/components/ui/card';
   import * as Table from '$lib/components/ui/table';
@@ -12,9 +12,12 @@
     loading: boolean;
     filter: 'active' | 'repaid' | 'all';
     onRepaid: () => void;
+    role?: 'borrower' | 'lender';
   };
 
-  let { loans, loading, filter, onRepaid }: Props = $props();
+  let { loans, loading, filter, onRepaid, role = 'borrower' }: Props = $props();
+
+  const columns = $derived(getTableColumns(role));
 </script>
 
 <Card.Root class="border-border/50 overflow-hidden bg-card/60 backdrop-blur-sm">
@@ -22,7 +25,7 @@
     <Table.Root class="table-fixed">
       <Table.Header class="bg-muted/30">
         <Table.Row>
-          {#each tableColumns as col (col.label)}
+          {#each columns as col (col.label)}
             <Table.Head
               class={cn(
                 col.width,
@@ -41,13 +44,9 @@
         {#if loading}
           {#each [1, 2, 3] as key (key)}
             <Table.Row>
-              {#each Array(tableColumns.length) as _, j (j)}
+              {#each Array(columns.length) as _, j (j)}
                 <Table.Cell
-                  class={cn(
-                    'px-2 sm:px-4 py-4',
-                    j === 0 && 'pl-4 sm:pl-6',
-                    j === tableColumns.length - 1 && 'pr-4 sm:pr-6',
-                  )}
+                  class={cn('px-2 sm:px-4 py-4', j === 0 && 'pl-4 sm:pl-6', j === columns.length - 1 && 'pr-4 sm:pr-6')}
                 >
                   <div class="h-4 w-16 bg-muted animate-pulse rounded"></div>
                 </Table.Cell>
@@ -56,7 +55,7 @@
           {/each}
         {:else if loans.length === 0}
           <Table.Row>
-            <Table.Cell class="h-56 text-center" colspan={tableColumns.length}>
+            <Table.Cell class="h-56 text-center" colspan={columns.length}>
               <div class="flex flex-col items-center justify-center space-y-3">
                 <div class="h-14 w-14 bg-muted rounded-2xl flex items-center justify-center">
                   <LayoutDashboard class="h-7 w-7 text-muted-foreground" />
@@ -69,16 +68,22 @@
                       : 'No loans found'}
                 </p>
                 <p class="text-sm text-muted-foreground max-w-xs">
-                  {filter === 'active'
-                    ? 'Head to the Borrow page to create a new loan.'
-                    : 'Your completed loans will appear here.'}
+                  {#if role === 'lender'}
+                    {filter === 'active'
+                      ? 'Fund a loan from the Marketplace to start lending.'
+                      : 'Loans you have funded will appear here.'}
+                  {:else}
+                    {filter === 'active'
+                      ? 'Head to the Borrow page to create a new loan.'
+                      : 'Your completed loans will appear here.'}
+                  {/if}
                 </p>
               </div>
             </Table.Cell>
           </Table.Row>
         {:else}
           {#each loans as loan (loan.id)}
-            <LoanRepayRow {loan} {onRepaid} />
+            <LoanRepayRow {loan} {onRepaid} {role} />
           {/each}
         {/if}
       </Table.Body>
