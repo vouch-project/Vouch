@@ -6,6 +6,7 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 
 /// @title VouchVault (Upgradeable)
 /// @notice Lending vault contract for the Vouch protocol supporting collateralized loans
@@ -33,6 +34,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         bool repaid;                 // true once the loan has been fully repaid
         uint256 amountRepaid;        // cumulative debt repaid so far (principal token units)
         uint256 collateralReleased;  // cumulative collateral already returned to borrower
+        uint16 liquidationThresholdBps;  // e.g. 6452 = 64.52%; set at creation, never changes
     }
 
     // --- State Variables ---
@@ -41,6 +43,10 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     mapping(uint256 => Loan) public loans;         // single source of truth for all loan/collateral data
     uint256 public nextLoanId;
     mapping(address => uint256) public lockedEthCollateral; // per-borrower ETH aggregate
+
+    // V5 additions — appended to preserve storage layout
+    mapping(address token => AggregatorV3Interface) public priceFeeds;
+    uint256 public constant STALE_PRICE_THRESHOLD = 1 hours;
 
     // --- Events ---
     event Deposited(address indexed user, uint256 amount);
@@ -83,6 +89,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 timestamp
     );
 
+    event LoanLiquidated(uint256 indexed loanId, address indexed liquidator, uint256 timestamp);
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         // Prevents the implementation contract from being initialized directly
@@ -112,19 +120,22 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     /// @notice Create a new loan by depositing ETH collateral
-    /// @param principalToken   The token the borrower wants to receive (address(0) = native ETH)
-    /// @param principalAmount  The amount the borrower wants to receive
-    /// @param interestRateBps  Simple interest rate in basis points (e.g. 500 = 5%); 0 = interest-free
-    /// @param durationSeconds  Loan term in seconds; 0 = no deadline
+    /// @param principalToken          The token the borrower wants to receive (address(0) = native ETH)
+    /// @param principalAmount         The amount the borrower wants to receive
+    /// @param interestRateBps         Simple interest rate in basis points (e.g. 500 = 5%); 0 = interest-free
+    /// @param durationSeconds         Loan term in seconds; 0 = no deadline
+    /// @param liquidationThresholdBps Collateral-to-debt ratio (bps) below which the loan may be liquidated
     function createLoan(
         address principalToken,
         uint256 principalAmount,
         uint16 interestRateBps,
-        uint256 durationSeconds
+        uint256 durationSeconds,
+        uint16 liquidationThresholdBps
     ) external payable {
         require(msg.value > 0, "Collateral must be > 0");
         require(principalAmount > 0, "Principal amount must be > 0");
         require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
+        require(liquidationThresholdBps > 0 && liquidationThresholdBps <= 10000, "Invalid liquidation threshold");
 
         // Collateral is tracked separately from withdrawable deposits.
         lockedEthCollateral[msg.sender] += msg.value;
@@ -146,7 +157,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             durationSeconds: durationSeconds,
             repaid: false,
             amountRepaid: 0,
-            collateralReleased: 0
+            collateralReleased: 0,
+            liquidationThresholdBps: liquidationThresholdBps
         });
 
         emit LoanCreated(nextLoanId, msg.sender, address(0), msg.value, principalToken, principalAmount, block.timestamp);
@@ -154,24 +166,27 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     /// @notice Create a new loan by depositing ERC20 collateral
-    /// @param token            The ERC20 token to use as collateral
-    /// @param amount           The amount of collateral to deposit
-    /// @param principalToken   The token the borrower wants to receive (address(0) = native ETH)
-    /// @param principalAmount  The amount the borrower wants to receive
-    /// @param interestRateBps  Simple interest rate in basis points (e.g. 500 = 5%); 0 = interest-free
-    /// @param durationSeconds  Loan term in seconds; 0 = no deadline
+    /// @param token                   The ERC20 token to use as collateral
+    /// @param amount                  The amount of collateral to deposit
+    /// @param principalToken          The token the borrower wants to receive (address(0) = native ETH)
+    /// @param principalAmount         The amount the borrower wants to receive
+    /// @param interestRateBps         Simple interest rate in basis points (e.g. 500 = 5%); 0 = interest-free
+    /// @param durationSeconds         Loan term in seconds; 0 = no deadline
+    /// @param liquidationThresholdBps Collateral-to-debt ratio (bps) below which the loan may be liquidated
     function createLoanWithERC20(
         address token,
         uint256 amount,
         address principalToken,
         uint256 principalAmount,
         uint16 interestRateBps,
-        uint256 durationSeconds
+        uint256 durationSeconds,
+        uint16 liquidationThresholdBps
     ) external {
         require(amount > 0, "Collateral must be > 0");
         require(token != address(0), "Invalid token address");
         require(principalAmount > 0, "Principal amount must be > 0");
         require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
+        require(liquidationThresholdBps > 0 && liquidationThresholdBps <= 10000, "Invalid liquidation threshold");
 
         // Transfer tokens from user to this vault (SafeERC20 handles non-compliant tokens)
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
@@ -193,7 +208,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             durationSeconds: durationSeconds,
             repaid: false,
             amountRepaid: 0,
-            collateralReleased: 0
+            collateralReleased: 0,
+            liquidationThresholdBps: liquidationThresholdBps
         });
 
         emit LoanCreated(nextLoanId, msg.sender, token, amount, principalToken, principalAmount, block.timestamp);
@@ -400,6 +416,57 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         IERC20(token).safeTransferFrom(msg.sender, loan.borrower, amount);
 
         emit LoanFunded(loanId, msg.sender, loan.borrower, amount, block.timestamp);
+    }
+
+    // --- Oracle Functions ---
+
+    function setPriceFeed(address token, address feed) external onlyOwner {
+        require(feed != address(0), "Invalid feed address");
+        priceFeeds[token] = AggregatorV3Interface(feed);
+    }
+
+    function _getPrice(address token) internal view returns (uint256) {
+        AggregatorV3Interface feed = priceFeeds[token];
+        require(address(feed) != address(0), "No price feed for token");
+        (, int256 price, , uint256 updatedAt, ) = feed.latestRoundData();
+        require(price > 0, "Invalid price");
+        require(block.timestamp - updatedAt <= STALE_PRICE_THRESHOLD, "Stale price");
+        uint8 feedDecimals = feed.decimals();
+        // Normalize to 18 decimals
+        if (feedDecimals < 18) {
+            return uint256(price) * (10 ** (18 - feedDecimals));
+        } else if (feedDecimals > 18) {
+            return uint256(price) / (10 ** (feedDecimals - 18));
+        }
+        return uint256(price);
+    }
+
+    function getHealthFactor(uint256 loanId) external view returns (uint256) {
+        Loan memory loan = loans[loanId];
+        require(loan.funded, "Loan not funded");
+        require(!loan.repaid, "Loan already repaid");
+
+        uint256 totalDue = loan.principalAmount + (loan.principalAmount * loan.interestRateBps) / 10000;
+        uint256 remainingDebt = totalDue > loan.amountRepaid ? totalDue - loan.amountRepaid : 0;
+        require(remainingDebt > 0, "No remaining debt");
+
+        uint256 lockedCollateral = loan.collateralAmount - loan.collateralReleased;
+
+        uint256 collateralPrice = _getPrice(loan.collateralToken);
+        uint256 principalPrice  = _getPrice(loan.requestedPrincipalToken);
+
+        // All amounts are in their token's native decimals (wei for ETH, token units for ERC20).
+        // Prices are 1e18-scaled USD per token-unit.
+        // healthFactor is scaled to 1e18; >= 1e18 means healthy.
+        uint256 lockedCollateralUSD = lockedCollateral * collateralPrice;
+        uint256 remainingDebtUSD    = remainingDebt    * principalPrice;
+
+        return (lockedCollateralUSD * loan.liquidationThresholdBps * 1e18) / (remainingDebtUSD * 10000);
+    }
+
+    function liquidate(uint256 loanId) external {
+        require(this.getHealthFactor(loanId) < 1e18, "Loan is not undercollateralized");
+        revert("liquidate: not implemented");
     }
 
     // --- View Functions ---
