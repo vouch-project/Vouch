@@ -4,7 +4,8 @@
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { createLoan } from '$lib/wallet/vouchVault';
   import TokenAutocomplete from './TokenAutocomplete.svelte';
-  import { getTokenMeta, maxLtv } from '$lib/ltv';
+  import { maxLtv } from '$lib/ltv';
+  import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
 
   // ── Form state ────────────────────────────────────────────────────────────
   let collateralAmount = $state('1.0');
@@ -32,11 +33,13 @@
   });
 
   // ── LTV Calculations ──────────────────────────────────────────────────────
-  const computedMaxLtv = $derived(maxLtv(selectedCollateralToken, selectedBorrowToken, creditScore));
+  const collateralMeta = $derived(tokenPrices.getTokenMeta(selectedCollateralToken));
+  const borrowMeta = $derived(tokenPrices.getTokenMeta(selectedBorrowToken));
+  const computedMaxLtv = $derived(maxLtv(collateralMeta, borrowMeta, creditScore));
 
-  const collateralUsd = $derived((parseFloat(collateralAmount) || 0) * getTokenMeta(selectedCollateralToken).priceUsd);
+  const collateralUsd = $derived((parseFloat(collateralAmount) || 0) * collateralMeta.priceUsd);
 
-  const borrowUsd = $derived((parseFloat(borrowAmount) || 0) * getTokenMeta(selectedBorrowToken).priceUsd);
+  const borrowUsd = $derived((parseFloat(borrowAmount) || 0) * borrowMeta.priceUsd);
 
   const currentLtv = $derived(collateralUsd > 0 ? (borrowUsd / collateralUsd) * 100 : 0);
 

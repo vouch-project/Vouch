@@ -8,6 +8,7 @@
   import * as Tabs from '$lib/components/ui/tabs';
   import { formatUint256 } from '$lib/formatUint256';
   import { maxLtv } from '$lib/ltv';
+  import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
   import { navLinksMap } from '$lib/navLinks';
   import { supabase } from '$lib/supabase';
   import type { LoanWithTokens } from '$lib/types';
@@ -307,7 +308,7 @@
               {:else}
                 {#each loans as loan (loan.id)}
                   {@const score = scores[loan.borrowerAddress]}
-                  {@const ltv = maxLtv(loan.collateralToken?.symbol, loan.principalToken?.symbol, score)}
+                  {@const ltv = maxLtv(tokenPrices.getTokenMeta(loan.collateralToken?.symbol), tokenPrices.getTokenMeta(loan.principalToken?.symbol), score)}
                   {@const risk = score !== undefined ? getRiskLevel(score) : null}
                   {@const isOwnLoan = wallet.address?.toLowerCase() === loan.borrowerAddress.toLowerCase()}
                   <Table.Row class="hover:bg-muted/10 transition-colors group">
