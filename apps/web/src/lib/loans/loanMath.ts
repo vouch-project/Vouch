@@ -15,9 +15,11 @@ const SECONDS_PER_PERIOD = 86400n; // 1 day
 /** Whole days elapsed between funding and `now`, capped at the loan duration. */
 const cappedElapsedPeriods = (fundedAtMs: number, durationSeconds: bigint, nowMs: number): bigint => {
   if (durationSeconds <= 0n) return 0n;
-  const dueAtMs = fundedAtMs + Number(durationSeconds) * 1000;
-  const cappedNowMs = Math.min(nowMs, dueAtMs);
-  const elapsedSeconds = BigInt(Math.max(0, Math.floor((cappedNowMs - fundedAtMs) / 1000)));
+  const fundedAtSec = BigInt(Math.floor(fundedAtMs / 1000));
+  const nowSec = BigInt(Math.floor(nowMs / 1000));
+  const dueAtSec = fundedAtSec + durationSeconds;
+  const cappedNowSec = nowSec < dueAtSec ? nowSec : dueAtSec;
+  const elapsedSeconds = cappedNowSec > fundedAtSec ? cappedNowSec - fundedAtSec : 0n;
   return elapsedSeconds / SECONDS_PER_PERIOD;
 };
 

@@ -251,6 +251,19 @@ export class BlockchainListenerService implements OnModuleInit {
       }
     }
 
+    if (!Number.isSafeInteger(durationSeconds) || durationSeconds < 0) {
+      this.logger.warn(
+        `Invalid durationSeconds for loan ${loanId.toString()}: ${durationSeconds}`,
+      );
+      durationSeconds = 0;
+    }
+    if (!Number.isSafeInteger(fundWindowSeconds) || fundWindowSeconds < 0) {
+      this.logger.warn(
+        `Invalid fundWindowSeconds for loan ${loanId.toString()}: ${fundWindowSeconds}`,
+      );
+      fundWindowSeconds = 0;
+    }
+
     try {
       await this.loanService.create({
         loanId: loanId,
