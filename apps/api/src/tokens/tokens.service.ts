@@ -8,6 +8,7 @@ import type { Redis } from 'ioredis';
 import { validAddress, Tables } from '@vouch/database-types';
 import { SupabaseService } from '../supabase/supabase.service';
 import { tokensMock } from './tokens.mock';
+import { PriceFeedService } from './price-feed.service';
 
 export type ResponseToken = {
   chainId: number;
@@ -18,6 +19,8 @@ export type ResponseToken = {
   logoURI: string | null;
   priceUSD?: string;
   coinKey?: string;
+  priceUsd: number | null;
+  volatility: number | null;
 };
 
 export type TokenListResponse = {
@@ -43,6 +46,7 @@ export class TokensService implements OnModuleInit {
     private readonly httpService: HttpService,
     private readonly supabaseService: SupabaseService,
     private readonly configService: ConfigService,
+    private readonly priceFeedService: PriceFeedService,
     @InjectRedis() private readonly redis: Redis,
   ) {}
 
@@ -215,15 +219,33 @@ export class TokensService implements OnModuleInit {
   async getTokens(networkId: string): Promise<ResponseToken[]> {
     const redisKey = `${this.redisKeyPrefix}${networkId}`;
     const cached = await this.redis.get(redisKey);
+
+    let tokens: ResponseToken[] = [];
     if (cached) {
       const parsed = this.parseTokens(cached, networkId);
-      if (parsed) return parsed;
+      if (parsed) tokens = parsed;
     }
 
-    await this.fetchTokenList();
-    const refreshed = await this.redis.get(redisKey);
-    if (!refreshed) return [];
+    if (!tokens.length) {
+      await this.fetchTokenList();
+      const refreshed = await this.redis.get(redisKey);
+      tokens = refreshed ? (this.parseTokens(refreshed, networkId) ?? []) : [];
+    }
 
-    return this.parseTokens(refreshed, networkId) ?? [];
+    // Enrich with live prices and volatility from DB
+    const prices = await this.priceFeedService.getPrices();
+
+    const { data: dbTokens } = await this.supabaseService.client
+      .from('tokens')
+      .select('symbol, price_usd, volatility')
+      .in('symbol', tokens.map((t) => t.symbol));
+
+    const dbBySymbol = new Map((dbTokens ?? []).map((t) => [t.symbol, t]));
+
+    return tokens.map((t) => ({
+      ...t,
+      priceUsd: prices[t.symbol] ?? dbBySymbol.get(t.symbol)?.price_usd ?? null,
+      volatility: dbBySymbol.get(t.symbol)?.volatility ?? null,
+    }));
   }
 }
