@@ -40,11 +40,16 @@
   "dependencies": {
     "@reown/appkit": "^1.8.19",
     "@reown/appkit-adapter-ethers": "^1.8.19",
+    "@reown/appkit-controllers": "^1.8.19",
     "@supabase/supabase-js": "^2.98.0",
     "@vouch/contracts": "workspace:^",
     "@vouch/database-types": "workspace:*",
     "axios": "^1.13.6",
     "ethers": "^6.16.0",
-    "jwt-decode": "^4.0.0"
+    "jwt-decode": "^4.0.0",
+    "lit": "^3.3.0",
+    "lit-element": "^4.2.2",
+    "lit-html": "^3.3.2",
+    "@lit/reactive-element": "^2.1.2"
   }
 }
