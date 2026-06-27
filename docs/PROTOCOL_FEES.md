@@ -50,21 +50,28 @@ function _protocolFee(uint256 interestPortion) internal view returns (uint256) {
 
 ## Where the fee goes (fee custody)
 
-The fee is **transferred immediately during the same repayment transaction** — the contract
-does not escrow or accumulate fees internally. This is a "push" payment pattern.
+The fee is paid out **during the same repayment transaction** using a **hybrid push/pull**
+pattern. The contract attempts to transfer funds to recipients immediately; if a transfer
+fails, the amount is **credited to `pendingPayments`** for the recipient to claim later via
+`withdrawPayments`. The contract does not deliberately accumulate fees — crediting only
+happens as a fallback when a direct payout is rejected.
 
-- **ERC20 loans** (`repayLoanWithERC20`): the fee is pulled straight from the borrower to the
-  treasury via `safeTransferFrom(borrower, protocolTreasury, protocolFee)`, and the lender
-  receives `amount - protocolFee`. A `ProtocolFeeCollected` event is emitted.
+- **ERC20 loans** (`repayLoanWithERC20`): the vault pulls the full payment from the borrower
+  into the contract, then attempts to pay the lender `amount - protocolFee` and the treasury
+  `protocolFee` (via `_payoutToken`). Any payout the recipient rejects is credited to
+  `pendingPayments` instead. A `ProtocolFeeCollected` event is emitted.
 - **ETH loans** (`repayLoan`): the lender is paid `msg.value - protocolFee` and the treasury
-  is paid `protocolFee` via a native `call`. A `ProtocolFeeCollected` event is emitted.
+  `protocolFee` via a native `call` (`_payoutEth`). If a recipient rejects the ETH, the amount
+  is credited to `pendingPayments` for later withdrawal. A `ProtocolFeeCollected` event is
+  emitted.
 
-> **Why push and not accumulate-in-contract?** The fee tokens have to leave the borrower
-> regardless, so accumulating them in the vault doesn't save a transfer — it just changes the
-> destination and adds bookkeeping plus a later withdrawal. The main reason to switch to an
-> accumulate-then-withdraw ("pull") pattern would be robustness (a treasury that reverts on
-> receive can't brick repayments) rather than gas. Since the treasury is a trusted,
-> owner-controlled address, the push pattern is used for simplicity.
+> **Why a credit-and-withdraw fallback?** Direct payouts are attempted first, so normal
+> wallets still behave like a "push" — the fee tokens leave the borrower and reach the
+> treasury in the same transaction. The fallback exists for robustness: a lender or treasury
+> contract that reverts on receipt cannot brick a borrower's repayment, because the funds are
+> simply credited for later withdrawal instead. This trades a little bookkeeping for
+> reliability. Note that a `withdrawPayments` claim can still revert if the recipient
+> genuinely cannot accept the asset (e.g. a contract with no payable `receive()` for ETH).
 
 ### Default treasury
 

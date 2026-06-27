@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION fund_loan_with_transaction (
+CREATE OR REPLACE FUNCTION public.fund_loan_with_transaction (
     p_network_id text,
     p_contract_address address,
     p_on_chain_loan_id uint256,
@@ -77,7 +77,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION fund_loan_with_transaction (
+REVOKE ALL ON FUNCTION public.fund_loan_with_transaction (
     text,
     address,
     uint256,
@@ -94,7 +94,7 @@ FROM
     PUBLIC;
 
 GRANT
-EXECUTE ON FUNCTION fund_loan_with_transaction (
+EXECUTE ON FUNCTION public.fund_loan_with_transaction (
     text,
     address,
     uint256,
