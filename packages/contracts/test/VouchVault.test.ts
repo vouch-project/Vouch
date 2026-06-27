@@ -846,8 +846,8 @@ describe('VouchVault', function () {
       const MockERC20 = await ethers.getContractFactory('MockERC20');
       const mockToken = await MockERC20.deploy('MOCK', 'MOCK', 18, ethers.parseEther('1000000'));
 
-      await vault.connect(owner).setPriceFeed(ethers.ZeroAddress, await ethFeed.getAddress());
-      await vault.connect(owner).setPriceFeed(await mockToken.getAddress(), await mockFeed.getAddress());
+      await vault.connect(owner).setPriceFeed(ethers.ZeroAddress, await ethFeed.getAddress(), 18);
+      await vault.connect(owner).setPriceFeed(await mockToken.getAddress(), await mockFeed.getAddress(), 18);
 
       return { vault, ethFeed, mockFeed, mockToken, owner, lender, borrower };
     }
@@ -855,7 +855,7 @@ describe('VouchVault', function () {
     it('setPriceFeed reverts for non-owner', async function () {
       const { vault, ethFeed, borrower } = await deployWithFeeds();
       await expect(
-        vault.connect(borrower).setPriceFeed(ethers.ZeroAddress, await ethFeed.getAddress())
+        vault.connect(borrower).setPriceFeed(ethers.ZeroAddress, await ethFeed.getAddress(), 18)
       ).to.be.revertedWithCustomError(vault, 'OwnableUnauthorizedAccount');
     });
 
@@ -921,6 +921,52 @@ describe('VouchVault', function () {
 
       await expect(vault.liquidate(0))
         .to.be.revertedWith('liquidate: not implemented');
+    });
+
+    it('getHealthFactor: correct for mismatched token decimals (18-dec collateral, 6-dec principal)', async function () {
+      // ETH (18-dec) collateral @ $3200, USDC (6-dec) principal @ $1
+      // 1 ETH collateral, 1000 USDC principal, threshold 9000 bps (90%)
+      //
+      // normalizedCollateral = 1e18 (ETH, already 18-dec)
+      // normalizedDebt       = 1000 * 1e6 * 1e12 = 1000 * 1e18 (USDC 6->18)
+      // collateralUSD = 1e18 * 3200e18 = 3200e36
+      // debtUSD       = 1000e18 * 1e18 = 1000e36
+      // healthFactor  = (3200e36 * 9000 * 1e18) / (1000e36 * 10000)
+      //               = (3200 * 9000) / (1000 * 10000) * 1e18
+      //               = 2.88e18
+      const { vault, owner, lender, borrower } = await deployWithFeeds();
+
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      // USDC/USD: $1, 8 decimals
+      const usdcFeed = await MockAgg.deploy(8, 1n * 10n ** 8n);
+      await usdcFeed.waitForDeployment();
+
+      const MockERC20 = await ethers.getContractFactory('MockERC20');
+      const usdc = await MockERC20.deploy('USD Coin', 'USDC', 6, 0n);
+      await usdc.waitForDeployment();
+      const usdcAddress = await usdc.getAddress();
+
+      // Register USDC price feed with 6 decimals
+      await vault.connect(owner).setPriceFeed(usdcAddress, await usdcFeed.getAddress(), 6);
+
+      // Mint USDC to lender
+      const principalUsdc = ethers.parseUnits('1000', 6); // 1000 USDC
+      await usdc.mint(lender.address, principalUsdc);
+      await usdc.connect(lender).approve(await vault.getAddress(), principalUsdc);
+
+      // Borrower creates loan: 1 ETH collateral, 1000 USDC principal, threshold 9000 bps
+      const collateralEth = ethers.parseEther('1');
+      await vault.connect(borrower).createLoan(
+        usdcAddress, principalUsdc, 0, 0, 9000, { value: collateralEth }
+      );
+
+      // Lender funds the loan (loan ID is 0 — first loan in this fixture)
+      await vault.connect(lender).fundLoanWithERC20(0, usdcAddress, principalUsdc);
+
+      const hf = await vault.getHealthFactor(0);
+      // Expected: (3200 * 9000) / (1000 * 10000) * 1e18 = 2.88e18
+      const expected = (3200n * 9000n * 10n ** 18n) / (1000n * 10000n);
+      expect(hf).to.equal(expected);
     });
   });
 });

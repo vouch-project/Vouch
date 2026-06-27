@@ -27,11 +27,11 @@ async function main() {
   console.log(`ETH/USD MockAggregator deployed to: ${await ethFeed.getAddress()}`);
 
   const VouchVaultAbi = [
-    'function setPriceFeed(address token, address feed) external',
+    'function setPriceFeed(address token, address feed, uint8 decimals_) external',
   ];
   const vault = new ethers.Contract(vaultAddress, VouchVaultAbi, deployer);
 
-  await vault.setPriceFeed(ethers.ZeroAddress, await ethFeed.getAddress());
+  await vault.setPriceFeed(ethers.ZeroAddress, await ethFeed.getAddress(), 18);
   console.log('ETH price feed registered');
 
   if (mockErc20Address) {
@@ -40,7 +40,7 @@ async function main() {
     await mockFeed.waitForDeployment();
     console.log(`MOCK/USD MockAggregator deployed to: ${await mockFeed.getAddress()}`);
 
-    await vault.setPriceFeed(mockErc20Address, await mockFeed.getAddress());
+    await vault.setPriceFeed(mockErc20Address, await mockFeed.getAddress(), 18);
     console.log('MOCK price feed registered');
   }
 }

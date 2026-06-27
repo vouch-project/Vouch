@@ -25,11 +25,12 @@ const createEthLoan = async (
   collateralAmount: string,
   principalToken: Token,
   principalAmount: string,
+  liquidationThresholdBps: number,
 ): Promise<ethers.TransactionResponse> => {
   const value = ethers.parseEther(collateralAmount);
   const principalTokenAddress = isNativeToken(principalToken) ? ethers.ZeroAddress : principalToken.address;
   const principalAmountParsed = ethers.parseUnits(principalAmount, principalToken.decimals ?? 18);
-  return contract.createLoan(principalTokenAddress, principalAmountParsed, 0, 0, { value });
+  return contract.createLoan(principalTokenAddress, principalAmountParsed, 0, 0, liquidationThresholdBps, { value });
 };
 
 const ERC20_ABI = [
@@ -43,6 +44,7 @@ const createErc20Loan = async (
   collateralAmount: string,
   principalToken: Token,
   principalAmount: string,
+  liquidationThresholdBps: number,
 ): Promise<ethers.TransactionResponse> => {
   const amount = ethers.parseUnits(collateralAmount, token.decimals ?? 18);
 
@@ -57,7 +59,7 @@ const createErc20Loan = async (
 
   const principalTokenAddress = isNativeToken(principalToken) ? ethers.ZeroAddress : principalToken.address;
   const principalAmountParsed = ethers.parseUnits(principalAmount, principalToken.decimals ?? 18);
-  return contract.createLoanWithERC20(token.address, amount, principalTokenAddress, principalAmountParsed, 0, 0);
+  return contract.createLoanWithERC20(token.address, amount, principalTokenAddress, principalAmountParsed, 0, 0, liquidationThresholdBps);
 };
 
 export type CreateLoanResult = {
@@ -70,12 +72,13 @@ export const createLoan = async (
   collateralToken: Token,
   principalToken: Token,
   principalAmount: string,
+  liquidationThresholdBps: number,
 ): Promise<CreateLoanResult> => {
   const contract = await getVouchVaultContract();
 
   const tx = await (isNativeToken(collateralToken)
-    ? createEthLoan(contract, collateralAmount, principalToken, principalAmount)
-    : createErc20Loan(contract, collateralToken, collateralAmount, principalToken, principalAmount));
+    ? createEthLoan(contract, collateralAmount, principalToken, principalAmount, liquidationThresholdBps)
+    : createErc20Loan(contract, collateralToken, collateralAmount, principalToken, principalAmount, liquidationThresholdBps));
 
   const receipt = await tx.wait();
   if (!receipt) throw new Error('Transaction failed');

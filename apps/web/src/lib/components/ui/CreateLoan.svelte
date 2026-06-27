@@ -81,7 +81,8 @@
     }
 
     try {
-      await createLoan(collateralAmount, collateralToken, borrowToken, borrowAmount);
+      const liquidationThresholdBps = Math.max(1, Math.min(10000, Math.round(computedMaxLtv * 100)));
+      await createLoan(collateralAmount, collateralToken, borrowToken, borrowAmount, liquidationThresholdBps);
       status = 'Loan created!';
     } catch (e: unknown) {
       if (e && typeof e === 'object' && 'code' in e && e.code === 'ACTION_REJECTED') {

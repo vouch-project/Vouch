@@ -47,6 +47,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     // V5 additions — appended to preserve storage layout
     mapping(address token => AggregatorV3Interface) public priceFeeds;
     uint256 public constant STALE_PRICE_THRESHOLD = 1 hours;
+    mapping(address token => uint8) public tokenDecimals;
 
     // --- Events ---
     event Deposited(address indexed user, uint256 amount);
@@ -420,9 +421,10 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     // --- Oracle Functions ---
 
-    function setPriceFeed(address token, address feed) external onlyOwner {
+    function setPriceFeed(address token, address feed, uint8 decimals_) external onlyOwner {
         require(feed != address(0), "Invalid feed address");
         priceFeeds[token] = AggregatorV3Interface(feed);
+        tokenDecimals[token] = decimals_;
     }
 
     function _getPrice(address token) internal view returns (uint256) {
@@ -441,6 +443,14 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         return uint256(price);
     }
 
+    function _normalizeAmount(address token, uint256 amount) internal view returns (uint256) {
+        uint8 dec = tokenDecimals[token];
+        if (dec == 0) dec = 18; // default to 18 if not set
+        if (dec < 18) return amount * (10 ** (18 - dec));
+        if (dec > 18) return amount / (10 ** (dec - 18));
+        return amount;
+    }
+
     function getHealthFactor(uint256 loanId) external view returns (uint256) {
         Loan memory loan = loans[loanId];
         require(loan.funded, "Loan not funded");
@@ -455,11 +465,15 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 collateralPrice = _getPrice(loan.collateralToken);
         uint256 principalPrice  = _getPrice(loan.requestedPrincipalToken);
 
-        // All amounts are in their token's native decimals (wei for ETH, token units for ERC20).
+        // Normalize both amounts to 18 decimals before USD multiplication,
+        // so that mismatched token decimals (e.g. ETH 18 vs USDC 6) don't skew the ratio.
+        uint256 normalizedCollateral = _normalizeAmount(loan.collateralToken, lockedCollateral);
+        uint256 normalizedDebt       = _normalizeAmount(loan.requestedPrincipalToken, remainingDebt);
+
         // Prices are 1e18-scaled USD per token-unit.
         // healthFactor is scaled to 1e18; >= 1e18 means healthy.
-        uint256 lockedCollateralUSD = lockedCollateral * collateralPrice;
-        uint256 remainingDebtUSD    = remainingDebt    * principalPrice;
+        uint256 lockedCollateralUSD = normalizedCollateral * collateralPrice;
+        uint256 remainingDebtUSD    = normalizedDebt       * principalPrice;
 
         return (lockedCollateralUSD * loan.liquidationThresholdBps * 1e18) / (remainingDebtUSD * 10000);
     }
