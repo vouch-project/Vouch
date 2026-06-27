@@ -279,7 +279,10 @@ export type Database = {
           id: string
           logoURI: string | null
           name: string | null
+          price_feed_address: string | null
+          price_usd: number | null
           symbol: string
+          volatility: number | null
         }
         Insert: {
           address: string
@@ -288,7 +291,10 @@ export type Database = {
           id?: string
           logoURI?: string | null
           name?: string | null
+          price_feed_address?: string | null
+          price_usd?: number | null
           symbol: string
+          volatility?: number | null
         }
         Update: {
           address?: string
@@ -297,7 +303,10 @@ export type Database = {
           id?: string
           logoURI?: string | null
           name?: string | null
+          price_feed_address?: string | null
+          price_usd?: number | null
           symbol?: string
+          volatility?: number | null
         }
         Relationships: [
           {
