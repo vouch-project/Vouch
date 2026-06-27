@@ -345,8 +345,13 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(fundWindowSeconds > 0, "Fund window must be > 0");
         require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
 
-        // Transfer tokens from user to this vault (SafeERC20 handles non-compliant tokens)
+        // Transfer tokens from user to this vault (SafeERC20 handles non-compliant tokens).
+        // Reject fee-on-transfer collateral tokens: collateralAmount is recorded as `amount`
+        // and later returned in full, so a short receipt would leave reclaims underfunded.
+        uint256 balanceBefore = IERC20(token).balanceOf(address(this));
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        uint256 received = IERC20(token).balanceOf(address(this)) - balanceBefore;
+        require(received == amount, "Fee-on-transfer collateral not supported");
 
         loans[nextLoanId] = Loan({
             borrower: msg.sender,
@@ -570,7 +575,13 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 interestPortion = amount - principalDelta;
         uint256 protocolFee = _protocolFee(interestPortion);
 
+        // Reject fee-on-transfer principal tokens: payouts assume the vault received exactly
+        // `amount`, so a short receipt would credit lenders/treasury for funds we don't hold.
+        uint256 balanceBefore = IERC20(loan.requestedPrincipalToken).balanceOf(address(this));
         IERC20(loan.requestedPrincipalToken).safeTransferFrom(msg.sender, address(this), amount);
+        uint256 received = IERC20(loan.requestedPrincipalToken).balanceOf(address(this)) - balanceBefore;
+        require(received == amount, "Fee-on-transfer principal not supported");
+
         _payoutToken(loan.requestedPrincipalToken, loan.lender, amount - protocolFee);
         if (protocolFee > 0) {
             _payoutToken(loan.requestedPrincipalToken, protocolTreasury, protocolFee);
