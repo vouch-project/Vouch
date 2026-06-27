@@ -23,7 +23,8 @@ BEGIN
     WHERE "networkId" = p_network_id AND "contractAddress" = p_contract_address;
 
     IF v_chain_id IS NULL THEN
-        RAISE EXCEPTION 'Chain not found: %', p_network_id;
+        RAISE EXCEPTION 'Chain not found: networkId=%, contractAddress=%',
+            p_network_id, p_contract_address;
     END IF;
 
     UPDATE public.loans

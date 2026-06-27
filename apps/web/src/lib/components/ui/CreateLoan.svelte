@@ -108,7 +108,15 @@
     }
     const interestRateBps = Math.round(ratePct * 100);
     const durationSeconds = durDays * 86400;
+    if (!Number.isSafeInteger(durationSeconds)) {
+      status = 'Loan duration is too large.';
+      return;
+    }
     const fundWindowSeconds = windowDays * 86400;
+    if (!Number.isSafeInteger(fundWindowSeconds)) {
+      status = 'Funding window is too large.';
+      return;
+    }
 
     status = 'Waiting for wallet confirmation...';
 

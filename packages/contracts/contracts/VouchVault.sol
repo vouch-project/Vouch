@@ -240,7 +240,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     function _payoutToken(address token, address recipient, uint256 amount) internal {
         if (amount == 0) return;
         (bool success, bytes memory data) = token.call(abi.encodeCall(IERC20.transfer, (recipient, amount)));
-        if (!success || (data.length != 0 && !abi.decode(data, (bool)))) {
+        bool ok = success && (data.length == 0 || (data.length == 32 && abi.decode(data, (bool))));
+        if (!ok) {
             _creditPayment(recipient, token, amount);
         }
     }
@@ -718,7 +719,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         if (!loan.funded) return 0;
         uint256 owed = loan.interestAccrued;
         if (loan.durationSeconds == 0) return owed; // floor only; no time-based interest
-        uint256 from = loan.lastAccrualAt;
+        uint256 from = loan.lastAccrualAt == 0 ? loan.fundedAt : loan.lastAccrualAt;
         uint256 dueAt = loan.fundedAt + loan.durationSeconds;
         uint256 cappedNow = block.timestamp < dueAt ? block.timestamp : dueAt;
         if (cappedNow > from) {
@@ -736,6 +737,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     ///      accrual. No-op once the duration cap is reached or for unfunded / zero-duration loans.
     function _accrue(Loan storage loan) internal {
         if (!loan.funded || loan.durationSeconds == 0) return;
+        if (loan.lastAccrualAt == 0) loan.lastAccrualAt = loan.fundedAt;
         uint256 from = loan.lastAccrualAt;
         uint256 dueAt = loan.fundedAt + loan.durationSeconds;
         uint256 cappedNow = block.timestamp < dueAt ? block.timestamp : dueAt;

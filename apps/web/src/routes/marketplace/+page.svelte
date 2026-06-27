@@ -285,7 +285,7 @@
                   LTV
                 </Table.Head>
                 <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
-                  APY
+                  APR
                 </Table.Head>
                 <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
                   Term
@@ -342,12 +342,12 @@
                           {loan.borrowerAddress.slice(2, 4).toUpperCase()}
                         </div>
                         <button
-                          type="button"
                           class="group/addr inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+                          onclick={() => copyAddress(loan.borrowerAddress)}
                           title={copiedAddress === loan.borrowerAddress
                             ? 'Copied!'
                             : `${loan.borrowerAddress} (click to copy)`}
-                          onclick={() => copyAddress(loan.borrowerAddress)}
+                          type="button"
                         >
                           <span class="hidden xs:inline">{truncateAddress(loan.borrowerAddress)}</span>
                           <span class="xs:hidden">{loan.borrowerAddress.slice(0, 4)}...</span>

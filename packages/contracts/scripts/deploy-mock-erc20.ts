@@ -25,10 +25,11 @@ async function main() {
   console.log(`MockERC20 deployed to: ${HARDCODED_MOCK_ERC20_ADDRESS}`);
 
   // Preserve previous behaviour: the primary deployer account (#0) used to receive
-  // the initial supply when it was the token deployer. Mint the same amount to it
-  // so existing flows that expect account #0 to hold 1,000,000 MOCK still work.
-  await (await token.mint(deployer.address, initialSupply)).wait();
-  console.log(`Minted initial supply to primary account: ${deployer.address}`);
+  // the initial supply when it was the token deployer. The constructor minted the
+  // full supply to the dedicated token deployer, so transfer it to the primary
+  // account instead of minting again — this keeps total supply at initialSupply.
+  await (await token.transfer(deployer.address, initialSupply)).wait();
+  console.log(`Transferred initial supply to primary account: ${deployer.address}`);
 
   // Write the address to the root .env file
   const envPath = path.resolve(__dirname, '../../../.env');
