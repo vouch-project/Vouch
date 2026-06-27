@@ -250,7 +250,7 @@
   <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
     <span
       class="font-medium"
-      title={isLenderView ? `Net of ${(chainInfo.protocolFeeBps / 100).toFixed(0)}% protocol fee` : undefined}
+      title={isLenderView ? `Net of ${(chainInfo.protocolFeeBps / 100).toFixed(2)}% current protocol fee` : undefined}
     >
       {displayAprPct.toFixed(2)}% APR
     </span>

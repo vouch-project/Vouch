@@ -411,7 +411,7 @@
                     >
                       {netApr.toFixed(2)}% APR
                       <div class="text-[8px] sm:text-[10px] font-normal text-muted-foreground">
-                        you earn · {grossApr.toFixed(2)}% gross − {(chainInfo.protocolFeeBps / 100).toFixed(0)}% fee
+                        you earn · {grossApr.toFixed(2)}% gross − {(chainInfo.protocolFeeBps / 100).toFixed(2)}% fee
                       </div>
                     </Table.Cell>
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
