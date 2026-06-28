@@ -470,10 +470,19 @@ export class BlockchainListenerService implements OnModuleInit {
     contract: VouchVault,
   ) {
     try {
+      // The contract is connected with a Provider as its runner, so `runner` is
+      // itself the provider (it has no nested `.provider`). Fall back to
+      // `runner.provider` only when the runner is a Signer.
+      const runner = contract.runner;
+      const provider: ethers.Provider | null =
+        runner &&
+        typeof (runner as Partial<ethers.Provider>).getBlock === 'function'
+          ? (runner as ethers.Provider)
+          : (runner?.provider ?? null);
+
       const [treasuryAddress, block] = await Promise.all([
         contract.protocolTreasury(),
-        contract.runner?.provider?.getBlock(blockNumber) ??
-          Promise.resolve(null),
+        provider ? provider.getBlock(blockNumber) : Promise.resolve(null),
       ]);
       await this.loanService.recordProtocolFee({
         onChainLoanId: loanId,
