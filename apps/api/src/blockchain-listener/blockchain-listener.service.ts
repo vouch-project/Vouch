@@ -481,7 +481,9 @@ export class BlockchainListenerService implements OnModuleInit {
           : (runner?.provider ?? null);
 
       const [treasuryAddress, block] = await Promise.all([
-        contract.protocolTreasury(),
+        // ProtocolFeeCollected omits the treasury; read it at the event's block
+        // so a later owner-initiated treasury change can't misattribute backlog.
+        contract.protocolTreasury({ blockTag: blockNumber }),
         provider ? provider.getBlock(blockNumber) : Promise.resolve(null),
       ]);
       await this.loanService.recordProtocolFee({

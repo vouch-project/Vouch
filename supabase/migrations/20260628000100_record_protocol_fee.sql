@@ -181,8 +181,8 @@ BEGIN
     SET status               = 'repaid',
         "repaidAt"           = p_repaid_at,
         "lenderAddress"      = COALESCE("lenderAddress", p_lender_address),  -- backfill if LoanFunded write was missed
-        "principalRepaid"    = GREATEST(COALESCE("principalRepaid"::numeric, 0), p_principal_repaid::numeric, "principalAmount"::numeric)::text,
-        "collateralReleased" = GREATEST(COALESCE("collateralReleased"::numeric, 0), p_collateral_released::numeric, "collateralAmount"::numeric)::text
+        "principalRepaid"    = GREATEST(COALESCE("principalRepaid"::numeric, 0), p_principal_repaid::numeric, COALESCE("principalAmount"::numeric, 0))::text,
+        "collateralReleased" = GREATEST(COALESCE("collateralReleased"::numeric, 0), p_collateral_released::numeric, COALESCE("collateralAmount"::numeric, 0))::text
     WHERE "onChainLoanId"   = p_on_chain_loan_id
       AND "chainId"         = v_chain_id
       AND "borrowerAddress" = p_borrower_address  -- guard against updating the wrong loan

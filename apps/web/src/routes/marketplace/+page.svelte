@@ -410,9 +410,6 @@
                       class="px-1 sm:px-3 lg:px-6 py-4 font-bold text-indigo-600 text-left underline-offset-4 whitespace-nowrap text-[10px] sm:text-sm min-w-max"
                     >
                       {netApr.toFixed(2)}% APR
-                      <div class="text-[8px] sm:text-[10px] font-normal text-muted-foreground">
-                        you earn · {grossApr.toFixed(2)}% gross − {(chainInfo.protocolFeeBps / 100).toFixed(2)}% fee
-                      </div>
                     </Table.Cell>
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
                       <div
