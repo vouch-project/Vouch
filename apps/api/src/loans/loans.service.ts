@@ -5,6 +5,7 @@ import { CancelLoanDto } from './dto/cancel-loan.dto';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { FundLoanDto } from './dto/fund-loan.dto';
 import { PartialRepayLoanDto } from './dto/partial-repay-loan.dto';
+import { RecordProtocolFeeDto } from './dto/record-protocol-fee.dto';
 import { RepayLoanDto } from './dto/repay-loan.dto';
 
 @Injectable()
@@ -185,6 +186,37 @@ export class LoansService {
         p_block_hash: blockHash,
         p_log_index: logIndex.toString(),
         p_paid_at: paidAt.toISOString(),
+      },
+    );
+
+    if (error) throw error;
+  }
+
+  async recordProtocolFee({
+    onChainLoanId,
+    networkId,
+    contractAddress,
+    treasuryAddress,
+    feeAmount,
+    txHash,
+    blockNumber,
+    blockHash,
+    logIndex,
+    collectedAt,
+  }: RecordProtocolFeeDto) {
+    const { error } = await this.supabaseService.client.rpc(
+      'record_protocol_fee',
+      {
+        p_network_id: networkId,
+        p_contract_address: asAddress(contractAddress),
+        p_on_chain_loan_id: onChainLoanId.toString(),
+        p_treasury_address: asAddress(treasuryAddress),
+        p_fee_amount: feeAmount.toString(),
+        p_tx_hash: txHash,
+        p_block_number: blockNumber.toString(),
+        p_block_hash: blockHash,
+        p_log_index: logIndex.toString(),
+        p_collected_at: collectedAt.toISOString(),
       },
     );
 

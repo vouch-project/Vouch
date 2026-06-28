@@ -587,6 +587,21 @@ export type Database = {
         }
         Returns: undefined
       }
+      record_protocol_fee: {
+        Args: {
+          p_block_hash: string
+          p_block_number: unknown
+          p_collected_at: string
+          p_contract_address: unknown
+          p_fee_amount: string
+          p_log_index: unknown
+          p_network_id: string
+          p_on_chain_loan_id: unknown
+          p_treasury_address: unknown
+          p_tx_hash: string
+        }
+        Returns: undefined
+      }
       repay_loan_with_transaction: {
         Args: {
           p_block_hash: string
@@ -631,6 +646,7 @@ export type Database = {
         | "repayment"
         | "liquidation"
         | "withdrawal"
+        | "protocol_fee"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -785,6 +801,7 @@ export const Constants = {
         "repayment",
         "liquidation",
         "withdrawal",
+        "protocol_fee",
       ],
     },
   },

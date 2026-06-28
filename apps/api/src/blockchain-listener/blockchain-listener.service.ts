@@ -10,6 +10,16 @@ import { SerialQueue } from './serial-queue';
 
 type ChainConfig = Tables<'chains'>;
 
+/**
+ * ethers v6 invokes contract event listeners with a `ContractEventPayload`, but
+ * TypeChain types the final listener argument as a `TypedEventLog`. Resolve the
+ * underlying `Log` regardless of which shape arrives at runtime.
+ */
+const resolveEventLog = (
+  event: ethers.Log | ethers.ContractEventPayload,
+): ethers.Log =>
+  event instanceof ethers.ContractEventPayload ? event.log : event;
+
 @Injectable()
 export class BlockchainListenerService implements OnModuleInit {
   private readonly logger = new Logger(BlockchainListenerService.name);
@@ -110,7 +120,7 @@ export class BlockchainListenerService implements OnModuleInit {
             requestedPrincipalToken,
             requestedPrincipalAmount,
             timestamp,
-            event,
+            resolveEventLog(event),
             network,
             config.contractAddress,
             contract,
@@ -129,7 +139,7 @@ export class BlockchainListenerService implements OnModuleInit {
             borrower,
             principalAmount,
             timestamp,
-            event,
+            resolveEventLog(event),
             network,
             config.contractAddress,
           ),
@@ -158,7 +168,7 @@ export class BlockchainListenerService implements OnModuleInit {
             interestAmount,
             totalRepaid,
             timestamp,
-            event,
+            resolveEventLog(event),
             network,
             config.contractAddress,
             contract,
@@ -185,7 +195,7 @@ export class BlockchainListenerService implements OnModuleInit {
             borrower,
             paymentAmount,
             timestamp,
-            event,
+            resolveEventLog(event),
             network,
             config.contractAddress,
             contract,
@@ -202,9 +212,25 @@ export class BlockchainListenerService implements OnModuleInit {
             loanId,
             borrower,
             timestamp,
-            event,
+            resolveEventLog(event),
             network,
             config.contractAddress,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      contract.getEvent('ProtocolFeeCollected'),
+      (loanId, _token, amount, event) => {
+        this.enqueue(queueKey, () =>
+          this.handleProtocolFeeCollected(
+            loanId,
+            amount,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+            contract,
           ),
         );
       },
@@ -428,12 +454,61 @@ export class BlockchainListenerService implements OnModuleInit {
   }
 
   /**
+   * Record the protocol fee skimmed from the interest portion of a repayment as
+   * its own ledger entry (borrower -> protocolTreasury). The event carries only
+   * (loanId, token, amount), so the treasury recipient is read live and the
+   * collection time comes from the block. Recorded separately from the lender's
+   * gross `repayment` row so lender net receipts and treasury income are both
+   * derivable from the transactions ledger.
+   */
+  protected async handleProtocolFeeCollected(
+    loanId: bigint,
+    amount: bigint,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+    contract: VouchVault,
+  ) {
+    try {
+      const [treasuryAddress, block] = await Promise.all([
+        contract.protocolTreasury(),
+        contract.runner?.provider?.getBlock(blockNumber) ??
+          Promise.resolve(null),
+      ]);
+      await this.loanService.recordProtocolFee({
+        onChainLoanId: loanId,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        treasuryAddress,
+        feeAmount: amount,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        collectedAt: new Date(
+          (block?.timestamp ?? Math.floor(Date.now() / 1000)) * 1000,
+        ),
+      });
+      this.logger.log(
+        `Protocol fee of ${amount.toString()} collected for loan ${loanId.toString()}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to record protocol fee for loan ${loanId.toString()}`,
+        error,
+      );
+    }
+  }
+
+  /**
    * Read the cumulative, monotonic repayment-progress fields from the on-chain
    * loan struct (the public `loans` getter). These are not carried by the
    * repayment events, so caching them in the DB requires a live read. On failure
    * we fall back to 0 — the SQL caches with GREATEST(...) so a 0 can never
-   * regress an already-cached value, and the next event (or the UI's live chain
-   * hydration) will reconcile it.
+   * regress an already-cached value. For a terminal LoanRepaid (which has no
+   * later event to reconcile), `repay_loan_with_transaction` additionally clamps
+   * these up to the loan's full principal/collateral, so a failed read here can
+   * never leave a repaid loan stuck at 0.
    */
   private async readRepaidAmounts(
     contract: VouchVault,

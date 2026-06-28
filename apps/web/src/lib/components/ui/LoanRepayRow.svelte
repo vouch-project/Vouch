@@ -48,6 +48,13 @@
   const repaymentTxs = $derived(loan.repaymentTransactions.filter((tx) => tx.type === 'repayment'));
   const amountRepaidFromDB = $derived(repaymentTxs.reduce((sum, tx) => sum + BigInt(tx.amount ?? 0), 0n));
 
+  // Protocol-fee rows record the actual fee skimmed from interest at each repayment
+  // (borrower -> treasury). Summing them gives the real fee taken so far, which is
+  // used below instead of recomputing from the current bps (the fee can change over
+  // a loan's life, so applying the current rate to past repayments would misreport).
+  const protocolFeeTxs = $derived(loan.repaymentTransactions.filter((tx) => tx.type === 'protocol_fee'));
+  const protocolFeePaidFromDB = $derived(protocolFeeTxs.reduce((sum, tx) => sum + BigInt(tx.amount ?? 0), 0n));
+
   const principalRaw = $derived(BigInt(loan.principalAmount ?? '0'));
   const interestRateRaw = $derived(BigInt(loan.interestRate ?? '0'));
   const fundedAtMs = $derived(loan.fundedAt ? new Date(loan.fundedAt).getTime() : 0);
@@ -158,8 +165,13 @@
   );
 
   // Net interest for the lender: full amount over the loan vs. the part realized so far.
+  // The total is a forward projection at the current fee (future fees are unknown), but the
+  // earned figure uses the actual fees recorded on past repayments so it never misreports
+  // realized yield when the protocol fee changes mid-loan.
   const lenderNetInterestTotal = $derived((interestAmount * BigInt(lenderNetBps)) / 10000n);
-  const lenderNetInterestEarned = $derived((interestRepaidSoFar * BigInt(lenderNetBps)) / 10000n);
+  const lenderNetInterestEarned = $derived(
+    interestRepaidSoFar > protocolFeePaidFromDB ? interestRepaidSoFar - protocolFeePaidFromDB : 0n,
+  );
   // Interest accrued but not yet repaid (still owed to the lender).
   const lenderNetInterestRemaining = $derived(
     lenderNetInterestTotal > lenderNetInterestEarned ? lenderNetInterestTotal - lenderNetInterestEarned : 0n,
