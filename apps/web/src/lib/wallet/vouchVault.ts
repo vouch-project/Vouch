@@ -175,9 +175,15 @@ export const getRepaymentDetails = async (onChainLoanId: bigint): Promise<Repaym
  * 1000 = 10%. Lenders net `grossInterest * (1 - protocolFeeBps / 10000)`.
  */
 export const getProtocolFeeBps = async (): Promise<number> => {
-  const contract = await getVouchVaultContract();
+  if (!window.ethereum) throw new Error('No wallet found');
+  if (!chainInfo.contractAddress) throw new Error('No contract address found for current chain');
+  if (!ethers.isAddress(chainInfo.contractAddress)) throw new Error('Invalid contract address');
+
+  // Read-only: do not require a signer (avoids prompting the user to connect).
+  const provider = new ethers.BrowserProvider(window.ethereum as unknown as ethers.Eip1193Provider);
+  const contract = VouchVault__factory.connect(chainInfo.contractAddress, provider);
   return Number(await contract.protocolFeeBps());
-};
+}
 
 /**
  * Repay some or all of an ETH-principal loan.
