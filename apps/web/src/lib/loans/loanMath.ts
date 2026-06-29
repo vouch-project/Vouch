@@ -2,9 +2,12 @@
  * Pure helpers for deriving loan repayment figures.
  *
  * `loans.interestRate` is stored as the contract's ANNUAL interest rate in basis points
- * (e.g. 500 = 5% APR). Interest accrues per accrual period, simple (no compounding),
- * capped at the loan duration — mirroring VouchVault._currentInterestOwed:
+ * (e.g. 500 = 5% APR). These helpers approximate VouchVault's per-period simple-interest
+ * accrual (no compounding, capped at the loan duration) for UI fallbacks only:
  *   accrued = principal * bps * elapsedPeriods / (10000 * PERIODS_PER_YEAR)
+ * The authoritative figures should come from on-chain reads (e.g. getRepaymentDetails),
+ * since on-chain accrual also depends on the outstanding principal after repayments and
+ * the contract's cached accrual state (interestAccrued / lastAccrualAt).
  * All money math stays in bigint to avoid precision loss.
  */
 const BPS_DENOMINATOR = 10000n;

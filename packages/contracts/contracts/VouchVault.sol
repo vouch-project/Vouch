@@ -240,7 +240,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     function _payoutToken(address token, address recipient, uint256 amount) internal {
         if (amount == 0) return;
         (bool success, bytes memory data) = token.call(abi.encodeCall(IERC20.transfer, (recipient, amount)));
-        bool ok = success && (data.length == 0 || (data.length == 32 && abi.decode(data, (bool))));
+        bool ok = success && (data.length == 0 || (data.length >= 32 && abi.decode(data, (bool))));
         if (!ok) {
             _creditPayment(recipient, token, amount);
         }
