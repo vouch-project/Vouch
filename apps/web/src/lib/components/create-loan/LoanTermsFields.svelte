@@ -45,12 +45,18 @@
 
   const handleDurationInput = (e: Event) => {
     const input = e.target as HTMLInputElement;
-    if (parseInt(input.value) < 1) input.value = '1';
+    if (parseInt(input.value) < 1) {
+      durationDays = '1';
+      input.value = '1';
+    }
   };
 
   const handleFundWindowInput = (e: Event) => {
     const input = e.target as HTMLInputElement;
-    if (parseInt(input.value) < 1) input.value = '1';
+    if (parseInt(input.value) < 1) {
+      fundWindowDays = '1';
+      input.value = '1';
+    }
   };
 </script>
 
@@ -79,8 +85,8 @@
       <div class="relative">
         <input
           class="{inputClass} pr-6"
-          min="0"
           max="100"
+          min="0"
           oninput={handleAprInput}
           placeholder={recommendedApr !== null ? recommendedApr.toFixed(2) : '5'}
           step="0.01"
