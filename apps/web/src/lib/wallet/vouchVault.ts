@@ -183,7 +183,7 @@ export const getProtocolFeeBps = async (): Promise<number> => {
   const provider = new ethers.BrowserProvider(window.ethereum as unknown as ethers.Eip1193Provider);
   const contract = VouchVault__factory.connect(chainInfo.contractAddress, provider);
   return Number(await contract.protocolFeeBps());
-}
+};
 
 /**
  * Repay some or all of an ETH-principal loan.
