@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ClaimableFunds from '$lib/components/dashboard/ClaimableFunds.svelte';
   import CreditScoreBar from '$lib/components/dashboard/CreditScoreBar.svelte';
   import DashboardHeader from '$lib/components/dashboard/DashboardHeader.svelte';
   import DashboardStats from '$lib/components/dashboard/DashboardStats.svelte';
@@ -11,7 +12,13 @@
   import { onDestroy } from 'svelte';
   import { DashboardData, type DashboardFilter } from './dashboard.svelte';
 
-  const data = new DashboardData();
+  // Two perspectives over the same wallet: loans the user borrowed, and loans
+  // the user funded as a lender.
+  const borrowedData = new DashboardData('borrower');
+  const lentData = new DashboardData('lender');
+
+  let perspective = $state<'borrowed' | 'lent'>('borrowed');
+  const data = $derived(perspective === 'borrowed' ? borrowedData : lentData);
 
   let loading = $state(false);
   let refreshing = $state(false);
@@ -27,32 +34,45 @@
     scoreLoading = false;
   };
 
+  const fetchBoth = (address: string) => Promise.all([borrowedData.fetch(address), lentData.fetch(address)]);
+
   const handleRefresh = async () => {
     if (!wallet.address) return;
     refreshing = true;
-    await Promise.all([data.fetch(wallet.address), loadCreditScore()]);
+    await Promise.all([fetchBoth(wallet.address), loadCreditScore()]);
     refreshing = false;
   };
 
-  onDestroy(() => data.destroy());
+  // Keep the realtime indicator consistent by toggling both perspectives together.
+  const handleToggleRealtime = () => {
+    borrowedData.toggleRealtime();
+    lentData.toggleRealtime();
+  };
+
+  onDestroy(() => {
+    borrowedData.destroy();
+    lentData.destroy();
+  });
 
   $effect(() => {
     // Read wallet.address here so the effect re-runs when it changes; otherwise
     // it never refetches after the wallet connects.
     if (!wallet.address) {
-      data.reset();
+      borrowedData.reset();
+      lentData.reset();
       creditScore = null;
       return;
     }
     loading = true;
-    void data.fetch(wallet.address).finally(() => {
+    void fetchBoth(wallet.address).finally(() => {
       loading = false;
     });
     void loadCreditScore();
   });
 
+  // A repayment changes both sides of the book, so refetch both.
   const handleRepaid = () => {
-    if (wallet.address) void data.fetch(wallet.address);
+    if (wallet.address) void fetchBoth(wallet.address);
   };
 
   // ── Filtering ─────────────────────────────────────────────────────────────
@@ -69,7 +89,7 @@
     busy={refreshing || loading}
     isConnected={wallet.isConnected}
     onRefresh={handleRefresh}
-    onToggleRealtime={() => data.toggleRealtime()}
+    onToggleRealtime={handleToggleRealtime}
     realtimeActive={data.realtimeActive}
   />
 
@@ -84,6 +104,25 @@
       </div>
     </div>
   {:else}
+    <ClaimableFunds onClaimed={handleRepaid} />
+
+    <Tabs.Root bind:value={perspective}>
+      <Tabs.List class="mb-4">
+        <Tabs.Trigger value="borrowed">
+          Borrowed
+          {#if borrowedData.loans.length > 0}
+            <Badge class="ml-1.5 h-5 min-w-5 text-xs" variant="secondary">{borrowedData.loans.length}</Badge>
+          {/if}
+        </Tabs.Trigger>
+        <Tabs.Trigger value="lent">
+          Lent
+          {#if lentData.loans.length > 0}
+            <Badge class="ml-1.5 h-5 min-w-5 text-xs" variant="secondary">{lentData.loans.length}</Badge>
+          {/if}
+        </Tabs.Trigger>
+      </Tabs.List>
+    </Tabs.Root>
+
     <DashboardStats
       active={data.activeCount}
       liquidated={data.liquidatedCount}
@@ -92,7 +131,9 @@
       total={data.loans.length}
     />
 
-    <CreditScoreBar loading={scoreLoading} score={creditScore} />
+    {#if perspective === 'borrowed'}
+      <CreditScoreBar loading={scoreLoading} score={creditScore} />
+    {/if}
 
     {#if data.fetchError}
       <p class="text-sm text-destructive">{data.fetchError}</p>
@@ -116,7 +157,7 @@
       </Tabs.List>
 
       <Tabs.Content value={filter}>
-        <LoansTable {filter} {loading} loans={filteredLoans} onRepaid={handleRepaid} />
+        <LoansTable {filter} {loading} loans={filteredLoans} onRepaid={handleRepaid} role={data.role} />
       </Tabs.Content>
     </Tabs.Root>
   {/if}

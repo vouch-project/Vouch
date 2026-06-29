@@ -16,7 +16,9 @@ const MOCK_ML_RESPONSE = {
   model_version: 'v1',
   strengths: ['Long wallet history (1+ year)'],
   risk_factors: ['No DeFi borrowing history'],
-  improvements: ['Establishing a DeFi borrowing and repayment history will improve your score'],
+  improvements: [
+    'Establishing a DeFi borrowing and repayment history will improve your score',
+  ],
   explanation: null,
 };
 

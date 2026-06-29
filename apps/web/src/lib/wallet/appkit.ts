@@ -57,6 +57,11 @@ export const getAppKit = (): AppKit | undefined => {
     projectId: REOWN_PROJECT_ID,
     networks: SUPPORTED_NETWORKS,
     defaultNetwork: DEFAULT_NETWORK,
+    // Explicitly enable browser-extension wallet discovery. These default to
+    // true, but pinning them avoids any ambiguity if a future option toggles them.
+    enableInjected: true,
+    enableEIP6963: true,
+    enableWalletConnect: true,
     metadata: {
       name: 'Vouch',
       description: 'Decentralized P2P Crypto Lending',

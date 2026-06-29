@@ -44,6 +44,9 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.98.0
         version: 2.99.3(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      '@vouch/contracts':
+        specifier: workspace:^
+        version: link:../../packages/contracts
       '@vouch/database-types':
         specifier: workspace:*
         version: link:../../packages/database-types
@@ -148,15 +151,24 @@ importers:
 
   apps/web:
     dependencies:
+      '@lit/reactive-element':
+        specifier: ^2.1.2
+        version: 2.1.2
       '@reown/appkit':
         specifier: ^1.8.19
         version: 1.8.19(@types/react@19.2.14)(bufferutil@4.1.0)(immer@10.0.2)(ioredis@5.10.1)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
       '@reown/appkit-adapter-ethers':
         specifier: ^1.8.19
         version: 1.8.19(@ethersproject/sha2@5.8.0)(@types/react@19.2.14)(bufferutil@4.1.0)(ethers@6.16.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(immer@10.0.2)(ioredis@5.10.1)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
+      '@reown/appkit-controllers':
+        specifier: ^1.8.19
+        version: 1.8.19(@types/react@19.2.14)(bufferutil@4.1.0)(ioredis@5.10.1)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
       '@supabase/supabase-js':
         specifier: ^2.98.0
         version: 2.99.3(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      '@vouch/contracts':
+        specifier: workspace:^
+        version: link:../../packages/contracts
       '@vouch/database-types':
         specifier: workspace:*
         version: link:../../packages/database-types
@@ -169,6 +181,15 @@ importers:
       jwt-decode:
         specifier: ^4.0.0
         version: 4.0.0
+      lit:
+        specifier: ^3.3.0
+        version: 3.3.0
+      lit-element:
+        specifier: ^4.2.2
+        version: 4.2.2
+      lit-html:
+        specifier: ^3.3.2
+        version: 3.3.2
     devDependencies:
       '@eslint/js':
         specifier: ^9.18.0
@@ -9907,7 +9928,7 @@ snapshots:
 
   '@scure/bip32@1.7.0':
     dependencies:
-      '@noble/curves': 1.9.1
+      '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
       '@scure/base': 1.2.6
 
@@ -10798,7 +10819,7 @@ snapshots:
     dependencies:
       '@babel/runtime': 7.29.2
       '@noble/curves': 1.9.7
-      '@noble/hashes': 1.4.0
+      '@noble/hashes': 1.8.0
       '@solana/buffer-layout': 4.0.1
       '@solana/codecs-numbers': 2.3.0(typescript@5.9.3)
       agentkeepalive: 4.6.0

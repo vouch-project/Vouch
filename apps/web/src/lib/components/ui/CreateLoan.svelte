@@ -1,10 +1,13 @@
 <script lang="ts">
   import { axiosApi } from '$api/axiosApi';
-  import { chainInfo } from '$lib/stores/chainInfo.svelte';
-  import { wallet } from '$lib/wallet/wallet.svelte';
-  import { createLoan } from '$lib/wallet/vouchVault';
-  import TokenAutocomplete from './TokenAutocomplete.svelte';
   import { getTokenMeta, maxLtv } from '$lib/ltv';
+  import { chainInfo } from '$lib/stores/chainInfo.svelte';
+  import { createLoan } from '$lib/wallet/vouchVault';
+  import { wallet } from '$lib/wallet/wallet.svelte';
+  import CollateralBorrowFields from '../create-loan/CollateralBorrowFields.svelte';
+  import LoanTermsFields from '../create-loan/LoanTermsFields.svelte';
+  import LtvIndicator from '../create-loan/LtvIndicator.svelte';
+  import RepaymentSummary from '../create-loan/RepaymentSummary.svelte';
 
   // ── Form state ────────────────────────────────────────────────────────────
   let collateralAmount = $state('1.0');
@@ -12,6 +15,10 @@
   let status = $state('');
   let selectedCollateralToken = $state('ETH');
   let selectedBorrowToken = $state('MOCK');
+
+  let interestRatePct = $state('5');
+  let durationDays = $state('30');
+  let fundWindowDays = $state('7');
 
   // Credit score (fetched once when address is known)
   let creditScore = $state<number | null>(null);
@@ -33,14 +40,31 @@
 
   // ── LTV Calculations ──────────────────────────────────────────────────────
   const computedMaxLtv = $derived(maxLtv(selectedCollateralToken, selectedBorrowToken, creditScore));
-
   const collateralUsd = $derived((parseFloat(collateralAmount) || 0) * getTokenMeta(selectedCollateralToken).priceUsd);
-
   const borrowUsd = $derived((parseFloat(borrowAmount) || 0) * getTokenMeta(selectedBorrowToken).priceUsd);
-
   const currentLtv = $derived(collateralUsd > 0 ? (borrowUsd / collateralUsd) * 100 : 0);
-
   const ltvExceeded = $derived(currentLtv > computedMaxLtv);
+
+  // ── Recommended APR (credit score + LTV risk) ────────────────────────────
+  // Score sets the ceiling (300→15%, 850→5%). LTV utilization scales it down:
+  // borrowing 10% of max LTV → 10% of that ceiling. No borrow entered → null.
+  const recommendedApr = $derived.by(() => {
+    if (creditScore === null || currentLtv <= 0 || computedMaxLtv <= 0) return null;
+    const scoreNorm = Math.max(0, Math.min(1, (creditScore - 300) / 550));
+    const ceiling = 5 + (1 - scoreNorm) * 10;
+    const ltvRatio = Math.min(1, currentLtv / computedMaxLtv);
+    return ceiling * ltvRatio;
+  });
+
+  // ── Repayment ─────────────────────────────────────────────────────────────
+  const totalRepayment = $derived.by(() => {
+    const principal = parseFloat(borrowAmount) || 0;
+    const rate = parseFloat(interestRatePct) || 0;
+    const days = parseInt(durationDays) || 0;
+    if (principal <= 0 || days <= 0) return null;
+    const interest = principal * (rate / 100) * (days / 365);
+    return { total: principal + interest, interest };
+  });
 
   // ── Submit ────────────────────────────────────────────────────────────────
   const handleCreateLoan = async (e: SubmitEvent) => {
@@ -63,6 +87,37 @@
       return;
     }
 
+    const ratePct = Number(interestRatePct);
+    if (!isFinite(ratePct) || ratePct < 0) {
+      status = 'Enter a valid interest rate of 0% APR or higher.';
+      return;
+    }
+    if (ratePct > 100) {
+      status = 'Interest rate cannot exceed 100% APR.';
+      return;
+    }
+    const durDays = Number(durationDays);
+    if (!Number.isInteger(durDays) || durDays <= 0) {
+      status = 'Loan duration must be a positive whole number of days.';
+      return;
+    }
+    const windowDays = Number(fundWindowDays);
+    if (!Number.isInteger(windowDays) || windowDays <= 0) {
+      status = 'Funding window must be a positive whole number of days.';
+      return;
+    }
+    const interestRateBps = Math.round(ratePct * 100);
+    const durationSeconds = durDays * 86400;
+    if (!Number.isSafeInteger(durationSeconds)) {
+      status = 'Loan duration is too large.';
+      return;
+    }
+    const fundWindowSeconds = windowDays * 86400;
+    if (!Number.isSafeInteger(fundWindowSeconds)) {
+      status = 'Funding window is too large.';
+      return;
+    }
+
     status = 'Waiting for wallet confirmation...';
 
     const collateralToken = chainInfo.tokens.find((t) => t.symbol === selectedCollateralToken);
@@ -78,7 +133,15 @@
     }
 
     try {
-      await createLoan(collateralAmount, collateralToken, borrowToken, borrowAmount);
+      await createLoan(
+        collateralAmount,
+        collateralToken,
+        borrowToken,
+        borrowAmount,
+        interestRateBps,
+        durationSeconds,
+        fundWindowSeconds,
+      );
       status = 'Loan created!';
     } catch (e: unknown) {
       if (e && typeof e === 'object' && 'code' in e && e.code === 'ACTION_REJECTED') {
@@ -93,84 +156,44 @@
   };
 
   const isSubmitting = $derived(status === 'Waiting for wallet confirmation...');
+
+  const inputClass =
+    'border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring transition w-full bg-background';
+  const sectionClass = 'flex flex-col gap-3 p-4 rounded-lg border border-border/60 bg-muted/20';
 </script>
 
-<form class="flex flex-col items-center gap-4 w-full max-w-sm" onsubmit={handleCreateLoan}>
-  <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
-    <span>Collateral Token:</span>
-    <TokenAutocomplete tokens={chainInfo.tokens} bind:value={selectedCollateralToken} />
-  </label>
-  <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
-    <span>Collateral to Deposit ({selectedCollateralToken}):</span>
-    <input
-      class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
-      inputmode="decimal"
-      placeholder="0.0"
-      type="text"
-      bind:value={collateralAmount}
+<form class="flex flex-col gap-5 w-full" onsubmit={handleCreateLoan}>
+  <CollateralBorrowFields
+    {inputClass}
+    {sectionClass}
+    bind:collateralAmount
+    bind:borrowAmount
+    bind:selectedCollateralToken
+    bind:selectedBorrowToken
+  />
+
+  <LoanTermsFields
+    {inputClass}
+    {recommendedApr}
+    {sectionClass}
+    bind:interestRatePct
+    bind:durationDays
+    bind:fundWindowDays
+  />
+
+  <LtvIndicator {computedMaxLtv} {creditScore} {currentLtv} {ltvExceeded} />
+
+  {#if totalRepayment !== null}
+    <RepaymentSummary
+      interest={totalRepayment.interest}
+      tokenSymbol={selectedBorrowToken}
+      total={totalRepayment.total}
     />
-    <span class="text-xs text-gray-400 min-h-4 block">
-      {collateralUsd > 0 ? `≈ $${collateralUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''}
-    </span>
-  </label>
-  <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
-    <span>Borrow Currency:</span>
-    <TokenAutocomplete tokens={chainInfo.tokens} bind:value={selectedBorrowToken} />
-  </label>
-  <label class="w-full text-gray-600 font-medium flex flex-col gap-2">
-    <span>Amount to Borrow ({selectedBorrowToken}):</span>
-    <input
-      class="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition w-full bg-gray-50"
-      inputmode="decimal"
-      placeholder="0.0"
-      type="text"
-      bind:value={borrowAmount}
-    />
-    <span class="text-xs text-gray-400 min-h-4 block">
-      {borrowUsd > 0 ? `≈ $${borrowUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''}
-    </span>
-  </label>
-
-  <!-- LTV Indicator -->
-  <div
-    class="w-full rounded-lg border px-4 py-3 space-y-2 {ltvExceeded
-      ? 'border-red-300 bg-red-50'
-      : 'border-gray-200 bg-gray-50'}"
-  >
-    <div class="flex justify-between text-xs font-semibold {ltvExceeded ? 'text-red-600' : 'text-gray-500'}">
-      <span>Loan-to-Value (LTV)</span>
-      <span>Max: {computedMaxLtv.toFixed(1)}%{creditScore !== null ? ` (score ${creditScore})` : ''}</span>
-    </div>
-
-    <!-- Bar -->
-    <div class="relative w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-      <!-- Max LTV marker -->
-      <div
-        style:left="{(computedMaxLtv / (computedMaxLtv + 5)) * 100}%"
-        class="absolute top-0 h-full w-0.5 bg-gray-400 z-10"
-      ></div>
-      <!-- Current LTV fill -->
-      <div
-        style:width="{collateralUsd > 0 ? Math.min((currentLtv / (computedMaxLtv + 5)) * 100, 100) : 0}%"
-        class="h-full rounded-full transition-all duration-300 {ltvExceeded ? 'bg-red-500' : 'bg-blue-500'}"
-      ></div>
-    </div>
-
-    <div class="flex justify-between items-center">
-      <span class="text-sm font-bold {ltvExceeded ? 'text-red-600' : 'text-gray-700'}">
-        {currentLtv > 0 ? `${currentLtv.toFixed(1)}%` : '—'}
-      </span>
-      {#if ltvExceeded}
-        <span class="text-xs font-semibold text-red-500">Exceeds max LTV ↑</span>
-      {:else if currentLtv > 0}
-        <span class="text-xs text-gray-400">{(computedMaxLtv - currentLtv).toFixed(1)}% remaining</span>
-      {/if}
-    </div>
-  </div>
+  {/if}
 
   <button
-    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-2 rounded-lg shadow transition disabled:opacity-60 disabled:cursor-not-allowed {ltvExceeded
-      ? '!bg-red-500 hover:!bg-red-600'
+    class="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-6 py-2.5 rounded-lg shadow transition disabled:opacity-60 disabled:cursor-not-allowed {ltvExceeded
+      ? '!bg-destructive hover:!bg-destructive/90'
       : ''}"
     disabled={isSubmitting || ltvExceeded}
     type="submit"
@@ -180,11 +203,11 @@
 
   {#if status}
     <p
-      class="text-sm mt-2 {status === 'Loan created!'
+      class="text-sm {status === 'Loan created!'
         ? 'text-green-600'
         : ltvExceeded || status.includes('exceeds')
-          ? 'text-red-500'
-          : 'text-gray-500'} text-center"
+          ? 'text-destructive'
+          : 'text-muted-foreground'} text-center"
     >
       {status}
     </p>

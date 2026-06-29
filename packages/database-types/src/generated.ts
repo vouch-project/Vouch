@@ -106,11 +106,13 @@ export type Database = {
           cancelledAt: string | null
           chainId: string
           collateralAmount: string | null
+          collateralReleased: string | null
           collateralTokenId: string | null
           createdAt: string
           description: string | null
           dueAt: string | null
           duration: string | null
+          fundDeadline: string | null
           fundedAt: string | null
           id: string
           interestRate: number | null
@@ -119,6 +121,7 @@ export type Database = {
           metadata: Json
           onChainLoanId: number | null
           principalAmount: string | null
+          principalRepaid: string | null
           principalTokenId: string | null
           purpose: string | null
           repaidAt: string | null
@@ -131,11 +134,13 @@ export type Database = {
           cancelledAt?: string | null
           chainId: string
           collateralAmount?: string | null
+          collateralReleased?: string | null
           collateralTokenId?: string | null
           createdAt?: string
           description?: string | null
           dueAt?: string | null
           duration?: string | null
+          fundDeadline?: string | null
           fundedAt?: string | null
           id?: string
           interestRate?: number | null
@@ -144,6 +149,7 @@ export type Database = {
           metadata?: Json
           onChainLoanId?: number | null
           principalAmount?: string | null
+          principalRepaid?: string | null
           principalTokenId?: string | null
           purpose?: string | null
           repaidAt?: string | null
@@ -156,11 +162,13 @@ export type Database = {
           cancelledAt?: string | null
           chainId?: string
           collateralAmount?: string | null
+          collateralReleased?: string | null
           collateralTokenId?: string | null
           createdAt?: string
           description?: string | null
           dueAt?: string | null
           duration?: string | null
+          fundDeadline?: string | null
           fundedAt?: string | null
           id?: string
           interestRate?: number | null
@@ -169,6 +177,7 @@ export type Database = {
           metadata?: Json
           onChainLoanId?: number | null
           principalAmount?: string | null
+          principalRepaid?: string | null
           principalTokenId?: string | null
           purpose?: string | null
           repaidAt?: string | null
@@ -509,6 +518,20 @@ export type Database = {
       }
     }
     Functions: {
+      cancel_loan_with_transaction: {
+        Args: {
+          p_block_hash: string
+          p_block_number: unknown
+          p_borrower_address: unknown
+          p_cancelled_at: string
+          p_contract_address: unknown
+          p_log_index: unknown
+          p_network_id: string
+          p_on_chain_loan_id: unknown
+          p_tx_hash: string
+        }
+        Returns: undefined
+      }
       create_loan_with_transaction: {
         Args: {
           p_borrower_address: unknown
@@ -519,6 +542,9 @@ export type Database = {
           p_collateral_token_address: unknown
           p_collateral_tx_hash: string
           p_contract_address: unknown
+          p_duration_seconds?: number
+          p_fund_deadline?: string
+          p_interest_rate_bps?: number
           p_log_index: unknown
           p_network_id: string
           p_on_chain_loan_id: unknown
@@ -549,12 +575,29 @@ export type Database = {
           p_block_hash: string
           p_block_number: unknown
           p_borrower_address: unknown
+          p_collateral_released: string
           p_contract_address: unknown
           p_log_index: unknown
           p_network_id: string
           p_on_chain_loan_id: unknown
           p_paid_at: string
           p_payment_amount: string
+          p_principal_repaid: string
+          p_tx_hash: string
+        }
+        Returns: undefined
+      }
+      record_protocol_fee: {
+        Args: {
+          p_block_hash: string
+          p_block_number: unknown
+          p_collected_at: string
+          p_contract_address: unknown
+          p_fee_amount: string
+          p_log_index: unknown
+          p_network_id: string
+          p_on_chain_loan_id: unknown
+          p_treasury_address: unknown
           p_tx_hash: string
         }
         Returns: undefined
@@ -564,6 +607,7 @@ export type Database = {
           p_block_hash: string
           p_block_number: unknown
           p_borrower_address: unknown
+          p_collateral_released: string
           p_contract_address: unknown
           p_interest_amount: string
           p_lender_address: unknown
@@ -571,6 +615,7 @@ export type Database = {
           p_network_id: string
           p_on_chain_loan_id: unknown
           p_principal_amount: string
+          p_principal_repaid: string
           p_repaid_at: string
           p_total_repaid: string
           p_tx_hash: string
@@ -601,6 +646,7 @@ export type Database = {
         | "repayment"
         | "liquidation"
         | "withdrawal"
+        | "protocol_fee"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -755,6 +801,7 @@ export const Constants = {
         "repayment",
         "liquidation",
         "withdrawal",
+        "protocol_fee",
       ],
     },
   },
