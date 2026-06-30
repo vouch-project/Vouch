@@ -17,15 +17,29 @@ from src.features import fetch_features
 
 _register_compat()
 
-_ARTIFACT_ROOT = (
-    Path(__file__).resolve().parents[3]
-    / "services"
-    / "ml-training"
-    / "src"
-    / "vouch_ml_training"
-    / "models"
-    / "artifacts"
-)
+def _default_artifact_root() -> Path | None:
+    """Locate the directory holding trained model artifacts.
+
+    Checks a bundled ``artifacts/`` dir next to the app (used in container
+    images) first, then walks up to the monorepo ``services/ml-training``
+    location (used in local dev). Returns ``None`` when neither exists, in
+    which case ``ARTIFACT_PATH`` must be set.
+    """
+    here = Path(__file__).resolve()
+
+    bundled = here.parent.parent / "artifacts"
+    if bundled.exists():
+        return bundled
+
+    for parent in here.parents:
+        candidate = (
+            parent / "services" / "ml-training" / "src"
+            / "vouch_ml_training" / "models" / "artifacts"
+        )
+        if candidate.exists():
+            return candidate
+
+    return None
 
 _FEATURE_COLUMNS = [
     "walletAgeDays",
@@ -177,7 +191,15 @@ class CreditScorer:
             raise  # missing/invalid env vars → fail loudly at startup
 
         try:
-            artifact_dir = settings.artifact_path or _find_latest_artifact(_ARTIFACT_ROOT)
+            artifact_dir = settings.artifact_path
+            if artifact_dir is None:
+                root = _default_artifact_root()
+                if root is None:
+                    raise FileNotFoundError(
+                        "No artifact root found. Set ARTIFACT_PATH or bundle "
+                        "trained artifacts under an `artifacts/` directory."
+                    )
+                artifact_dir = _find_latest_artifact(root)
             self._load(artifact_dir)
         except Exception as exc:
             _log.warning("Could not load model artifact: %s", exc)
