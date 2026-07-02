@@ -51,7 +51,6 @@
           const chainData = await getChainInfo(wallet.networkId, controller.signal);
           chainInfo.contractAddress = chainData.contractAddress;
           chainInfo.tokens = chainData.tokens;
-          tokenPrices.sync();
           // Read the live protocol fee so lender-facing yields reflect it.
           try {
             chainInfo.protocolFeeBps = await getProtocolFeeBps();
@@ -61,20 +60,28 @@
         } else {
           chainInfo.contractAddress = undefined;
           chainInfo.tokens = [];
-          tokenPrices.sync();
         }
       } catch (e) {
         if (controller.signal.aborted) return;
         console.error('Failed to fetch token list', e);
         chainInfo.contractAddress = undefined;
         chainInfo.tokens = [];
-        tokenPrices.sync();
       }
     };
 
     void fetchTokens();
 
     return () => controller.abort();
+  });
+
+  // Kept as its own effect (rather than called inline above) so it only reads
+  // chainInfo.tokens and writes tokenPrices' own state — never chainInfo itself.
+  // Calling it from inside the effect above created a self-referential loop:
+  // that effect writes a fresh chainInfo.tokens array each run, and sync() reads
+  // chainInfo.tokens synchronously in the same tick, so Svelte tracked it as a
+  // dependency of the very effect that reassigns it, causing an infinite rerun.
+  $effect(() => {
+    tokenPrices.sync();
   });
 </script>
 
