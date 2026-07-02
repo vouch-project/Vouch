@@ -64,6 +64,8 @@ services:
     expose:
       - '8001'
     env_file: .env
+    volumes:
+      - ./services/ml-training/src/vouch_ml_training/models/artifacts:/app/artifacts:ro
 
   keeper:
     build:

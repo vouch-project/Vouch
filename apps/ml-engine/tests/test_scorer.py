@@ -157,4 +157,4 @@ def test_signals_high_repay_ratio_is_strength() -> None:
 def test_default_artifact_root_result_is_always_directory() -> None:
     result = _default_artifact_root()
     if result is not None:
-        assert result.is_dir(), "_default_artifact_root must return a directory, not a file or symlink"
+        assert result.is_dir(), "_default_artifact_root must return a directory"
