@@ -1,14 +1,24 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { VouchVault } from '@vouch/contracts';
+import { VouchVault__factory } from '@vouch/contracts';
 import type { Tables } from '@vouch/database-types';
 import { ethers } from 'ethers';
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import { LoansService } from '../loans/loans.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { SerialQueue } from './serial-queue';
 
 type ChainConfig = Tables<'chains'>;
+
+/**
+ * ethers v6 invokes contract event listeners with a `ContractEventPayload`, but
+ * TypeChain types the final listener argument as a `TypedEventLog`. Resolve the
+ * underlying `Log` regardless of which shape arrives at runtime.
+ */
+const resolveEventLog = (
+  event: ethers.Log | ethers.ContractEventPayload,
+): ethers.Log =>
+  event instanceof ethers.ContractEventPayload ? event.log : event;
 
 @Injectable()
 export class BlockchainListenerService implements OnModuleInit {
@@ -16,7 +26,7 @@ export class BlockchainListenerService implements OnModuleInit {
   private chains: {
     config: ChainConfig;
     provider: ethers.JsonRpcProvider | ethers.WebSocketProvider;
-    contract: ethers.Contract;
+    contract: VouchVault;
     network: ethers.Network;
   }[] = [];
 
@@ -27,15 +37,6 @@ export class BlockchainListenerService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    const abiPath =
-      this.configService.get('NODE_ENV') === 'production'
-        ? join(__dirname, '../../../../packages/abi/prod/VouchVault.json')
-        : join(__dirname, '../../../../packages/abi/VouchVault.json');
-
-    const VouchVaultAbi = JSON.parse(
-      readFileSync(abiPath, 'utf-8'),
-    ) as ethers.InterfaceAbi;
-
     const { data: chainConfigs, error } = await this.supabaseService.client
       .from('chains')
       .select('*');
@@ -49,7 +50,9 @@ export class BlockchainListenerService implements OnModuleInit {
       try {
         const provider = config.rpcUrl.startsWith('ws')
           ? new ethers.WebSocketProvider(config.rpcUrl)
-          : new ethers.JsonRpcProvider(config.rpcUrl);
+          : new ethers.JsonRpcProvider(config.rpcUrl, undefined, {
+              polling: true,
+            });
         const network = await provider.getNetwork();
 
         this.logger.log(
@@ -59,9 +62,8 @@ export class BlockchainListenerService implements OnModuleInit {
         if (provider instanceof ethers.JsonRpcProvider)
           provider.pollingInterval = 4000;
 
-        const contract = new ethers.Contract(
+        const contract = VouchVault__factory.connect(
           config.contractAddress,
-          VouchVaultAbi,
           provider,
         );
         this.chains.push({ config, provider, contract, network });
@@ -87,7 +89,7 @@ export class BlockchainListenerService implements OnModuleInit {
   }
 
   private setupEventListener(
-    contract: ethers.Contract,
+    contract: VouchVault,
     network: ethers.Network,
     config: ChainConfig,
   ) {
@@ -98,16 +100,16 @@ export class BlockchainListenerService implements OnModuleInit {
     const queueKey = `${network.chainId.toString()}:${config.contractAddress}`;
 
     void contract.on(
-      'LoanCreated',
+      contract.getEvent('LoanCreated'),
       (
-        loanId: bigint,
-        borrower: string,
-        collateralTokenAddress: string,
-        collateralAmount: bigint,
-        requestedPrincipalToken: string,
-        requestedPrincipalAmount: bigint,
-        timestamp: bigint,
-        { log: eventLog }: ethers.ContractEventPayload,
+        loanId,
+        borrower,
+        collateralTokenAddress,
+        collateralAmount,
+        requestedPrincipalToken,
+        requestedPrincipalAmount,
+        timestamp,
+        event,
       ) => {
         this.enqueue(queueKey, () =>
           this.handleLoanCreated(
@@ -118,24 +120,18 @@ export class BlockchainListenerService implements OnModuleInit {
             requestedPrincipalToken,
             requestedPrincipalAmount,
             timestamp,
-            eventLog,
+            resolveEventLog(event),
             network,
             config.contractAddress,
+            contract,
           ),
         );
       },
     );
 
     void contract.on(
-      'LoanFunded',
-      (
-        loanId: bigint,
-        lender: string,
-        borrower: string,
-        principalAmount: bigint,
-        timestamp: bigint,
-        { log: eventLog }: ethers.ContractEventPayload,
-      ) => {
+      contract.getEvent('LoanFunded'),
+      (loanId, lender, borrower, principalAmount, timestamp, event) => {
         this.enqueue(queueKey, () =>
           this.handleLoanFunded(
             loanId,
@@ -143,7 +139,7 @@ export class BlockchainListenerService implements OnModuleInit {
             borrower,
             principalAmount,
             timestamp,
-            eventLog,
+            resolveEventLog(event),
             network,
             config.contractAddress,
           ),
@@ -152,16 +148,16 @@ export class BlockchainListenerService implements OnModuleInit {
     );
 
     void contract.on(
-      'LoanRepaid',
+      contract.getEvent('LoanRepaid'),
       (
-        loanId: bigint,
-        borrower: string,
-        lender: string,
-        principalAmount: bigint,
-        interestAmount: bigint,
-        totalRepaid: bigint,
-        timestamp: bigint,
-        { log: eventLog }: ethers.ContractEventPayload,
+        loanId,
+        borrower,
+        lender,
+        principalAmount,
+        interestAmount,
+        totalRepaid,
+        timestamp,
+        event,
       ) => {
         this.enqueue(queueKey, () =>
           this.handleLoanRepaid(
@@ -172,7 +168,51 @@ export class BlockchainListenerService implements OnModuleInit {
             interestAmount,
             totalRepaid,
             timestamp,
-            eventLog,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+            contract,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      contract.getEvent('LoanPartiallyRepaid'),
+      (
+        loanId,
+        borrower,
+        paymentAmount,
+        _collateralReleased,
+        _totalRepaidSoFar,
+        _totalDue,
+        timestamp,
+        event,
+      ) => {
+        this.enqueue(queueKey, () =>
+          this.handleLoanPartiallyRepaid(
+            loanId,
+            borrower,
+            paymentAmount,
+            timestamp,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+            contract,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      contract.getEvent('LoanCancelled'),
+      (loanId, borrower, timestamp, event) => {
+        this.enqueue(queueKey, () =>
+          this.handleLoanCancelled(
+            loanId,
+            borrower,
+            timestamp,
+            resolveEventLog(event),
             network,
             config.contractAddress,
           ),
@@ -181,33 +221,23 @@ export class BlockchainListenerService implements OnModuleInit {
     );
 
     void contract.on(
-      'LoanPartiallyRepaid',
-      (
-        loanId: bigint,
-        borrower: string,
-        paymentAmount: bigint,
-        _collateralReleased: bigint,
-        _totalRepaidSoFar: bigint,
-        _totalDue: bigint,
-        timestamp: bigint,
-        { log: eventLog }: ethers.ContractEventPayload,
-      ) => {
+      contract.getEvent('ProtocolFeeCollected'),
+      (loanId, _token, amount, event) => {
         this.enqueue(queueKey, () =>
-          this.handleLoanPartiallyRepaid(
+          this.handleProtocolFeeCollected(
             loanId,
-            borrower,
-            paymentAmount,
-            timestamp,
-            eventLog,
+            amount,
+            resolveEventLog(event),
             network,
             config.contractAddress,
+            contract,
           ),
         );
       },
     );
   }
 
-  private async handleLoanCreated(
+  protected async handleLoanCreated(
     loanId: bigint,
     borrower: string,
     collateralTokenAddress: string,
@@ -215,15 +245,51 @@ export class BlockchainListenerService implements OnModuleInit {
     requestedPrincipalToken: string,
     requestedPrincipalAmount: bigint,
     timestamp: bigint,
-    {
-      transactionHash,
-      blockNumber,
-      blockHash,
-      index: logIndex,
-    }: ethers.EventLog,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
     network: ethers.Network,
     contractAddress: string,
+    contract: VouchVault,
   ) {
+    let interestRateBps = 0;
+    let durationSeconds = 0;
+    let fundWindowSeconds = 0;
+    try {
+      const details = await contract.getRepaymentDetails(loanId);
+      interestRateBps = Number(details.interestRateBps);
+      durationSeconds = Number(details.durationSeconds);
+      fundWindowSeconds = Number(details.fundDeadline - timestamp);
+    } catch (primaryError) {
+      this.logger.error(
+        'Failed to read loan terms from getRepaymentDetails; falling back to loans(loanId)',
+        primaryError,
+      );
+      try {
+        const loan = await contract.loans(loanId);
+        interestRateBps = Number(loan.interestRateBps);
+        durationSeconds = Number(loan.durationSeconds);
+        fundWindowSeconds = Number(loan.fundDeadline - timestamp);
+      } catch (fallbackError) {
+        this.logger.error(
+          'Failed to read loan terms from loans(); aborting handler',
+          fallbackError,
+        );
+        throw fallbackError;
+      }
+    }
+
+    if (!Number.isSafeInteger(durationSeconds) || durationSeconds < 0) {
+      this.logger.warn(
+        `Invalid durationSeconds for loan ${loanId.toString()}: ${durationSeconds}`,
+      );
+      durationSeconds = 0;
+    }
+    if (!Number.isSafeInteger(fundWindowSeconds) || fundWindowSeconds < 0) {
+      this.logger.warn(
+        `Invalid fundWindowSeconds for loan ${loanId.toString()}: ${fundWindowSeconds}`,
+      );
+      fundWindowSeconds = 0;
+    }
+
     try {
       await this.loanService.create({
         loanId: loanId,
@@ -239,6 +305,9 @@ export class BlockchainListenerService implements OnModuleInit {
         networkId: network.chainId.toString(),
         contractAddress,
         logIndex,
+        interestRateBps,
+        durationSeconds,
+        fundWindowSeconds,
       });
     } catch (error) {
       this.logger.error('Failed to create loan in DB', error);
@@ -251,12 +320,7 @@ export class BlockchainListenerService implements OnModuleInit {
     borrower: string,
     principalAmount: bigint,
     timestamp: bigint,
-    {
-      transactionHash,
-      blockNumber,
-      blockHash,
-      index: logIndex,
-    }: ethers.EventLog,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
     network: ethers.Network,
     contractAddress: string,
   ) {
@@ -280,27 +344,56 @@ export class BlockchainListenerService implements OnModuleInit {
     }
   }
 
+  protected async handleLoanCancelled(
+    loanId: bigint,
+    borrower: string,
+    timestamp: bigint,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+  ) {
+    try {
+      await this.loanService.cancel({
+        onChainLoanId: loanId,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        borrowerAddress: borrower,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        cancelledAt: new Date(Number(timestamp) * 1000),
+      });
+      this.logger.log(`Loan ${loanId.toString()} cancelled by ${borrower}`);
+    } catch (error) {
+      this.logger.error('Failed to cancel loan in DB', error);
+    }
+  }
+
   protected async handleLoanPartiallyRepaid(
     loanId: bigint,
     borrower: string,
     paymentAmount: bigint,
     timestamp: bigint,
-    {
-      transactionHash,
-      blockNumber,
-      blockHash,
-      index: logIndex,
-    }: ethers.EventLog,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
     network: ethers.Network,
     contractAddress: string,
+    contract: VouchVault,
   ) {
     try {
+      // principalRepaid/collateralReleased are cumulative, monotonic struct
+      // fields not carried by the event; read them live so the DB cache matches
+      // the chain exactly.
+      const { principalRepaid, collateralReleased } =
+        await this.readRepaidAmounts(contract, loanId);
       await this.loanService.partialRepay({
         onChainLoanId: loanId,
         networkId: network.chainId.toString(),
         contractAddress,
         borrowerAddress: borrower,
         paymentAmount,
+        principalRepaid,
+        collateralReleased,
         txHash: transactionHash,
         blockNumber,
         blockHash,
@@ -326,16 +419,14 @@ export class BlockchainListenerService implements OnModuleInit {
     interestAmount: bigint,
     totalRepaid: bigint,
     timestamp: bigint,
-    {
-      transactionHash,
-      blockNumber,
-      blockHash,
-      index: logIndex,
-    }: ethers.EventLog,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
     network: ethers.Network,
     contractAddress: string,
+    contract: VouchVault,
   ) {
     try {
+      const { principalRepaid, collateralReleased } =
+        await this.readRepaidAmounts(contract, loanId);
       await this.loanService.repay({
         onChainLoanId: loanId,
         networkId: network.chainId.toString(),
@@ -345,6 +436,8 @@ export class BlockchainListenerService implements OnModuleInit {
         principalAmount,
         interestAmount,
         totalRepaid,
+        principalRepaid,
+        collateralReleased,
         txHash: transactionHash,
         blockNumber,
         blockHash,
@@ -357,6 +450,93 @@ export class BlockchainListenerService implements OnModuleInit {
         `Failed to mark loan ${loanId.toString()} as repaid in DB`,
         error,
       );
+    }
+  }
+
+  /**
+   * Record the protocol fee skimmed from the interest portion of a repayment as
+   * its own ledger entry (borrower -> protocolTreasury). The event carries only
+   * (loanId, token, amount), so the treasury recipient is read live and the
+   * collection time comes from the block. Recorded separately from the lender's
+   * gross `repayment` row so lender net receipts and treasury income are both
+   * derivable from the transactions ledger.
+   */
+  protected async handleProtocolFeeCollected(
+    loanId: bigint,
+    amount: bigint,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+    contract: VouchVault,
+  ) {
+    try {
+      // The contract is connected with a Provider as its runner, so `runner` is
+      // itself the provider (it has no nested `.provider`). Fall back to
+      // `runner.provider` only when the runner is a Signer.
+      const runner = contract.runner;
+      const provider: ethers.Provider | null =
+        runner &&
+        typeof (runner as Partial<ethers.Provider>).getBlock === 'function'
+          ? (runner as ethers.Provider)
+          : (runner?.provider ?? null);
+
+      const [treasuryAddress, block] = await Promise.all([
+        // ProtocolFeeCollected omits the treasury; read it at the event's block
+        // so a later owner-initiated treasury change can't misattribute backlog.
+        contract.protocolTreasury({ blockTag: blockNumber }),
+        provider ? provider.getBlock(blockNumber) : Promise.resolve(null),
+      ]);
+      await this.loanService.recordProtocolFee({
+        onChainLoanId: loanId,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        treasuryAddress,
+        feeAmount: amount,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        collectedAt: new Date(
+          (block?.timestamp ?? Math.floor(Date.now() / 1000)) * 1000,
+        ),
+      });
+      this.logger.log(
+        `Protocol fee of ${amount.toString()} collected for loan ${loanId.toString()}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to record protocol fee for loan ${loanId.toString()}`,
+        error,
+      );
+    }
+  }
+
+  /**
+   * Read the cumulative, monotonic repayment-progress fields from the on-chain
+   * loan struct (the public `loans` getter). These are not carried by the
+   * repayment events, so caching them in the DB requires a live read. On failure
+   * we fall back to 0 — the SQL caches with GREATEST(...) so a 0 can never
+   * regress an already-cached value. For a terminal LoanRepaid (which has no
+   * later event to reconcile), `repay_loan_with_transaction` additionally clamps
+   * these up to the loan's full principal/collateral, so a failed read here can
+   * never leave a repaid loan stuck at 0.
+   */
+  private async readRepaidAmounts(
+    contract: VouchVault,
+    loanId: bigint,
+  ): Promise<{ principalRepaid: bigint; collateralReleased: bigint }> {
+    try {
+      const loan = await contract.loans(loanId);
+      return {
+        principalRepaid: loan.principalRepaid,
+        collateralReleased: loan.collateralReleased,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to read repaid amounts for loan ${loanId.toString()} from chain`,
+        error,
+      );
+      return { principalRepaid: 0n, collateralReleased: 0n };
     }
   }
 }

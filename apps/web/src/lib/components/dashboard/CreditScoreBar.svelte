@@ -13,7 +13,7 @@
 
   let expanded = $state(false);
   const hasDetails = $derived(
-    !!score && (score.riskFactors.length > 0 || score.strengths.length > 0 || !!score.explanation)
+    !!score && (score.riskFactors.length > 0 || score.strengths.length > 0 || !!score.explanation),
   );
 </script>
 
@@ -27,11 +27,11 @@
       <Badge class={cn('font-bold text-[10px]', risk.color)} variant="outline">{risk.label}</Badge>
       {#if hasDetails}
         <button
-          type="button"
-          aria-expanded={expanded}
-          aria-controls="credit-score-details"
           class="ml-1 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          aria-controls="credit-score-details"
+          aria-expanded={expanded}
           onclick={() => (expanded = !expanded)}
+          type="button"
         >
           <ChevronDown class={cn('h-3.5 w-3.5 transition-transform duration-200', expanded && 'rotate-180')} />
           {expanded ? 'Hide' : 'Details'}
@@ -46,7 +46,12 @@
             <p class="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Risk factors</p>
             <div class="flex flex-wrap gap-1.5">
               {#each score.riskFactors as r (r)}
-                <Badge class="text-[10px] font-medium text-orange-700 border-orange-200 bg-orange-50 dark:text-orange-400 dark:border-orange-900 dark:bg-orange-950/40" variant="outline">{r}</Badge>
+                <Badge
+                  class="text-[10px] font-medium text-orange-700 border-orange-200 bg-orange-50 dark:text-orange-400 dark:border-orange-900 dark:bg-orange-950/40"
+                  variant="outline"
+                >
+                  {r}
+                </Badge>
               {/each}
             </div>
           </div>
@@ -56,7 +61,12 @@
             <p class="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Strengths</p>
             <div class="flex flex-wrap gap-1.5">
               {#each score.strengths as s (s)}
-                <Badge class="text-[10px] font-medium text-green-700 border-green-200 bg-green-50 dark:text-green-400 dark:border-green-900 dark:bg-green-950/40" variant="outline">{s}</Badge>
+                <Badge
+                  class="text-[10px] font-medium text-green-700 border-green-200 bg-green-50 dark:text-green-400 dark:border-green-900 dark:bg-green-950/40"
+                  variant="outline"
+                >
+                  {s}
+                </Badge>
               {/each}
             </div>
           </div>

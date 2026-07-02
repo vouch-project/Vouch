@@ -10,6 +10,7 @@
   import Header from '$lib/components/layout/Header.svelte';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
+  import { getProtocolFeeBps } from '$lib/wallet/vouchVault';
   import { initWalletSubscriptions, wallet } from '$lib/wallet/wallet.svelte';
   import { ModeWatcher } from 'mode-watcher';
   import { onMount } from 'svelte';
@@ -51,6 +52,12 @@
           chainInfo.contractAddress = chainData.contractAddress;
           chainInfo.tokens = chainData.tokens;
           tokenPrices.sync();
+          // Read the live protocol fee so lender-facing yields reflect it.
+          try {
+            chainInfo.protocolFeeBps = await getProtocolFeeBps();
+          } catch {
+            // Keep the default fee if the read fails (e.g. wallet not ready).
+          }
         } else {
           chainInfo.contractAddress = undefined;
           chainInfo.tokens = [];
@@ -84,6 +91,6 @@
 
 <Header />
 
-<main class="min-h-[calc(100vh-65px)] px-8 py-4 max-w-[1200px] mx-auto">
+<main class="min-h-[calc(100vh-65px)] px-8 py-4 max-w-[1600px] mx-auto">
   {@render children()}
 </main>

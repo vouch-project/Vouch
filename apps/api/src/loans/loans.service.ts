@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { asAddress } from '@vouch/database-types';
 import { SupabaseService } from '../supabase/supabase.service';
+import { CancelLoanDto } from './dto/cancel-loan.dto';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { FundLoanDto } from './dto/fund-loan.dto';
 import { PartialRepayLoanDto } from './dto/partial-repay-loan.dto';
+import { RecordProtocolFeeDto } from './dto/record-protocol-fee.dto';
 import { RepayLoanDto } from './dto/repay-loan.dto';
 
 @Injectable()
@@ -35,8 +37,17 @@ export class LoansService {
         p_collateral_block_number:
           createLoanDto.collateralBlockNumber.toString(),
         p_collateral_block_hash: createLoanDto.collateralBlockHash,
-        p_log_index: createLoanDto.logIndex,
+        p_log_index: createLoanDto.logIndex.toString(),
         p_collateral_locked_at: collateralLockedAt.toISOString(),
+        p_interest_rate_bps: createLoanDto.interestRateBps,
+        p_duration_seconds: createLoanDto.durationSeconds,
+        p_fund_deadline:
+          createLoanDto.fundWindowSeconds > 0
+            ? new Date(
+                collateralLockedAt.getTime() +
+                  createLoanDto.fundWindowSeconds * 1000,
+              ).toISOString()
+            : undefined,
       },
     );
 
@@ -85,6 +96,8 @@ export class LoansService {
     principalAmount,
     interestAmount,
     totalRepaid,
+    principalRepaid,
+    collateralReleased,
     txHash,
     blockNumber,
     blockHash,
@@ -102,11 +115,42 @@ export class LoansService {
         p_principal_amount: principalAmount.toString(),
         p_interest_amount: interestAmount.toString(),
         p_total_repaid: totalRepaid.toString(),
+        p_principal_repaid: principalRepaid.toString(),
+        p_collateral_released: collateralReleased.toString(),
         p_tx_hash: txHash,
         p_block_number: blockNumber.toString(),
         p_block_hash: blockHash,
         p_log_index: logIndex.toString(),
         p_repaid_at: repaidAt.toISOString(),
+      },
+    );
+
+    if (error) throw error;
+  }
+
+  async cancel({
+    onChainLoanId,
+    networkId,
+    contractAddress,
+    borrowerAddress,
+    txHash,
+    blockNumber,
+    blockHash,
+    logIndex,
+    cancelledAt,
+  }: CancelLoanDto) {
+    const { error } = await this.supabaseService.client.rpc(
+      'cancel_loan_with_transaction',
+      {
+        p_network_id: networkId,
+        p_contract_address: asAddress(contractAddress),
+        p_on_chain_loan_id: onChainLoanId.toString(),
+        p_borrower_address: asAddress(borrowerAddress),
+        p_tx_hash: txHash,
+        p_block_number: blockNumber.toString(),
+        p_block_hash: blockHash,
+        p_log_index: logIndex.toString(),
+        p_cancelled_at: cancelledAt.toISOString(),
       },
     );
 
@@ -119,6 +163,8 @@ export class LoansService {
     contractAddress,
     borrowerAddress,
     paymentAmount,
+    principalRepaid,
+    collateralReleased,
     txHash,
     blockNumber,
     blockHash,
@@ -133,11 +179,44 @@ export class LoansService {
         p_on_chain_loan_id: onChainLoanId.toString(),
         p_borrower_address: asAddress(borrowerAddress),
         p_payment_amount: paymentAmount.toString(),
+        p_principal_repaid: principalRepaid.toString(),
+        p_collateral_released: collateralReleased.toString(),
         p_tx_hash: txHash,
         p_block_number: blockNumber.toString(),
         p_block_hash: blockHash,
         p_log_index: logIndex.toString(),
         p_paid_at: paidAt.toISOString(),
+      },
+    );
+
+    if (error) throw error;
+  }
+
+  async recordProtocolFee({
+    onChainLoanId,
+    networkId,
+    contractAddress,
+    treasuryAddress,
+    feeAmount,
+    txHash,
+    blockNumber,
+    blockHash,
+    logIndex,
+    collectedAt,
+  }: RecordProtocolFeeDto) {
+    const { error } = await this.supabaseService.client.rpc(
+      'record_protocol_fee',
+      {
+        p_network_id: networkId,
+        p_contract_address: asAddress(contractAddress),
+        p_on_chain_loan_id: onChainLoanId.toString(),
+        p_treasury_address: asAddress(treasuryAddress),
+        p_fee_amount: feeAmount.toString(),
+        p_tx_hash: txHash,
+        p_block_number: blockNumber.toString(),
+        p_block_hash: blockHash,
+        p_log_index: logIndex.toString(),
+        p_collected_at: collectedAt.toISOString(),
       },
     );
 

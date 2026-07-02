@@ -2,7 +2,7 @@ import { Type } from 'class-transformer';
 import { IsDate, IsNumber, IsNumberString, IsString } from 'class-validator';
 import { IsBigInt } from '../../decorators/is-bigint.decorator';
 
-export class RepayLoanDto {
+export class CancelLoanDto {
   @IsBigInt()
   onChainLoanId!: bigint;
 
@@ -14,26 +14,6 @@ export class RepayLoanDto {
 
   @IsString()
   borrowerAddress!: string;
-
-  @IsString()
-  lenderAddress!: string;
-
-  @IsBigInt()
-  principalAmount!: bigint;
-
-  @IsBigInt()
-  interestAmount!: bigint;
-
-  @IsBigInt()
-  totalRepaid!: bigint;
-
-  /** Cumulative raw principal repaid (on-chain loan.principalRepaid). */
-  @IsBigInt()
-  principalRepaid!: bigint;
-
-  /** Cumulative raw collateral released (on-chain loan.collateralReleased). */
-  @IsBigInt()
-  collateralReleased!: bigint;
 
   @IsString()
   txHash!: string;
@@ -49,5 +29,5 @@ export class RepayLoanDto {
 
   @IsDate()
   @Type(() => Date)
-  repaidAt!: Date;
+  cancelledAt!: Date;
 }

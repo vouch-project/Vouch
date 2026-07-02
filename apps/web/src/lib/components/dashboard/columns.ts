@@ -4,7 +4,10 @@ export type TableColumn = {
   align: 'left' | 'center' | 'right';
 };
 
-export const tableColumns: readonly TableColumn[] = [
+// The borrower and lender views share the same loan shape; only the final
+// column differs: borrowers get a repay/cancel Action, lenders see the
+// counterparty (Borrower) they funded.
+const baseColumns: readonly TableColumn[] = [
   { label: 'Loan', width: 'w-[12%]', align: 'left' },
   { label: 'Principal', width: 'w-[13%]', align: 'center' },
   { label: 'Collateral', width: 'w-[13%]', align: 'center' },
@@ -13,5 +16,13 @@ export const tableColumns: readonly TableColumn[] = [
   { label: 'Due', width: 'w-[16%]', align: 'center' },
   { label: 'Health Factor', width: 'w-36', align: 'center' },
   { label: 'Status', width: 'w-[11%]', align: 'center' },
-  { label: 'Action', width: 'w-[8%]', align: 'right' },
 ];
+
+export const getTableColumns = (role: 'borrower' | 'lender' = 'borrower'): readonly TableColumn[] => [
+  ...baseColumns,
+  role === 'lender'
+    ? { label: 'Borrower', width: 'w-[8%]', align: 'right' }
+    : { label: 'Action', width: 'w-[8%]', align: 'right' },
+];
+
+export const tableColumns = getTableColumns('borrower');

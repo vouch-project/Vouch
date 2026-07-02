@@ -8,12 +8,15 @@
     "@vouch/database-types#build": {
       "outputs": ["dist/**"]
     },
+    "@vouch/contracts#build": {
+      "outputs": ["dist/**", "artifacts/**"]
+    },
     "@vouch/api#build": {
-      "dependsOn": ["@vouch/database-types#build"],
+      "dependsOn": ["@vouch/database-types#build", "@vouch/contracts#build"],
       "outputs": ["dist/**"]
     },
     "@vouch/web#build": {
-      "dependsOn": ["@vouch/database-types#build"],
+      "dependsOn": ["@vouch/database-types#build", "@vouch/contracts#build"],
       "outputs": [".svelte-kit/**"]
     },
     "dev": {

@@ -19,6 +19,24 @@ const watchEnv = {
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit(), watchEnv],
 
+  // Force a single instance of AppKit's controllers and Lit. These packages keep
+  // module-level singleton stores (e.g. the EIP-6963 connector/wallet registry).
+  // If Vite's dev graph loads two copies, the listener that discovers browser
+  // wallets populates one store while the modal UI reads the other — so installed
+  // extensions like MetaMask appear "undetected". Deduping also silences the
+  // "Multiple versions of Lit loaded" warning.
+  resolve: {
+    dedupe: [
+      '@reown/appkit',
+      '@reown/appkit-controllers',
+      '@reown/appkit-adapter-ethers',
+      'lit',
+      'lit-html',
+      'lit-element',
+      '@lit/reactive-element',
+    ],
+  },
+
   // AppKit and its dependencies use browser-only APIs.  Bundling them for SSR
   // (noExternal) gives Vite full control over their ESM graph and avoids
   // "require() of ES module" errors that can arise when Node tries to resolve

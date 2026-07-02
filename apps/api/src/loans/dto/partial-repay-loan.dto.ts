@@ -19,6 +19,14 @@ export class PartialRepayLoanDto {
   @IsBigInt()
   paymentAmount!: bigint;
 
+  /** Cumulative raw principal repaid so far (on-chain loan.principalRepaid). */
+  @IsBigInt()
+  principalRepaid!: bigint;
+
+  /** Cumulative raw collateral released so far (on-chain loan.collateralReleased). */
+  @IsBigInt()
+  collateralReleased!: bigint;
+
   @IsString()
   txHash!: string;
 
