@@ -196,7 +196,8 @@ class CreditScorer:
                 root = _default_artifact_root()
                 if root is None:
                     raise FileNotFoundError(
-                        "No artifact root found. Set ARTIFACT_PATH or bundle "
+                        "No artifact root found. Set ARTIFACT_PATH to a specific artifact "
+                        "directory (containing metadata.json + model.joblib), or bundle/mount "
                         "trained artifacts under an `artifacts/` directory."
                     )
                 artifact_dir = _find_latest_artifact(root)
