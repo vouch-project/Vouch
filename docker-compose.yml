@@ -65,7 +65,9 @@ services:
       - '8001'
     env_file: .env
     volumes:
-      # Requires trained artifacts to exist locally under services/ml-training/.../models/artifacts (if missing, Docker may create an empty directory and ml-engine will start without a model)
+      # Artifacts must exist before running `docker compose up`; if the directory is absent,
+      # Docker creates it as root which can block the training pipeline from writing artifacts.
+      # Run `vouch-ml-training train` first. ml-engine starts without a model (returns 503) if empty.
       - ./services/ml-training/src/vouch_ml_training/models/artifacts:/app/artifacts:ro
 
   keeper:

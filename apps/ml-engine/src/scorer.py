@@ -17,6 +17,7 @@ from src.features import fetch_features
 
 _register_compat()
 
+
 def _default_artifact_root() -> Path | None:
     """Locate the directory holding trained model artifacts.
 
@@ -196,9 +197,11 @@ class CreditScorer:
                 root = _default_artifact_root()
                 if root is None:
                     raise FileNotFoundError(
-                        "No artifact root found. Set ARTIFACT_PATH to a specific artifact "
-                        "directory (containing metadata.json + model.joblib), or bundle/mount "
-                        "trained artifacts under an `artifacts/` directory."
+                        "No artifact root found. "
+                        "Set ARTIFACT_PATH to a specific artifact directory "
+                        "(containing metadata.json + model.joblib), "
+                        "or mount/bundle trained artifacts under /app/artifacts (Docker) "
+                        "or services/ml-training/src/vouch_ml_training/models/artifacts (local dev)."
                     )
                 artifact_dir = _find_latest_artifact(root)
             self._load(artifact_dir)
