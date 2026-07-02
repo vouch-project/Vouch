@@ -21,10 +21,10 @@ _register_compat()
 def _default_artifact_root() -> Path | None:
     """Locate the directory holding trained model artifacts.
 
-    Checks a bundled ``artifacts/`` dir next to the app (used in container
-    images) first, then walks up to the monorepo ``services/ml-training``
-    location (used in local dev). Returns ``None`` when neither exists, in
-    which case ``ARTIFACT_PATH`` must be set.
+    Checks a mounted/bundled ``artifacts/`` dir next to the app (used in
+    containers) first, then walks up to the monorepo ``services/ml-training``
+    location (used in local dev). Returns ``None`` when neither exists; in
+    that case set ``ARTIFACT_PATH`` if you want the scorer to load a model.
     """
     here = Path(__file__).resolve()
 
