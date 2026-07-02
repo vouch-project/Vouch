@@ -8,7 +8,7 @@ import type { Redis } from 'ioredis';
 import { validAddress, Tables } from '@vouch/database-types';
 import { SupabaseService } from '../supabase/supabase.service';
 import { tokensMock } from './tokens.mock';
-import { PriceFeedService } from './price-feed.service';
+import { PriceFeedService, priceKey } from './price-feed.service';
 
 export type ResponseToken = {
   chainId: number;
@@ -108,6 +108,17 @@ export class TokensService implements OnModuleInit {
     }
 
     return data as EvmChain[];
+  }
+
+  private async getChainIdByNetworkId(networkId: string): Promise<UUID | null> {
+    const { data, error } = await this.supabaseService.client
+      .from('chains')
+      .select('id')
+      .eq('networkId', networkId)
+      .single();
+
+    if (error || !data) return null;
+    return data.id;
   }
 
   private async fetchRawTokens(
@@ -232,20 +243,38 @@ export class TokensService implements OnModuleInit {
       tokens = refreshed ? (this.parseTokens(refreshed, networkId) ?? []) : [];
     }
 
-    // Enrich with live prices and volatility from DB
+    // Enrich with live prices and volatility from DB. Both are scoped by the DB's
+    // uuid chainId (not `ResponseToken.chainId`, which is the raw numeric chain id
+    // from the Li.Fi token list) so tokens with the same symbol/address on different
+    // chains never collide.
+    const dbChainId = await this.getChainIdByNetworkId(networkId);
+    if (!dbChainId)
+      return tokens.map((t) => ({ ...t, priceUsd: null, volatility: null }));
+
     const prices = await this.priceFeedService.getPrices();
+
+    const tokenAddresses = tokens
+      .map((t) => validAddress(t.address))
+      .filter((a): a is NonNullable<typeof a> => a !== null);
 
     const { data: dbTokens } = await this.supabaseService.client
       .from('tokens')
-      .select('symbol, price_usd, volatility')
-      .in('symbol', tokens.map((t) => t.symbol));
+      .select('address, price_usd, volatility')
+      .eq('chainId', dbChainId)
+      .in('address', tokenAddresses);
 
-    const dbBySymbol = new Map((dbTokens ?? []).map((t) => [t.symbol, t]));
+    const dbByAddress = new Map(
+      (dbTokens ?? []).map((t) => [t.address.toLowerCase(), t]),
+    );
 
-    return tokens.map((t) => ({
-      ...t,
-      priceUsd: prices[t.symbol] ?? dbBySymbol.get(t.symbol)?.price_usd ?? null,
-      volatility: dbBySymbol.get(t.symbol)?.volatility ?? null,
-    }));
+    return tokens.map((t) => {
+      const dbToken = dbByAddress.get(t.address.toLowerCase());
+      return {
+        ...t,
+        priceUsd:
+          prices[priceKey(dbChainId, t.address)] ?? dbToken?.price_usd ?? null,
+        volatility: dbToken?.volatility ?? null,
+      };
+    });
   }
 }

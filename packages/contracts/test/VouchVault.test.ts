@@ -1692,6 +1692,13 @@ describe('VouchVault', function () {
       ).to.be.revertedWithCustomError(vault, 'OwnableUnauthorizedAccount');
     });
 
+    it('setPriceFeed reverts if decimals_ exceeds 18', async function () {
+      const { vault, ethFeed, owner } = await deployWithFeeds();
+      await expect(
+        vault.connect(owner).setPriceFeed(ethers.ZeroAddress, await ethFeed.getAddress(), 19)
+      ).to.be.revertedWith('Decimals must be <= 18');
+    });
+
     it('getHealthFactor returns correct value for ETH-collateral loan', async function () {
       // ETH collateral $3200, MOCK principal $1000 each, threshold 8000 bps (80%)
       // collateral = 1 ETH = 1e18 wei, borrow = 2 MOCK tokens

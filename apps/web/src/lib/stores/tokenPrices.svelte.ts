@@ -13,8 +13,15 @@ class TokenPrices {
   sync() {
     const next: Record<string, TokenMeta> = {};
     for (const token of chainInfo.tokens) {
-      if (token.priceUsd != null && token.volatility != null) {
-        next[token.symbol] = { priceUsd: token.priceUsd, volatility: token.volatility };
+      // Fall back per-field rather than dropping the whole entry: volatility is
+      // seeded in the DB immediately, but priceUsd only populates once the
+      // PriceFeedService's first poll completes, so requiring both non-null would
+      // wrongly discard a token's real seeded volatility during that window.
+      if (token.priceUsd != null || token.volatility != null) {
+        next[token.symbol] = {
+          priceUsd: token.priceUsd ?? DEFAULT_TOKEN_META.priceUsd,
+          volatility: token.volatility ?? DEFAULT_TOKEN_META.volatility,
+        };
       }
     }
     this.map = next;

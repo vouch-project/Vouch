@@ -700,6 +700,10 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     function setPriceFeed(address token, address feed, uint8 decimals_) external onlyOwner {
         require(feed != address(0), "Invalid feed address");
+        // No real token exceeds 18 decimals; capping here keeps _normalizeAmount's
+        // 10 ** (dec - 18) branch unreachable, so a misconfigured value can't make
+        // getHealthFactor revert (and become permanently unusable) for this token.
+        require(decimals_ <= 18, "Decimals must be <= 18");
         priceFeeds[token] = AggregatorV3Interface(feed);
         tokenDecimals[token] = decimals_;
     }

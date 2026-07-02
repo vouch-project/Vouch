@@ -11,7 +11,7 @@
 Vouch loans are collateralized with a per-loan LTV threshold (`liquidationThresholdBps`) computed off-chain at creation time using token volatility and the borrower's credit score. This spec adds:
 
 1. On-chain health factor computation backed by Chainlink price feeds
-2. A `liquidate()` stub (enforces health check, emits event, reverts as not implemented)
+2. A `liquidate()` stub (enforces health check, reverts as not implemented)
 3. A backend price-feed service that reads Chainlink and serves prices to the frontend
 4. Frontend migration from hardcoded `TOKEN_META` to API-sourced prices
 5. Health factor display on the borrower dashboard
@@ -43,8 +43,8 @@ uint256 public constant STALE_PRICE_THRESHOLD = 1 hours;
 
 ### 1.3 New Functions
 
-**`setPriceFeed(address token, address feed) external onlyOwner`**
-Registers a Chainlink `AggregatorV3Interface` feed for a token address. Called during deployment/upgrade setup. No validation beyond non-zero feed address.
+**`setPriceFeed(address token, address feed, uint8 decimals_) external onlyOwner`**
+Registers a Chainlink `AggregatorV3Interface` feed for a token address and records the token's own decimals (used by `_normalizeAmount` to scale loan amounts to 18 decimals before the USD conversion — separate from the feed's own decimals, which `_getPrice` normalizes independently). Called during deployment/upgrade setup. Validates non-zero feed address; `decimals_` must be `<= 18` (no real token exceeds 18 decimals, and this keeps `_normalizeAmount`'s down-scaling branch unreachable — a misconfigured large value there would make `getHealthFactor` permanently revert for that token).
 
 **`_getPrice(address token) internal view returns (uint256 priceWad)`**
 - Calls `feed.latestRoundData()`
@@ -67,10 +67,10 @@ healthFactor = (lockedCollateralUSD * liquidationThresholdBps) / (remainingDebtU
 
 Reverts if: loan not funded, loan already repaid, remaining debt is zero.
 
-**`liquidate(uint256 loanId) external nonReentrant`** _(stub)_
+**`liquidate(uint256 loanId) external`** _(stub)_
 - Calls `getHealthFactor(loanId)` — reverts if `>= 1e18` ("Loan is not undercollateralized")
-- Emits `LoanLiquidated(loanId, msg.sender, block.timestamp)`
 - Reverts with `"liquidate: not implemented"`
+- Does NOT emit `LoanLiquidated` — a revert rolls back all state changes and logs in the same transaction, so an event can never be observed from a reverting call. The event is declared now (see 1.5) so the full implementation can emit it once it lands.
 
 ### 1.4 Updated Functions
 
@@ -177,6 +177,6 @@ New `tokenPrices` Svelte store in `src/lib/stores/tokenPrices.svelte.ts`:
 ## 5. Key Constraints
 
 - Solidity storage layout: all new struct fields and state variables appended, never reordered
-- `nonReentrant` modifier on `liquidate()` even as a stub — sets the pattern for the real implementation
+- `liquidate()` stub omits `nonReentrant` (no state-mutating OZ v5.6.1 `ReentrancyGuardUpgradeable` is installed, and the stub always reverts before any state change) — add it when the full implementation lands and needs a reentrancy guard
 - Contract is UUPS upgradeable — full `liquidate()` can be added in a future upgrade without touching existing loan data
 - Chainlink feed addresses are per-chain — dev uses `MockV3Aggregator`, production uses real feed addresses configured via `setPriceFeed` after upgrade deployment
