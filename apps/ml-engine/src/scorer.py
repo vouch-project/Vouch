@@ -28,7 +28,7 @@ def _default_artifact_root() -> Path | None:
     here = Path(__file__).resolve()
 
     bundled = here.parent.parent / "artifacts"
-    if bundled.exists():
+    if bundled.is_dir():
         return bundled
 
     for parent in here.parents:
@@ -36,7 +36,7 @@ def _default_artifact_root() -> Path | None:
             parent / "services" / "ml-training" / "src"
             / "vouch_ml_training" / "models" / "artifacts"
         )
-        if candidate.exists():
+        if candidate.is_dir():
             return candidate
 
     return None
