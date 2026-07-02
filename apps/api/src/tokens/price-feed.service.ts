@@ -113,7 +113,12 @@ export class PriceFeedService implements OnModuleInit {
               return;
             }
 
-            const price = Number(answer) / 10 ** decimals;
+            // Divide in exact decimal arithmetic via formatUnits before the unavoidable
+            // final cast to a JS number — answer is a raw Chainlink integer that can
+            // exceed Number.MAX_SAFE_INTEGER for 18-decimal feeds, so converting it to
+            // a float first (Number(answer) / 10 ** decimals) risks losing precision
+            // before the division ever happens.
+            const price = Number(ethers.formatUnits(answer, decimals));
             priceMap[priceKey(token.chainId, token.address)] = price;
 
             await this.supabaseService.client

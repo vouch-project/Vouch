@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Badge } from '$lib/components/ui/badge';
+  import { ethers } from 'ethers';
 
   type Props = {
     healthFactor: bigint | null;
@@ -20,7 +21,12 @@
           : 'Liquidation Risk',
   );
 
-  const formatted = $derived(healthFactor !== null ? (Number(healthFactor) / 1e18).toFixed(2) : null);
+  // healthFactor is a raw 1e18-scaled uint256; divide via formatUnits (exact decimal
+  // string math) rather than Number(healthFactor) / 1e18, which converts to a lossy
+  // float before dividing and can misrepresent values above Number.MAX_SAFE_INTEGER.
+  const formatted = $derived(
+    healthFactor !== null ? Number(ethers.formatUnits(healthFactor, 18)).toFixed(2) : null,
+  );
 </script>
 
 {#if loading}
