@@ -9,6 +9,8 @@ export type Token = {
   decimals: number;
   name: string | null;
   logoURI: string | null;
+  priceUsd: number | null;
+  volatility: number | null;
 };
 
 export type ChainInfo = {

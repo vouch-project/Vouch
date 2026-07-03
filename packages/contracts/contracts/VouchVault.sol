@@ -6,11 +6,14 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title VouchVault (Upgradeable)
 /// @notice Lending vault contract for the Vouch protocol supporting collateralized loans
 contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     using SafeERC20 for IERC20;
+    using Math for uint256;
     
     struct Loan {
         // Borrower & collateral
@@ -38,6 +41,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 principalRepaid;     // cumulative principal repaid (interest-first amortization)
         uint256 interestAccrued;     // interest crystallized into the debt up to lastAccrualAt
         uint256 lastAccrualAt;       // timestamp up to which interest has been crystallized
+        // Liquidation
+        uint16 liquidationThresholdBps;  // e.g. 6452 = 64.52%; set at creation, never changes
     }
 
     // --- State Variables ---
@@ -91,6 +96,11 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         _;
         _reentrancyStatus = _NOT_ENTERED;
     }
+
+    // V5 additions — appended to preserve storage layout
+    mapping(address token => AggregatorV3Interface) public priceFeeds;
+    uint256 public constant STALE_PRICE_THRESHOLD = 1 hours;
+    mapping(address token => uint8) public tokenDecimals;
 
     // --- Events ---
     event Deposited(address indexed user, uint256 amount);
@@ -146,6 +156,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     event PaymentCredited(address indexed account, address indexed token, uint256 amount);
     event PaymentWithdrawn(address indexed account, address indexed token, uint256 amount);
+
+    event LoanLiquidated(uint256 indexed loanId, address indexed liquidator, uint256 timestamp);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -274,22 +286,25 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     /// @notice Create a new loan by depositing ETH collateral
-    /// @param principalToken   The token the borrower wants to receive (address(0) = native ETH)
-    /// @param principalAmount  The amount the borrower wants to receive
-    /// @param interestRateBps  Annual interest rate in basis points (e.g. 500 = 5% APR); 0 = interest-free
-    /// @param durationSeconds  Loan term in seconds; caps interest accrual; 0 = no deadline / no time-based interest
-    /// @param fundWindowSeconds Seconds from creation during which the loan may be funded (must be > 0)
+    /// @param principalToken          The token the borrower wants to receive (address(0) = native ETH)
+    /// @param principalAmount         The amount the borrower wants to receive
+    /// @param interestRateBps         Annual interest rate in basis points (e.g. 500 = 5% APR); 0 = interest-free
+    /// @param durationSeconds         Loan term in seconds; caps interest accrual; 0 = no deadline / no time-based interest
+    /// @param fundWindowSeconds       Seconds from creation during which the loan may be funded (must be > 0)
+    /// @param liquidationThresholdBps Maximum LTV (debt/collateral) in basis points; the loan becomes liquidatable once the actual ratio exceeds this (e.g. 8000 = 80% max LTV)
     function createLoan(
         address principalToken,
         uint256 principalAmount,
         uint16 interestRateBps,
         uint256 durationSeconds,
-        uint256 fundWindowSeconds
+        uint256 fundWindowSeconds,
+        uint16 liquidationThresholdBps
     ) external payable {
         require(msg.value > 0, "Collateral must be > 0");
         require(principalAmount > 0, "Principal amount must be > 0");
         require(fundWindowSeconds > 0, "Fund window must be > 0");
         require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
+        require(liquidationThresholdBps > 0 && liquidationThresholdBps <= 10000, "Invalid liquidation threshold");
 
         // Collateral is tracked separately from withdrawable deposits.
         lockedEthCollateral[msg.sender] += msg.value;
@@ -315,7 +330,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             fundDeadline: block.timestamp + fundWindowSeconds,
             principalRepaid: 0,
             interestAccrued: 0,
-            lastAccrualAt: 0
+            lastAccrualAt: 0,
+            liquidationThresholdBps: liquidationThresholdBps
         });
 
         emit LoanCreated(nextLoanId, msg.sender, address(0), msg.value, principalToken, principalAmount, block.timestamp);
@@ -323,13 +339,14 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     /// @notice Create a new loan by depositing ERC20 collateral
-    /// @param token            The ERC20 token to use as collateral
-    /// @param amount           The amount of collateral to deposit
-    /// @param principalToken   The token the borrower wants to receive (address(0) = native ETH)
-    /// @param principalAmount  The amount the borrower wants to receive
-    /// @param interestRateBps  Annual interest rate in basis points (e.g. 500 = 5% APR); 0 = interest-free
-    /// @param durationSeconds  Loan term in seconds; caps interest accrual; 0 = no deadline / no time-based interest
-    /// @param fundWindowSeconds Seconds from creation during which the loan may be funded (must be > 0)
+    /// @param token                   The ERC20 token to use as collateral
+    /// @param amount                  The amount of collateral to deposit
+    /// @param principalToken          The token the borrower wants to receive (address(0) = native ETH)
+    /// @param principalAmount         The amount the borrower wants to receive
+    /// @param interestRateBps         Annual interest rate in basis points (e.g. 500 = 5% APR); 0 = interest-free
+    /// @param durationSeconds         Loan term in seconds; caps interest accrual; 0 = no deadline / no time-based interest
+    /// @param fundWindowSeconds       Seconds from creation during which the loan may be funded (must be > 0)
+    /// @param liquidationThresholdBps Maximum LTV (debt/collateral) in basis points; the loan becomes liquidatable once the actual ratio exceeds this (e.g. 8000 = 80% max LTV)
     function createLoanWithERC20(
         address token,
         uint256 amount,
@@ -337,13 +354,15 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 principalAmount,
         uint16 interestRateBps,
         uint256 durationSeconds,
-        uint256 fundWindowSeconds
+        uint256 fundWindowSeconds,
+        uint16 liquidationThresholdBps
     ) external {
         require(amount > 0, "Collateral must be > 0");
         require(token != address(0), "Invalid token address");
         require(principalAmount > 0, "Principal amount must be > 0");
         require(fundWindowSeconds > 0, "Fund window must be > 0");
         require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
+        require(liquidationThresholdBps > 0 && liquidationThresholdBps <= 10000, "Invalid liquidation threshold");
 
         // Transfer tokens from user to this vault (SafeERC20 handles non-compliant tokens).
         // Reject fee-on-transfer collateral tokens: collateralAmount is recorded as `amount`
@@ -374,7 +393,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             fundDeadline: block.timestamp + fundWindowSeconds,
             principalRepaid: 0,
             interestAccrued: 0,
-            lastAccrualAt: 0
+            lastAccrualAt: 0,
+            liquidationThresholdBps: liquidationThresholdBps
         });
 
         emit LoanCreated(nextLoanId, msg.sender, token, amount, principalToken, principalAmount, block.timestamp);
@@ -676,6 +696,123 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         IERC20(token).safeTransferFrom(msg.sender, loan.borrower, amount);
 
         emit LoanFunded(loanId, msg.sender, loan.borrower, amount, block.timestamp);
+    }
+
+    // --- Oracle Functions ---
+
+    function setPriceFeed(address token, address feed, uint8 decimals_) external onlyOwner {
+        require(feed != address(0), "Invalid feed address");
+        // No real token exceeds 18 decimals; capping here keeps _normalizeAmount's
+        // 10 ** (dec - 18) branch unreachable, so a misconfigured value can't make
+        // getHealthFactor revert (and become permanently unusable) for this token.
+        require(decimals_ <= 18, "Decimals must be <= 18");
+        // 0 is also rejected: _normalizeAmount treats a stored 0 as "not set" and
+        // defaults it to 18, so an accidental 0 here would silently pass through
+        // as if this token had 18 decimals instead of reverting loudly.
+        require(decimals_ > 0, "Decimals must be > 0");
+        priceFeeds[token] = AggregatorV3Interface(feed);
+        tokenDecimals[token] = decimals_;
+    }
+
+    function _getPrice(address token) internal view returns (uint256) {
+        AggregatorV3Interface feed = priceFeeds[token];
+        require(address(feed) != address(0), "No price feed for token");
+        (uint80 roundId, int256 price, , uint256 updatedAt, uint80 answeredInRound) = feed.latestRoundData();
+        require(price > 0, "Invalid price");
+        require(updatedAt != 0, "Round not complete");
+        // Per Chainlink's own guidance: answeredInRound < roundId means this round
+        // carried over a stale answer from an earlier round (e.g. during an
+        // aggregator outage) rather than a fresh one.
+        require(answeredInRound >= roundId, "Stale round");
+        // Guard the subtraction explicitly rather than relying on 0.8's checked
+        // arithmetic to revert: a misconfigured or malicious feed reporting an
+        // updatedAt in the future would otherwise brick this token with a bare
+        // underflow panic instead of a clear revert reason.
+        require(updatedAt <= block.timestamp, "Price timestamp in the future");
+        require(block.timestamp - updatedAt <= STALE_PRICE_THRESHOLD, "Stale price");
+        uint8 feedDecimals = feed.decimals();
+        // feedDecimals is untrusted external input (the feed contract's own
+        // decimals() call); real Chainlink feeds are always <= 18, but without
+        // this check a misconfigured/malicious feed reporting a large value would
+        // make 10 ** (feedDecimals - 18) revert, bricking price reads for this token.
+        require(feedDecimals <= 18, "Feed decimals too large");
+        // Normalize to 18 decimals
+        if (feedDecimals < 18) {
+            return uint256(price) * (10 ** (18 - feedDecimals));
+        } else if (feedDecimals > 18) {
+            return uint256(price) / (10 ** (feedDecimals - 18));
+        }
+        return uint256(price);
+    }
+
+    function _normalizeAmount(address token, uint256 amount) internal view returns (uint256) {
+        uint8 dec = tokenDecimals[token];
+        if (dec == 0) dec = 18; // default to 18 if not set
+        if (dec < 18) return amount * (10 ** (18 - dec));
+        if (dec > 18) return amount / (10 ** (dec - 18));
+        return amount;
+    }
+
+    function getHealthFactor(uint256 loanId) public view returns (uint256) {
+        Loan memory loan = loans[loanId];
+        require(loan.funded, "Loan not funded");
+        require(!loan.repaid, "Loan already repaid");
+
+        // Mirrors getRepaymentDetails: totalDue/remaining are based on the current
+        // outstanding principal and accrued interest, not the flat interest at origination.
+        uint256 totalDue = loan.principalAmount + _currentInterestOwed(loan);
+        uint256 remainingDebt = totalDue > loan.amountRepaid ? totalDue - loan.amountRepaid : 0;
+        require(remainingDebt > 0, "No remaining debt");
+
+        uint256 lockedCollateral = loan.collateralAmount - loan.collateralReleased;
+
+        uint256 collateralPrice = _getPrice(loan.collateralToken);
+        uint256 principalPrice  = _getPrice(loan.requestedPrincipalToken);
+
+        // Normalize both amounts to 18 decimals before USD multiplication,
+        // so that mismatched token decimals (e.g. ETH 18 vs USDC 6) don't skew the ratio.
+        uint256 normalizedCollateral = _normalizeAmount(loan.collateralToken, lockedCollateral);
+        uint256 normalizedDebt       = _normalizeAmount(loan.requestedPrincipalToken, remainingDebt);
+
+        // Prices are 1e18-scaled USD per token-unit. Both amount and price are
+        // already ~1e18-scale, so a plain amount * price intermediate is ~1e36 and
+        // can exceed uint256 for a sufficiently large deposit/price combination
+        // even though the real-world USD value is always representable. mulDiv
+        // divides by 1e18 in the same step, so the ~1e36 intermediate this
+        // produces internally uses 512-bit precision and never needs to fit in
+        // uint256 on its own — only the final (properly 1e18-scaled) result does.
+        uint256 lockedCollateralUSD = normalizedCollateral.mulDiv(collateralPrice, 1e18);
+        uint256 remainingDebtUSD    = normalizedDebt.mulDiv(principalPrice, 1e18);
+
+        // Loans created before this field was appended to the struct read 0 here
+        // (Solidity's default for an unset slot). Without this fallback, such a
+        // legacy loan's health factor would always compute to 0 — permanently
+        // "Liquidation Risk" in the UI and permanently eligible for liquidate(),
+        // regardless of actual collateralization. Default to 10000 (100% max LTV,
+        // the most permissive/safe interpretation) rather than treating unset as
+        // always-liquidatable. Mirrors the same 0-means-unset pattern already used
+        // for tokenDecimals in _normalizeAmount.
+        uint16 effectiveThresholdBps = loan.liquidationThresholdBps == 0
+            ? 10000
+            : loan.liquidationThresholdBps;
+
+        // healthFactor is scaled to 1e18; >= 1e18 means healthy.
+        // Same reasoning applies here: lockedCollateralUSD * liquidationThresholdBps
+        // * 1e18 before dividing can exceed uint256 as a plain intermediate for
+        // large enough loans, even though the final ratio is always small. Divide
+        // by remainingDebtUSD and by 10000 as two separate mulDiv steps rather than
+        // combining them into one remainingDebtUSD * 10000 denominator — that
+        // combined denominator is itself a plain multiplication computed *before*
+        // being passed into mulDiv, so it isn't protected by mulDiv's internal
+        // 512-bit precision the way the numerator's product is.
+        uint256 thresholdScaled = uint256(effectiveThresholdBps) * 1e18;
+        uint256 ratio = lockedCollateralUSD.mulDiv(thresholdScaled, remainingDebtUSD);
+        return ratio / 10000;
+    }
+
+    function liquidate(uint256 loanId) external {
+        require(getHealthFactor(loanId) < 1e18, "Loan is not undercollateralized");
+        revert("liquidate: not implemented");
     }
 
     // --- View Functions ---

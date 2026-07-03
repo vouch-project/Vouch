@@ -1,7 +1,8 @@
 <script lang="ts">
   import { axiosApi } from '$api/axiosApi';
-  import { getTokenMeta, maxLtv } from '$lib/ltv';
+  import { maxLtv } from '$lib/ltv';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
+  import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
   import { createLoan } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import CollateralBorrowFields from '../create-loan/CollateralBorrowFields.svelte';
@@ -39,9 +40,11 @@
   });
 
   // ── LTV Calculations ──────────────────────────────────────────────────────
-  const computedMaxLtv = $derived(maxLtv(selectedCollateralToken, selectedBorrowToken, creditScore));
-  const collateralUsd = $derived((parseFloat(collateralAmount) || 0) * getTokenMeta(selectedCollateralToken).priceUsd);
-  const borrowUsd = $derived((parseFloat(borrowAmount) || 0) * getTokenMeta(selectedBorrowToken).priceUsd);
+  const collateralMeta = $derived(tokenPrices.getTokenMeta(selectedCollateralToken));
+  const borrowMeta = $derived(tokenPrices.getTokenMeta(selectedBorrowToken));
+  const computedMaxLtv = $derived(maxLtv(collateralMeta, borrowMeta, creditScore));
+  const collateralUsd = $derived((parseFloat(collateralAmount) || 0) * collateralMeta.priceUsd);
+  const borrowUsd = $derived((parseFloat(borrowAmount) || 0) * borrowMeta.priceUsd);
   const currentLtv = $derived(collateralUsd > 0 ? (borrowUsd / collateralUsd) * 100 : 0);
   const ltvExceeded = $derived(currentLtv > computedMaxLtv);
 
@@ -133,6 +136,7 @@
     }
 
     try {
+      const liquidationThresholdBps = Math.max(1, Math.min(10000, Math.round(computedMaxLtv * 100)));
       await createLoan(
         collateralAmount,
         collateralToken,
@@ -141,6 +145,7 @@
         interestRateBps,
         durationSeconds,
         fundWindowSeconds,
+        liquidationThresholdBps,
       );
       status = 'Loan created!';
     } catch (e: unknown) {

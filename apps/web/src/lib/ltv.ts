@@ -1,11 +1,10 @@
 /**
  * LTV (Loan-to-Value) calculation utilities.
  *
- * TODO: Migrate TOKEN_META to real data from the `tokens` table in the database.
- *   - priceUsd   → pull from a price-feed service (e.g. CoinGecko, Chainlink) and store/cache in DB
- *   - volatility → compute from historical price data and store per-token in DB
- *   These two fields should be added as columns to the tokens table (or a separate
- *   token_metadata table) and served via the API so LTV calculation stays server-authoritative.
+ * Token prices and volatility are now served by the API (sourced from Chainlink
+ * price feeds). Use the `tokenPrices` store to get TokenMeta for a given symbol.
+ * Volatility is maintained as a DB column (manually set, future: computed from
+ * historical price data via ATR/rolling std dev).
  */
 
 export interface TokenMeta {
@@ -16,48 +15,14 @@ export interface TokenMeta {
 
 // Volatility drives the base max-LTV: low-vol stables → 90%, high-vol assets → 50%.
 // baseLTV = 90 - volatility * 40   (range: 50%–90%)
-export const TOKEN_META: Record<string, TokenMeta> = {
-  MOCK: { priceUsd: 1000, volatility: 0.25 },
-  ETH: { priceUsd: 3200, volatility: 0.55 },
-  WETH: { priceUsd: 3200, volatility: 0.55 },
-  BTC: { priceUsd: 65000, volatility: 0.5 },
-  WBTC: { priceUsd: 65000, volatility: 0.5 },
-  USDC: { priceUsd: 1, volatility: 0.02 },
-  USDT: { priceUsd: 1, volatility: 0.03 },
-  DAI: { priceUsd: 1, volatility: 0.04 },
-  LINK: { priceUsd: 18, volatility: 0.7 },
-  UNI: { priceUsd: 12, volatility: 0.75 },
-  AAVE: { priceUsd: 110, volatility: 0.65 },
-};
-
-export const DEFAULT_TOKEN_META: TokenMeta = { priceUsd: 1, volatility: 0.6 };
-
-export const getTokenMeta = (symbol: string | null | undefined): TokenMeta =>
-  TOKEN_META[symbol ?? ''] ?? DEFAULT_TOKEN_META;
-
-/**
- * Base max-LTV for a token pair, driven by the higher volatility of the two legs.
- * We use the max because the riskier asset dominates the pair's collateral risk.
- *
- * baseLTV(v) = 90 − v × 40   →  range [50%, 90%]
- */
-export const baseLtv = (
-  collateralSymbol: string | null | undefined,
-  borrowSymbol: string | null | undefined,
-): number => {
-  const v = Math.max(getTokenMeta(collateralSymbol).volatility, getTokenMeta(borrowSymbol).volatility);
+export const baseLtv = (collateralMeta: TokenMeta, borrowMeta: TokenMeta): number => {
+  const v = Math.max(collateralMeta.volatility, borrowMeta.volatility);
   return 90 - v * 40;
 };
 
 /**
  * Credit-score multiplier applied on top of the base LTV.
- * Full FICO range 300–850 is used:
- *   score 300 → 0.50× (halves base LTV)
- *   score 580 → 0.805× (FICO "Fair" floor)
- *   score 770 → 1.00× (neutral)
- *   score 850 → 1.10× (boosts LTV by 10%)
- *
- * Linear interpolation over [300, 850]: mult = 0.50 + (score − 300) / 550 × 0.60
+ * score 300 → 0.50×, score 770 → 1.00×, score 850 → 1.10×
  */
 export const scoreMult = (score: number | null | undefined): number => {
   if (score == null) return 1;
@@ -65,11 +30,9 @@ export const scoreMult = (score: number | null | undefined): number => {
   return 0.5 + ((clamped - 300) / 550) * 0.6;
 };
 
-/**
- * Final max LTV = base LTV adjusted by the borrower's credit score.
- */
+/** Final max LTV = base LTV adjusted by the borrower's credit score. */
 export const maxLtv = (
-  collateralSymbol: string | null | undefined,
-  borrowSymbol: string | null | undefined,
+  collateralMeta: TokenMeta,
+  borrowMeta: TokenMeta,
   score: number | null | undefined,
-): number => baseLtv(collateralSymbol, borrowSymbol) * scoreMult(score);
+): number => baseLtv(collateralMeta, borrowMeta) * scoreMult(score);

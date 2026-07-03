@@ -8,6 +8,7 @@ import type { Redis } from 'ioredis';
 import { validAddress, Tables } from '@vouch/database-types';
 import { SupabaseService } from '../supabase/supabase.service';
 import { tokensMock } from './tokens.mock';
+import { PriceFeedService, priceKey } from './price-feed.service';
 
 export type ResponseToken = {
   chainId: number;
@@ -18,6 +19,8 @@ export type ResponseToken = {
   logoURI: string | null;
   priceUSD?: string;
   coinKey?: string;
+  priceUsd: number | null;
+  volatility: number | null;
 };
 
 export type TokenListResponse = {
@@ -33,6 +36,49 @@ type EvmChain = {
   networkId: string;
 };
 
+// Mirrors the CASE seed in supabase/migrations/20260627000000_tokens_price_feed.sql.
+// That migration only backfills rows that already exist at migration time; any
+// token TokensService syncs in afterward (the normal case — this runs on every
+// API startup and daily via cron) would otherwise keep volatility NULL forever,
+// silently falling back to the frontend's generic default instead of a
+// token-specific value. Keep these two lists in sync.
+const DEFAULT_VOLATILITY_BY_SYMBOL: Record<string, number> = {
+  USDC: 0.02,
+  USDT: 0.03,
+  DAI: 0.04,
+  ETH: 0.45,
+  WETH: 0.45,
+  BTC: 0.5,
+  WBTC: 0.5,
+  LINK: 0.7,
+  UNI: 0.75,
+  AAVE: 0.65,
+  MOCK: 0.25,
+};
+const DEFAULT_VOLATILITY = 0.6;
+
+// Caps how many token updates run concurrently so a large Li.Fi token list
+// (hundreds/thousands of tokens) doesn't fire that many simultaneous requests
+// at PostgREST/DB on every API startup and daily cron run.
+const BACKFILL_CONCURRENCY = 10;
+
+const runWithConcurrencyLimit = async <T>(
+  items: T[],
+  limit: number,
+  task: (item: T) => Promise<void>,
+): Promise<void> => {
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (cursor < items.length) {
+      const item = items[cursor++];
+      await task(item);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  );
+};
+
 @Injectable()
 export class TokensService implements OnModuleInit {
   private readonly logger = new Logger(TokensService.name);
@@ -43,6 +89,7 @@ export class TokensService implements OnModuleInit {
     private readonly httpService: HttpService,
     private readonly supabaseService: SupabaseService,
     private readonly configService: ConfigService,
+    private readonly priceFeedService: PriceFeedService,
     @InjectRedis() private readonly redis: Redis,
   ) {}
 
@@ -78,6 +125,8 @@ export class TokensService implements OnModuleInit {
 
       if (!upsertedTokens) return;
 
+      await this.backfillVolatility(upsertedTokens);
+
       const tokensByNetwork = this.groupTokensByNetwork(
         upsertedTokens,
         evmChains,
@@ -104,6 +153,17 @@ export class TokensService implements OnModuleInit {
     }
 
     return data as EvmChain[];
+  }
+
+  private async getChainIdByNetworkId(networkId: string): Promise<UUID | null> {
+    const { data, error } = await this.supabaseService.client
+      .from('chains')
+      .select('id')
+      .eq('networkId', networkId)
+      .single();
+
+    if (error || !data) return null;
+    return data.id;
   }
 
   private async fetchRawTokens(
@@ -165,6 +225,38 @@ export class TokensService implements OnModuleInit {
     return data as Token[];
   }
 
+  /**
+   * Sets a default volatility for any newly-synced token that doesn't have one
+   * yet. Only targets rows still NULL (.is('volatility', null)), so a
+   * manually-tuned value already in the DB is never overwritten. Updates are
+   * scoped per (chainId, address) pair rather than batched .in() filters on
+   * each column separately — the latter would match the cross product (e.g.
+   * token A on chain X and token B on chain Y could wrongly also match
+   * token A on chain Y) instead of the intended pairs.
+   */
+  private async backfillVolatility(tokens: Token[]): Promise<void> {
+    await runWithConcurrencyLimit(
+      tokens,
+      BACKFILL_CONCURRENCY,
+      async (token) => {
+        const volatility =
+          DEFAULT_VOLATILITY_BY_SYMBOL[token.symbol] ?? DEFAULT_VOLATILITY;
+        const { error } = await this.supabaseService.client
+          .from('tokens')
+          .update({ volatility })
+          .eq('chainId', token.chainId)
+          .eq('address', token.address)
+          .is('volatility', null);
+
+        if (error) {
+          this.logger.warn(
+            `Failed to backfill volatility for ${token.symbol} on chain ${token.chainId}: ${error.message}`,
+          );
+        }
+      },
+    );
+  }
+
   private groupTokensByNetwork(
     tokens: Token[],
     evmChains: EvmChain[],
@@ -215,15 +307,51 @@ export class TokensService implements OnModuleInit {
   async getTokens(networkId: string): Promise<ResponseToken[]> {
     const redisKey = `${this.redisKeyPrefix}${networkId}`;
     const cached = await this.redis.get(redisKey);
+
+    let tokens: ResponseToken[] = [];
     if (cached) {
       const parsed = this.parseTokens(cached, networkId);
-      if (parsed) return parsed;
+      if (parsed) tokens = parsed;
     }
 
-    await this.fetchTokenList();
-    const refreshed = await this.redis.get(redisKey);
-    if (!refreshed) return [];
+    if (!tokens.length) {
+      await this.fetchTokenList();
+      const refreshed = await this.redis.get(redisKey);
+      tokens = refreshed ? (this.parseTokens(refreshed, networkId) ?? []) : [];
+    }
 
-    return this.parseTokens(refreshed, networkId) ?? [];
+    // Enrich with live prices and volatility from DB. Both are scoped by the DB's
+    // uuid chainId (not `ResponseToken.chainId`, which is the raw numeric chain id
+    // from the Li.Fi token list) so tokens with the same symbol/address on different
+    // chains never collide.
+    const dbChainId = await this.getChainIdByNetworkId(networkId);
+    if (!dbChainId)
+      return tokens.map((t) => ({ ...t, priceUsd: null, volatility: null }));
+
+    const prices = await this.priceFeedService.getPrices();
+
+    const tokenAddresses = tokens
+      .map((t) => validAddress(t.address))
+      .filter((a): a is NonNullable<typeof a> => a !== null);
+
+    const { data: dbTokens } = await this.supabaseService.client
+      .from('tokens')
+      .select('address, price_usd, volatility')
+      .eq('chainId', dbChainId)
+      .in('address', tokenAddresses);
+
+    const dbByAddress = new Map(
+      (dbTokens ?? []).map((t) => [t.address.toLowerCase(), t]),
+    );
+
+    return tokens.map((t) => {
+      const dbToken = dbByAddress.get(t.address.toLowerCase());
+      return {
+        ...t,
+        priceUsd:
+          prices[priceKey(dbChainId, t.address)] ?? dbToken?.price_usd ?? null,
+        volatility: dbToken?.volatility ?? null,
+      };
+    });
   }
 }
