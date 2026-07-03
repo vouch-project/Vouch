@@ -29,15 +29,26 @@ import { TokensModule } from './tokens/tokens.module';
         const publicKeyPath = configService.get<string>(
           'SUPABASE_EC_PUBLIC_KEY_PATH',
         );
-        if (privateKeyPath && publicKeyPath) {
+        if (privateKeyPath || publicKeyPath) {
+          if (!privateKeyPath || !publicKeyPath) {
+            throw new Error(
+              'Both SUPABASE_EC_PRIVATE_KEY_PATH and SUPABASE_EC_PUBLIC_KEY_PATH must be set',
+            );
+          }
           return {
             privateKey: readFileSync(privateKeyPath, 'utf8'),
             publicKey: readFileSync(publicKeyPath, 'utf8'),
             signOptions: { expiresIn: '1h', algorithm: 'ES256' },
           };
         }
+        const secret = configService.get<string>('JWT_SECRET');
+        if (!secret) {
+          throw new Error(
+            'JWT_SECRET must be set when EC keys are not configured',
+          );
+        }
         return {
-          secret: configService.get('JWT_SECRET'),
+          secret,
           signOptions: { expiresIn: '1h' },
         };
       },

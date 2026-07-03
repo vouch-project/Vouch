@@ -28,9 +28,7 @@ export class JwtAuthGuard implements CanActivate {
     }
     const token = authHeader.slice(7);
     try {
-      const { address } = this.jwtService.verify<{ address?: string }>(token, {
-        algorithms: ['ES256', 'HS256'],
-      });
+      const { address } = this.jwtService.verify<{ address?: string }>(token);
       if (!address || typeof address !== 'string')
         throw new UnauthorizedException('Invalid token payload');
 
