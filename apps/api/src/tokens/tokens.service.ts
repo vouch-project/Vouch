@@ -57,6 +57,28 @@ const DEFAULT_VOLATILITY_BY_SYMBOL: Record<string, number> = {
 };
 const DEFAULT_VOLATILITY = 0.6;
 
+// Caps how many token updates run concurrently so a large Li.Fi token list
+// (hundreds/thousands of tokens) doesn't fire that many simultaneous requests
+// at PostgREST/DB on every API startup and daily cron run.
+const BACKFILL_CONCURRENCY = 10;
+
+const runWithConcurrencyLimit = async <T>(
+  items: T[],
+  limit: number,
+  task: (item: T) => Promise<void>,
+): Promise<void> => {
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (cursor < items.length) {
+      const item = items[cursor++];
+      await task(item);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  );
+};
+
 @Injectable()
 export class TokensService implements OnModuleInit {
   private readonly logger = new Logger(TokensService.name);
@@ -213,8 +235,10 @@ export class TokensService implements OnModuleInit {
    * token A on chain Y) instead of the intended pairs.
    */
   private async backfillVolatility(tokens: Token[]): Promise<void> {
-    await Promise.all(
-      tokens.map(async (token) => {
+    await runWithConcurrencyLimit(
+      tokens,
+      BACKFILL_CONCURRENCY,
+      async (token) => {
         const volatility =
           DEFAULT_VOLATILITY_BY_SYMBOL[token.symbol] ?? DEFAULT_VOLATILITY;
         const { error } = await this.supabaseService.client
@@ -229,7 +253,7 @@ export class TokensService implements OnModuleInit {
             `Failed to backfill volatility for ${token.symbol} on chain ${token.chainId}: ${error.message}`,
           );
         }
-      }),
+      },
     );
   }
 

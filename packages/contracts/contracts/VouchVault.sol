@@ -753,7 +753,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         return amount;
     }
 
-    function getHealthFactor(uint256 loanId) external view returns (uint256) {
+    function getHealthFactor(uint256 loanId) public view returns (uint256) {
         Loan memory loan = loans[loanId];
         require(loan.funded, "Loan not funded");
         require(!loan.repaid, "Loan already repaid");
@@ -799,13 +799,19 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // healthFactor is scaled to 1e18; >= 1e18 means healthy.
         // Same reasoning applies here: lockedCollateralUSD * liquidationThresholdBps
         // * 1e18 before dividing can exceed uint256 as a plain intermediate for
-        // large enough loans, even though the final ratio is always small.
+        // large enough loans, even though the final ratio is always small. Divide
+        // by remainingDebtUSD and by 10000 as two separate mulDiv steps rather than
+        // combining them into one remainingDebtUSD * 10000 denominator — that
+        // combined denominator is itself a plain multiplication computed *before*
+        // being passed into mulDiv, so it isn't protected by mulDiv's internal
+        // 512-bit precision the way the numerator's product is.
         uint256 thresholdScaled = uint256(effectiveThresholdBps) * 1e18;
-        return lockedCollateralUSD.mulDiv(thresholdScaled, remainingDebtUSD * 10000);
+        uint256 ratio = lockedCollateralUSD.mulDiv(thresholdScaled, remainingDebtUSD);
+        return ratio / 10000;
     }
 
     function liquidate(uint256 loanId) external {
-        require(this.getHealthFactor(loanId) < 1e18, "Loan is not undercollateralized");
+        require(getHealthFactor(loanId) < 1e18, "Loan is not undercollateralized");
         revert("liquidate: not implemented");
     }
 

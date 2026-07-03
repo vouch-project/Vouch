@@ -186,11 +186,22 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
             const price = Number(ethers.formatUnits(answer, decimals));
             priceMap[priceKey(token.chainId, token.address)] = price;
 
-            await this.supabaseService.client
+            const { error: updateError } = await this.supabaseService.client
               .from('tokens')
               .update({ price_usd: price })
               .eq('chainId', token.chainId)
               .eq('address', token.address);
+
+            // Log rather than throw: the Redis cache (and thus getPrices()) still
+            // gets this refresh's price either way, so a DB write failure here
+            // shouldn't drop a price the poller successfully fetched — but without
+            // logging, tokens.price_usd staying stale (RLS, network hiccup, etc.)
+            // would otherwise be silent and hard to diagnose.
+            if (updateError) {
+              this.logger.warn(
+                `Failed to persist price_usd for chain ${token.chainId} ${token.symbol}: ${updateError.message}`,
+              );
+            }
           } catch (err) {
             this.logger.warn(
               `Failed to fetch price for chain ${token.chainId} ${token.symbol}: ${err}`,

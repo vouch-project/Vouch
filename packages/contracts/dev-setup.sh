@@ -27,8 +27,16 @@ if [ $? -eq 0 ]; then
     MOCK_ERC20_ADDRESS=$(grep HARDCODED_MOCK_ERC20_ADDRESS ../../.env | cut -d '=' -f2 | tr -d '\r\n')
     HARDCODED_MOCK_ERC20_ADDRESS="$MOCK_ERC20_ADDRESS" npx hardhat run scripts/mint-mock-to-wallets.ts --network localhost
 
-    # Deploy mock Chainlink price feeds and register them on VouchVault
-    npx hardhat run scripts/deploy-mock-aggregators.ts --network localhost
+    # Deploy mock Chainlink price feeds and register them on VouchVault.
+    # This script hard-requires DATABASE_URL (it mirrors feed addresses to
+    # Postgres) — skip it entirely if a dev is only running contracts/web
+    # without local Supabase, rather than let it fail with a stack trace
+    # after the deployment above already succeeded.
+    if grep -q '^DATABASE_URL=' ../../.env; then
+        npx hardhat run scripts/deploy-mock-aggregators.ts --network localhost
+    else
+        echo "⚠️  DATABASE_URL not set in .env — skipping Chainlink mock price feed setup."
+    fi
 
     # Write deployment timestamp so other services know to reload
     TIMESTAMP=$(node -e "process.stdout.write(String(Date.now()))")
