@@ -66,15 +66,28 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
   async getPrices(): Promise<PriceMap> {
     const cached = await this.redis.get(REDIS_KEY);
     if (cached) {
-      try {
-        return JSON.parse(cached) as PriceMap;
-      } catch {
-        this.logger.warn('Failed to parse cached price map, refreshing');
-      }
+      const parsed = this.parsePriceMap(cached, 'cached');
+      if (parsed) return parsed;
     }
     await this.refreshPrices();
     const fresh = await this.redis.get(REDIS_KEY);
-    return fresh ? (JSON.parse(fresh) as PriceMap) : {};
+    if (!fresh) return {};
+    return this.parsePriceMap(fresh, 'refreshed') ?? {};
+  }
+
+  // A corrupted or partially-written Redis value would otherwise throw and
+  // bubble up to getTokens()'s callers, breaking the /tokens endpoint entirely.
+  // Applies the same defensive parsing to both the cached and refreshed paths.
+  private parsePriceMap(
+    raw: string,
+    source: 'cached' | 'refreshed',
+  ): PriceMap | null {
+    try {
+      return JSON.parse(raw) as PriceMap;
+    } catch {
+      this.logger.warn(`Failed to parse ${source} price map`);
+      return null;
+    }
   }
 
   private async refreshPrices(): Promise<void> {

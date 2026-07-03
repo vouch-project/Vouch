@@ -291,7 +291,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @param interestRateBps         Annual interest rate in basis points (e.g. 500 = 5% APR); 0 = interest-free
     /// @param durationSeconds         Loan term in seconds; caps interest accrual; 0 = no deadline / no time-based interest
     /// @param fundWindowSeconds       Seconds from creation during which the loan may be funded (must be > 0)
-    /// @param liquidationThresholdBps Collateral-to-debt ratio (bps) below which the loan may be liquidated
+    /// @param liquidationThresholdBps Maximum LTV (debt/collateral) in basis points; the loan becomes liquidatable once the actual ratio exceeds this (e.g. 8000 = 80% max LTV)
     function createLoan(
         address principalToken,
         uint256 principalAmount,
@@ -346,7 +346,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @param interestRateBps         Annual interest rate in basis points (e.g. 500 = 5% APR); 0 = interest-free
     /// @param durationSeconds         Loan term in seconds; caps interest accrual; 0 = no deadline / no time-based interest
     /// @param fundWindowSeconds       Seconds from creation during which the loan may be funded (must be > 0)
-    /// @param liquidationThresholdBps Collateral-to-debt ratio (bps) below which the loan may be liquidated
+    /// @param liquidationThresholdBps Maximum LTV (debt/collateral) in basis points; the loan becomes liquidatable once the actual ratio exceeds this (e.g. 8000 = 80% max LTV)
     function createLoanWithERC20(
         address token,
         uint256 amount,
@@ -784,11 +784,23 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 lockedCollateralUSD = normalizedCollateral.mulDiv(collateralPrice, 1e18);
         uint256 remainingDebtUSD    = normalizedDebt.mulDiv(principalPrice, 1e18);
 
+        // Loans created before this field was appended to the struct read 0 here
+        // (Solidity's default for an unset slot). Without this fallback, such a
+        // legacy loan's health factor would always compute to 0 — permanently
+        // "Liquidation Risk" in the UI and permanently eligible for liquidate(),
+        // regardless of actual collateralization. Default to 10000 (100% max LTV,
+        // the most permissive/safe interpretation) rather than treating unset as
+        // always-liquidatable. Mirrors the same 0-means-unset pattern already used
+        // for tokenDecimals in _normalizeAmount.
+        uint16 effectiveThresholdBps = loan.liquidationThresholdBps == 0
+            ? 10000
+            : loan.liquidationThresholdBps;
+
         // healthFactor is scaled to 1e18; >= 1e18 means healthy.
         // Same reasoning applies here: lockedCollateralUSD * liquidationThresholdBps
         // * 1e18 before dividing can exceed uint256 as a plain intermediate for
         // large enough loans, even though the final ratio is always small.
-        uint256 thresholdScaled = uint256(loan.liquidationThresholdBps) * 1e18;
+        uint256 thresholdScaled = uint256(effectiveThresholdBps) * 1e18;
         return lockedCollateralUSD.mulDiv(thresholdScaled, remainingDebtUSD * 10000);
     }
 
