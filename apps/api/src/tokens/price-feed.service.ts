@@ -109,16 +109,27 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
               AGGREGATOR_ABI,
               getProvider(token.chainId, rpcUrl),
             );
-            const [, answer, , updatedAt] = (await feed.latestRoundData()) as [
-              unknown,
-              bigint,
-              unknown,
-              bigint,
-              unknown,
-            ];
+            const [roundId, answer, , updatedAt, answeredInRound] =
+              (await feed.latestRoundData()) as [
+                bigint,
+                bigint,
+                unknown,
+                bigint,
+                bigint,
+              ];
             const decimals = Number(await feed.decimals());
 
             if (answer <= 0n) return;
+            // Mirror VouchVault._getPrice's on-chain checks so this poller never
+            // shows the frontend a "fresh" price that the contract would reject —
+            // answeredInRound < roundId means the round carried over a stale
+            // answer (e.g. during an aggregator outage).
+            if (answeredInRound < roundId) {
+              this.logger.warn(
+                `Stale round for chain ${token.chainId} ${token.symbol}`,
+              );
+              return;
+            }
             if (Date.now() - Number(updatedAt) * 1000 > STALE_THRESHOLD_MS) {
               this.logger.warn(
                 `Stale price for chain ${token.chainId} ${token.symbol}`,

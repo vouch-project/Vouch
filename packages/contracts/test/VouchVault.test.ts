@@ -1722,6 +1722,39 @@ describe('VouchVault', function () {
       await expect(vault.getHealthFactor(0)).to.be.revertedWith('Stale round');
     });
 
+    it('getHealthFactor reverts if the price feed reports a future timestamp', async function () {
+      const { vault, mockToken, ethFeed, lender, borrower } = await deployWithFeeds();
+      const collateral = ethers.parseEther('1');
+      const principal = ethers.parseUnits('2', 18);
+      await vault.connect(borrower).createLoan(
+        await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral }
+      );
+      await mockToken.transfer(lender.address, principal);
+      await mockToken.connect(lender).approve(await vault.getAddress(), principal);
+      await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
+
+      const latestBlock = await ethers.provider.getBlock('latest');
+      await ethFeed.setUpdatedAt(latestBlock!.timestamp + 3600);
+
+      await expect(vault.getHealthFactor(0)).to.be.revertedWith('Price timestamp in the future');
+    });
+
+    it('getHealthFactor reverts if the price feed reports decimals > 18', async function () {
+      const { vault, mockToken, ethFeed, lender, borrower } = await deployWithFeeds();
+      const collateral = ethers.parseEther('1');
+      const principal = ethers.parseUnits('2', 18);
+      await vault.connect(borrower).createLoan(
+        await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral }
+      );
+      await mockToken.transfer(lender.address, principal);
+      await mockToken.connect(lender).approve(await vault.getAddress(), principal);
+      await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
+
+      await ethFeed.setDecimals(19);
+
+      await expect(vault.getHealthFactor(0)).to.be.revertedWith('Feed decimals too large');
+    });
+
     it('getHealthFactor returns correct value for ETH-collateral loan', async function () {
       // ETH collateral $3200, MOCK principal $1000 each, threshold 8000 bps (80%)
       // collateral = 1 ETH = 1e18 wei, borrow = 2 MOCK tokens

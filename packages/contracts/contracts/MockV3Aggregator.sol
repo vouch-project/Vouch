@@ -24,6 +24,18 @@ contract MockV3Aggregator {
         staleRound = _staleRound;
     }
 
+    // Lets tests simulate a misconfigured/malicious feed reporting a timestamp
+    // in the future, without waiting for real time to catch up.
+    function setUpdatedAt(uint256 _updatedAt) external {
+        updatedAt = _updatedAt;
+    }
+
+    // Lets tests simulate a misconfigured/malicious feed reporting decimals
+    // outside the range VouchVault._getPrice expects.
+    function setDecimals(uint8 _decimals) external {
+        decimals = _decimals;
+    }
+
     function latestRoundData() external view returns (
         uint80 roundId,
         int256 answer,

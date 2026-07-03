@@ -121,7 +121,7 @@
   });
 
   $effect(() => {
-    if (!loan.onChainLoanId || loan.status !== 'active') return;
+    if (loan.onChainLoanId === null || loan.status !== 'active') return;
     hfLoading = true;
     getHealthFactor(BigInt(loan.onChainLoanId))
       .then((hf) => {

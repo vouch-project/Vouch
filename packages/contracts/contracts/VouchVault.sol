@@ -724,8 +724,18 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // carried over a stale answer from an earlier round (e.g. during an
         // aggregator outage) rather than a fresh one.
         require(answeredInRound >= roundId, "Stale round");
+        // Guard the subtraction explicitly rather than relying on 0.8's checked
+        // arithmetic to revert: a misconfigured or malicious feed reporting an
+        // updatedAt in the future would otherwise brick this token with a bare
+        // underflow panic instead of a clear revert reason.
+        require(updatedAt <= block.timestamp, "Price timestamp in the future");
         require(block.timestamp - updatedAt <= STALE_PRICE_THRESHOLD, "Stale price");
         uint8 feedDecimals = feed.decimals();
+        // feedDecimals is untrusted external input (the feed contract's own
+        // decimals() call); real Chainlink feeds are always <= 18, but without
+        // this check a misconfigured/malicious feed reporting a large value would
+        // make 10 ** (feedDecimals - 18) revert, bricking price reads for this token.
+        require(feedDecimals <= 18, "Feed decimals too large");
         // Normalize to 18 decimals
         if (feedDecimals < 18) {
             return uint256(price) * (10 ** (18 - feedDecimals));
