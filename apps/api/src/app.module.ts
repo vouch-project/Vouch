@@ -35,9 +35,19 @@ import { TokensModule } from './tokens/tokens.module';
               'Both SUPABASE_EC_PRIVATE_KEY_PATH and SUPABASE_EC_PUBLIC_KEY_PATH must be set',
             );
           }
+          const readKey = (path: string, name: string) => {
+            try {
+              return readFileSync(path, 'utf8');
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              throw new Error(
+                `Failed to read ${name} from "${path}": ${message}`,
+              );
+            }
+          };
           return {
-            privateKey: readFileSync(privateKeyPath, 'utf8'),
-            publicKey: readFileSync(publicKeyPath, 'utf8'),
+            privateKey: readKey(privateKeyPath, 'SUPABASE_EC_PRIVATE_KEY_PATH'),
+            publicKey: readKey(publicKeyPath, 'SUPABASE_EC_PUBLIC_KEY_PATH'),
             signOptions: { expiresIn: '1h', algorithm: 'ES256' },
           };
         }
