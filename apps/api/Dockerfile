@@ -31,6 +31,12 @@ COPY --from=builder /app/apps/api/dist ./dist
 COPY --from=builder /app/deployed/package.json ./
 
 ENV NODE_ENV=production
+# EC key files for ES256 JWT signing are mounted at runtime — never baked into the image.
+# Mount them via Docker secrets or a volume and set SUPABASE_EC_PRIVATE_KEY_PATH /
+# SUPABASE_EC_PUBLIC_KEY_PATH env vars to their paths inside the container.
+# Example: docker run -v /host/keys:/run/secrets/keys \
+#   -e SUPABASE_EC_PRIVATE_KEY_PATH=/run/secrets/keys/ec_private.pem \
+#   -e SUPABASE_EC_PUBLIC_KEY_PATH=/run/secrets/keys/ec_public.pem ...
 EXPOSE 3000
 
 CMD ["node", "dist/main.js"]

@@ -13,7 +13,7 @@
     "db:generate:types": "supabase gen types typescript --local > packages/database-types/src/generated.ts && cd packages/database-types && pnpm build"
   },
   "devDependencies": {
-    "supabase": "^2.81.2",
+    "supabase": "2.109.0",
     "turbo": "^2"
   },
   "packageManager": "pnpm@9.15.4"
