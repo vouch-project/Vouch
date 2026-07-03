@@ -36,6 +36,27 @@ type EvmChain = {
   networkId: string;
 };
 
+// Mirrors the CASE seed in supabase/migrations/20260627000000_tokens_price_feed.sql.
+// That migration only backfills rows that already exist at migration time; any
+// token TokensService syncs in afterward (the normal case — this runs on every
+// API startup and daily via cron) would otherwise keep volatility NULL forever,
+// silently falling back to the frontend's generic default instead of a
+// token-specific value. Keep these two lists in sync.
+const DEFAULT_VOLATILITY_BY_SYMBOL: Record<string, number> = {
+  USDC: 0.02,
+  USDT: 0.03,
+  DAI: 0.04,
+  ETH: 0.45,
+  WETH: 0.45,
+  BTC: 0.5,
+  WBTC: 0.5,
+  LINK: 0.7,
+  UNI: 0.75,
+  AAVE: 0.65,
+  MOCK: 0.25,
+};
+const DEFAULT_VOLATILITY = 0.6;
+
 @Injectable()
 export class TokensService implements OnModuleInit {
   private readonly logger = new Logger(TokensService.name);
@@ -81,6 +102,8 @@ export class TokensService implements OnModuleInit {
       const upsertedTokens = await this.upsertTokens(tokens);
 
       if (!upsertedTokens) return;
+
+      await this.backfillVolatility(upsertedTokens);
 
       const tokensByNetwork = this.groupTokensByNetwork(
         upsertedTokens,
@@ -178,6 +201,36 @@ export class TokensService implements OnModuleInit {
     }
 
     return data as Token[];
+  }
+
+  /**
+   * Sets a default volatility for any newly-synced token that doesn't have one
+   * yet. Only targets rows still NULL (.is('volatility', null)), so a
+   * manually-tuned value already in the DB is never overwritten. Updates are
+   * scoped per (chainId, address) pair rather than batched .in() filters on
+   * each column separately — the latter would match the cross product (e.g.
+   * token A on chain X and token B on chain Y could wrongly also match
+   * token A on chain Y) instead of the intended pairs.
+   */
+  private async backfillVolatility(tokens: Token[]): Promise<void> {
+    await Promise.all(
+      tokens.map(async (token) => {
+        const volatility =
+          DEFAULT_VOLATILITY_BY_SYMBOL[token.symbol] ?? DEFAULT_VOLATILITY;
+        const { error } = await this.supabaseService.client
+          .from('tokens')
+          .update({ volatility })
+          .eq('chainId', token.chainId)
+          .eq('address', token.address)
+          .is('volatility', null);
+
+        if (error) {
+          this.logger.warn(
+            `Failed to backfill volatility for ${token.symbol} on chain ${token.chainId}: ${error.message}`,
+          );
+        }
+      }),
+    );
   }
 
   private groupTokensByNetwork(
