@@ -181,14 +181,16 @@ Order of operations:
    - **ERC20**: pull exactly `liquidatorPays` via `safeTransferFrom(msg.sender, this, liquidatorPays)`
      with the fee-on-transfer guard (`balanceBefore`/`received`) identical to `repayLoanWithERC20`.
      Nothing to refund — only the exact amount is pulled.
-7. **Determine the interest portion actually covered** (for the protocol fee). When underwater,
-   `liquidatorPays < debt`; interest-first accounting means the payment covers interest before
-   principal, so `interestPaid = min(liquidatorPays, interestOutstanding)`:
+7. **Protocol fee** — charged only when the loan closes cleanly (lender made whole). Waived when
+   underwater because the fee is philosophically a share of lending *profits*; charging it when the
+   lender is already taking a loss would reduce their recovery further with no justification:
    ```
-   interestPaid = liquidatorPays < interestOutstanding ? liquidatorPays : interestOutstanding
-   principalPaid = liquidatorPays - interestPaid
-   protocolFee   = _protocolFee(interestPaid)
+   protocolFee  = liquidatorPays == debt ? _protocolFee(interestOutstanding) : 0
+   principalPaid = liquidatorPays - (liquidatorPays == debt ? interestOutstanding : liquidatorPays)
+   // simplified: when healthy principalPaid = liquidatorPays - interestOutstanding
+   //             when underwater principalPaid = 0  (no fee, full payment goes to lender)
    ```
+   In the underwater case `liquidatorPays` goes entirely to the lender, maximizing their recovery.
 8. **Update state** (loan fully closed regardless of shortfall):
    ```
    loan.amountRepaid      += liquidatorPays
@@ -203,7 +205,7 @@ Order of operations:
 9. **Payouts** (reusing existing helpers — hybrid direct-then-credit, so a reverting recipient can
    never brick the liquidation):
    - Lender: `liquidatorPays - protocolFee` in the principal token (`_payoutEth` / `_payoutToken`).
-   - Treasury: `protocolFee` (emit `ProtocolFeeCollected`) when > 0.
+   - Treasury: `protocolFee` (emit `ProtocolFeeCollected`) only when > 0 (i.e. healthy close only).
    - Liquidator: `seizeCollateral` of the collateral token (ETH-collateral branch decrements
      `lockedEthCollateral[borrower]` by `lockedCollateral`; ERC20 branch uses `safeTransfer`).
    - Borrower: `collateralReturned` of the collateral token (same branch handling; 0 when underwater).
@@ -219,7 +221,7 @@ Order of operations:
 | Loan healthy (HF ≥ 1e18) | Reverts `Loan is not undercollateralized`. |
 | Ceiling too low | `require(liquidatorPays <= maxPay)` reverts `Exceeds max payment` (slippage guard). |
 | Healthy-but-liquidatable | Seize `debt × (1+bonus)` worth of collateral, refund excess to borrower, lender paid full debt. |
-| Underwater (collateral worth < debt+bonus) | Seize ALL collateral; borrower gets nothing; liquidator pays `collateralValue/(1+bonus)` (still profits by the bonus, capped at debt); lender realizes `debt − liquidatorPays` as a loss. Loan still closes. |
+| Underwater (collateral worth < debt+bonus) | Seize ALL collateral; borrower gets nothing; liquidator pays `collateralValue/(1+bonus)` (still profits by the bonus, capped at debt); lender receives full `liquidatorPays` (no fee, maximizing recovery); lender realizes `debt − liquidatorPays` as a loss. Loan still closes. |
 | ETH surplus | Any `msg.value` above `liquidatorPays` is refunded to the liquidator. |
 | Reentrancy | `nonReentrant` on both external entry points. |
 | Stale / zero / future oracle price | Inherited from `_getPrice` guards via `getHealthFactor` and the seizure pricing. |
@@ -249,8 +251,8 @@ Replace the two existing stub tests (`liquidate reverts with not implemented ...
 - **Ceiling too low**: `maxAmount` / `msg.value` below `liquidatorPays` reverts `Exceeds max payment`.
 - **Reverts**: healthy loan (`Loan is not undercollateralized`); wrong entry point for principal type;
   already-repaid / inactive / unfunded loan.
-- **Protocol fee** routed to treasury on the interest portion (both healthy and underwater — assert
-  the fee is taken on `interestPaid`, which is capped by `liquidatorPays` when underwater).
+- **Protocol fee** routed to treasury on the interest portion for a healthy close; assert fee is
+  zero and lender receives the full `liquidatorPays` when underwater.
 - **Mismatched decimals** (e.g. 18-dec ETH collateral, 6-dec USDC principal) seizure and payment
   amounts correct.
 - `setLiquidationBonusBps`: owner-only, cap enforcement, `LiquidationBonusUpdated` event.
