@@ -64,6 +64,14 @@ services:
     expose:
       - '8001'
     env_file: .env
+    volumes:
+      # Run `vouch-ml-training train` first. ml-engine starts without a model (returns 503) if empty.
+      - type: bind
+        source: ./services/ml-training/src/vouch_ml_training/models/artifacts
+        target: /app/artifacts
+        read_only: true
+        bind:
+          create_host_path: false
 
   keeper:
     build:

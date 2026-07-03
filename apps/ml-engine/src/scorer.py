@@ -17,15 +17,30 @@ from src.features import fetch_features
 
 _register_compat()
 
-_ARTIFACT_ROOT = (
-    Path(__file__).resolve().parents[3]
-    / "services"
-    / "ml-training"
-    / "src"
-    / "vouch_ml_training"
-    / "models"
-    / "artifacts"
-)
+
+def _default_artifact_root() -> Path | None:
+    """Locate the directory holding trained model artifacts.
+
+    Checks a mounted/bundled ``artifacts/`` dir next to the app (used in
+    containers) first, then walks up to the monorepo ``services/ml-training``
+    location (used in local dev). Returns ``None`` when neither exists; in
+    that case set ``ARTIFACT_PATH`` if you want the scorer to load a model.
+    """
+    here = Path(__file__).resolve()
+
+    bundled = here.parent.parent / "artifacts"
+    if bundled.is_dir():
+        return bundled
+
+    for parent in here.parents:
+        candidate = (
+            parent / "services" / "ml-training" / "src"
+            / "vouch_ml_training" / "models" / "artifacts"
+        )
+        if candidate.is_dir():
+            return candidate
+
+    return None
 
 _FEATURE_COLUMNS = [
     "walletAgeDays",
@@ -177,7 +192,18 @@ class CreditScorer:
             raise  # missing/invalid env vars → fail loudly at startup
 
         try:
-            artifact_dir = settings.artifact_path or _find_latest_artifact(_ARTIFACT_ROOT)
+            artifact_dir = settings.artifact_path
+            if artifact_dir is None:
+                root = _default_artifact_root()
+                if root is None:
+                    raise FileNotFoundError(
+                        "No artifact root found. "
+                        "Set ARTIFACT_PATH to a specific artifact directory "
+                        "(containing metadata.json + model.joblib), "
+                        "or mount/bundle trained artifacts under /app/artifacts (Docker) "
+                        "or services/ml-training/src/vouch_ml_training/models/artifacts (local dev)."
+                    )
+                artifact_dir = _find_latest_artifact(root)
             self._load(artifact_dir)
         except Exception as exc:
             _log.warning("Could not load model artifact: %s", exc)
