@@ -21,10 +21,21 @@ import { TokensModule } from './tokens/tokens.module';
     JwtModule.registerAsync({
       global: true,
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        secret: configService.get('JWT_SECRET'),
-        signOptions: { expiresIn: '1h' },
-      }),
+      useFactory: (configService: ConfigService) => {
+        const privateKey = configService.get<string>('SUPABASE_EC_PRIVATE_KEY');
+        const publicKey = configService.get<string>('SUPABASE_EC_PUBLIC_KEY');
+        if (privateKey && publicKey) {
+          return {
+            privateKey: privateKey.replace(/\\n/g, '\n'),
+            publicKey: publicKey.replace(/\\n/g, '\n'),
+            signOptions: { expiresIn: '1h', algorithm: 'ES256' },
+          };
+        }
+        return {
+          secret: configService.get('JWT_SECRET'),
+          signOptions: { expiresIn: '1h' },
+        };
+      },
       inject: [ConfigService],
     }),
     RedisModule.forRoot({
