@@ -7,6 +7,7 @@ from src.scorer import (
     CreditScorer,
     ScoringResult,
     _compute_credit_score,
+    _default_artifact_root,
     _generate_signals,
 )
 
@@ -151,3 +152,9 @@ def test_signals_high_repay_ratio_is_strength() -> None:
         stablecoin_balance_usd=0.0,
     )
     assert any("repayment" in s for s in strengths)
+
+
+def test_default_artifact_root_result_is_always_directory() -> None:
+    result = _default_artifact_root()
+    if result is not None:
+        assert result.is_dir(), "_default_artifact_root must return a directory"
