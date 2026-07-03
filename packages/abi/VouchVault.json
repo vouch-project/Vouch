@@ -250,6 +250,31 @@
       {
         "indexed": true,
         "internalType": "address",
+        "name": "liquidator",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "name": "LoanLiquidated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
         "name": "borrower",
         "type": "address"
       },
@@ -529,6 +554,19 @@
   },
   {
     "inputs": [],
+    "name": "STALE_PRICE_THRESHOLD",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "UPGRADE_INTERFACE_VERSION",
     "outputs": [
       {
@@ -598,6 +636,11 @@
         "internalType": "uint256",
         "name": "fundWindowSeconds",
         "type": "uint256"
+      },
+      {
+        "internalType": "uint16",
+        "name": "liquidationThresholdBps",
+        "type": "uint16"
       }
     ],
     "name": "createLoan",
@@ -641,6 +684,11 @@
         "internalType": "uint256",
         "name": "fundWindowSeconds",
         "type": "uint256"
+      },
+      {
+        "internalType": "uint16",
+        "name": "liquidationThresholdBps",
+        "type": "uint16"
       }
     ],
     "name": "createLoanWithERC20",
@@ -738,6 +786,25 @@
       {
         "internalType": "uint256",
         "name": "fundedAt",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getHealthFactor",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
         "type": "uint256"
       }
     ],
@@ -882,6 +949,19 @@
         "type": "uint256"
       }
     ],
+    "name": "liquidate",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      }
+    ],
     "name": "loanLockedBalanceOf",
     "outputs": [
       {
@@ -1007,6 +1087,11 @@
         "internalType": "uint256",
         "name": "lastAccrualAt",
         "type": "uint256"
+      },
+      {
+        "internalType": "uint16",
+        "name": "liquidationThresholdBps",
+        "type": "uint16"
       }
     ],
     "stateMutability": "view",
@@ -1114,6 +1199,25 @@
     "type": "function"
   },
   {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "priceFeeds",
+    "outputs": [
+      {
+        "internalType": "contract AggregatorV3Interface",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [],
     "name": "protocolFeeBps",
     "outputs": [
@@ -1206,6 +1310,29 @@
   {
     "inputs": [
       {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "feed",
+        "type": "address"
+      },
+      {
+        "internalType": "uint8",
+        "name": "decimals_",
+        "type": "uint8"
+      }
+    ],
+    "name": "setPriceFeed",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "uint256",
         "name": "newFeeBps",
         "type": "uint256"
@@ -1227,6 +1354,25 @@
     "name": "setProtocolTreasury",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "tokenDecimals",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {

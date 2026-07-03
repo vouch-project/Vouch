@@ -8,10 +8,11 @@
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import type { LoanFull } from '$lib/types';
   import { cn } from '$lib/utils';
-  import { cancelLoan, getRepaymentDetails, type RepaymentDetails } from '$lib/wallet/vouchVault';
+  import { cancelLoan, getHealthFactor, getRepaymentDetails, type RepaymentDetails } from '$lib/wallet/vouchVault';
   import { Check, Copy } from '@lucide/svelte';
   import { ethers } from 'ethers';
   import { tableColumns } from '../dashboard/columns';
+  import HealthFactorBadge from './HealthFactorBadge.svelte';
 
   type Props = {
     loan: LoanFull;
@@ -81,6 +82,8 @@
   // the precise remaining balance. Repaid / pending loans skip this entirely.
   let chainDetails = $state<RepaymentDetails | null>(null);
   let chainError = $state('');
+  let healthFactor = $state<bigint | null>(null);
+  let hfLoading = $state(false);
 
   // Chain state is authoritative once loaded; DB status is the initial fallback
   // while the blockchain listener hasn't yet written the update.
@@ -115,6 +118,21 @@
     if (loan.status !== 'active') return;
     const interval = setInterval(refresh, 30_000);
     return () => clearInterval(interval);
+  });
+
+  $effect(() => {
+    if (loan.onChainLoanId === null || loan.status !== 'active') return;
+    hfLoading = true;
+    getHealthFactor(BigInt(loan.onChainLoanId))
+      .then((hf) => {
+        healthFactor = hf;
+      })
+      .catch(() => {
+        healthFactor = null;
+      })
+      .finally(() => {
+        hfLoading = false;
+      });
   });
 
   // ── Due date (from DB field, fallback to chain duration) ──────────────────
@@ -307,6 +325,11 @@
     {:else}
       {dueDateLabel}
     {/if}
+  </Table.Cell>
+
+  <!-- Health Factor -->
+  <Table.Cell class="px-2 sm:px-4 py-3 whitespace-nowrap text-center">
+    <HealthFactorBadge {healthFactor} loading={hfLoading} />
   </Table.Cell>
 
   <!-- Status -->

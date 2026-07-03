@@ -21,7 +21,7 @@ describe('VouchVault', function () {
       const sentCollateral = ethers.parseEther('1.0');
 
       const fundWindow = 7n * 86400n; // 7 days
-      const tx = await vault.createLoan(ethers.ZeroAddress, sentCollateral, 500, 86400, fundWindow, {
+      const tx = await vault.createLoan(ethers.ZeroAddress, sentCollateral, 500, 86400, fundWindow, 8000, {
         value: sentCollateral,
       });
       await expect(tx)
@@ -70,7 +70,7 @@ describe('VouchVault', function () {
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
 
       await expect(
-        vault.createLoan(ethers.ZeroAddress, ethers.parseEther('1.0'), 0, 0, 7n * 86400n, { value: 0 }),
+        vault.createLoan(ethers.ZeroAddress, ethers.parseEther('1.0'), 0, 0, 7n * 86400n, 8000, { value: 0 }),
       ).to.be.revertedWith('Collateral must be > 0');
     });
 
@@ -80,7 +80,7 @@ describe('VouchVault', function () {
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
       const collateral = ethers.parseEther('1.0');
       await expect(
-        vault.createLoan(ethers.ZeroAddress, collateral, 0, 86400, 0, { value: collateral }),
+        vault.createLoan(ethers.ZeroAddress, collateral, 0, 86400, 0, 8000, { value: collateral }),
       ).to.be.revertedWith('Fund window must be > 0');
     });
 
@@ -91,11 +91,12 @@ describe('VouchVault', function () {
       const collateral = ethers.parseEther('1.0');
       // Above the cap (10001 bps = 100.01% APR) is rejected.
       await expect(
-        vault.createLoan(ethers.ZeroAddress, collateral, 10001, 86400, 7n * 86400n, { value: collateral }),
+        vault.createLoan(ethers.ZeroAddress, collateral, 10001, 86400, 7n * 86400n, 8000, { value: collateral }),
       ).to.be.revertedWith('Interest rate cannot exceed 100%');
       // Exactly at the cap (10000 bps = 100% APR) is accepted.
-      await expect(vault.createLoan(ethers.ZeroAddress, collateral, 10000, 86400, 7n * 86400n, { value: collateral }))
-        .to.not.be.reverted;
+      await expect(
+        vault.createLoan(ethers.ZeroAddress, collateral, 10000, 86400, 7n * 86400n, 8000, { value: collateral }),
+      ).to.not.be.reverted;
       const loan = await vault.loans(0);
       expect(loan.interestRateBps).to.equal(10000n);
     });
@@ -106,7 +107,7 @@ describe('VouchVault', function () {
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
       const collateral = ethers.parseEther('1.0');
 
-      await vault.createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, { value: collateral });
+      await vault.createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, { value: collateral });
 
       await expect(vault.withdraw(collateral)).to.be.revertedWith('Insufficient balance');
     });
@@ -131,6 +132,7 @@ describe('VouchVault', function () {
         0,
         0,
         7n * 86400n,
+        8000,
       );
 
       const loan = await vault.getLoan(0);
@@ -167,7 +169,7 @@ describe('VouchVault', function () {
       const principal = ethers.parseEther('1.0');
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 500, 86400, 7n * 86400n, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 500, 86400, 7n * 86400n, 8000, { value: collateral });
       return { vault, owner, borrower, lender, collateral, principal };
     }
 
@@ -255,6 +257,7 @@ describe('VouchVault', function () {
           0,
           0,
           7n * 86400n,
+          8000,
         );
 
       await expect(vault.connect(lender).fundLoan(0, { value: ethers.parseEther('1.0') })).to.be.revertedWith(
@@ -270,7 +273,7 @@ describe('VouchVault', function () {
       const principal = ethers.parseEther('1.0');
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 500, 86400, 3n * 86400n, { value: collateral }); // 3-day window
+        .createLoan(ethers.ZeroAddress, principal, 500, 86400, 3n * 86400n, 8000, { value: collateral }); // 3-day window
       await ethers.provider.send('evm_increaseTime', [4 * 86400]); // past the window
       await ethers.provider.send('evm_mine', []);
       await expect(vault.connect(lender).fundLoan(0, { value: principal })).to.be.revertedWith('Funding window passed');
@@ -305,7 +308,7 @@ describe('VouchVault', function () {
 
       await vault
         .connect(borrower)
-        .createLoan(await token.getAddress(), principalAmount, 0, 0, 7n * 86400n, { value: collateral });
+        .createLoan(await token.getAddress(), principalAmount, 0, 0, 7n * 86400n, 8000, { value: collateral });
 
       await token.transfer(lender.address, principalAmount);
       await token.connect(lender).approve(await vault.getAddress(), principalAmount);
@@ -338,7 +341,7 @@ describe('VouchVault', function () {
 
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principalAmount, 0, 0, 7n * 86400n, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principalAmount, 0, 0, 7n * 86400n, 8000, { value: collateral });
 
       await expect(
         vault.connect(lender).fundLoanWithERC20(0, await token.getAddress(), principalAmount),
@@ -359,7 +362,7 @@ describe('VouchVault', function () {
 
       await vault
         .connect(borrower)
-        .createLoan(await token.getAddress(), principalAmount, 0, 0, 3n * 86400n, { value: collateral }); // 3-day window
+        .createLoan(await token.getAddress(), principalAmount, 0, 0, 3n * 86400n, 8000, { value: collateral }); // 3-day window
 
       await token.transfer(lender.address, principalAmount);
       await token.connect(lender).approve(await vault.getAddress(), principalAmount);
@@ -383,7 +386,7 @@ describe('VouchVault', function () {
 
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, interestRateBps, 86400, 7n * 86400n, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, interestRateBps, 86400, 7n * 86400n, 8000, { value: collateral });
       await vault.connect(lender).fundLoan(0, { value: principal });
 
       // Per-day accrual: no time is advanced after funding, so 0 whole days elapse
@@ -401,7 +404,7 @@ describe('VouchVault', function () {
       const principal = ethers.parseEther('1.0');
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 3650, 30n * 86400n, 7n * 86400n, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 3650, 30n * 86400n, 7n * 86400n, 8000, { value: collateral });
       await vault.connect(lender).fundLoan(0, { value: principal });
 
       await ethers.provider.send('evm_increaseTime', [10 * 86400]);
@@ -425,7 +428,7 @@ describe('VouchVault', function () {
       const principal = ethers.parseEther('1.0');
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 3650, 30n * 86400n, 7n * 86400n, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 3650, 30n * 86400n, 7n * 86400n, 8000, { value: collateral });
       await vault.connect(lender).fundLoan(0, { value: principal });
       await ethers.provider.send('evm_increaseTime', [10 * 86400]);
       await ethers.provider.send('evm_mine', []);
@@ -532,7 +535,7 @@ describe('VouchVault', function () {
 
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, { value: collateral });
+        .createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, { value: collateral });
 
       await expect(vault.connect(borrower).repayLoan(0, { value: collateral })).to.be.revertedWith(
         'Loan is not funded',
@@ -558,7 +561,7 @@ describe('VouchVault', function () {
 
       await vault
         .connect(borrower)
-        .createLoan(await token.getAddress(), principalAmount, 500, 0, 7n * 86400n, { value: collateral });
+        .createLoan(await token.getAddress(), principalAmount, 500, 0, 7n * 86400n, 8000, { value: collateral });
       await token.transfer(lender.address, principalAmount);
       await token.connect(lender).approve(await vault.getAddress(), principalAmount);
       await vault.connect(lender).fundLoanWithERC20(0, await token.getAddress(), principalAmount);
@@ -705,7 +708,7 @@ describe('VouchVault', function () {
 
         await vault
           .connect(borrower)
-          .createLoan(ethers.ZeroAddress, principal, Number(interestRateBps), durationDays * 86400n, 7n * 86400n, {
+          .createLoan(ethers.ZeroAddress, principal, Number(interestRateBps), durationDays * 86400n, 7n * 86400n, 8000, {
             value: collateral,
           });
         await vault.connect(lender).fundLoan(0, { value: principal });
@@ -773,7 +776,7 @@ describe('VouchVault', function () {
 
         await vault
           .connect(borrower)
-          .createLoan(ethers.ZeroAddress, principal, Number(interestRateBps), 60n * 86400n, 7n * 86400n, {
+          .createLoan(ethers.ZeroAddress, principal, Number(interestRateBps), 60n * 86400n, 7n * 86400n, 8000, {
             value: collateral,
           });
         await vault.connect(lender).fundLoan(0, { value: principal });
@@ -827,7 +830,7 @@ describe('VouchVault', function () {
 
       await vault
         .connect(borrower)
-        .createLoan(await token.getAddress(), principalAmount, interestRateBps, durationSeconds, 7n * 86400n, {
+        .createLoan(await token.getAddress(), principalAmount, interestRateBps, durationSeconds, 7n * 86400n, 8000, {
           value: collateral,
         });
 
@@ -910,6 +913,7 @@ describe('VouchVault', function () {
           interestRateBps,
           durationSeconds,
           7n * 86400n,
+          8000,
         );
 
       await principalToken.transfer(lender.address, principalAmount);
@@ -971,7 +975,9 @@ describe('VouchVault', function () {
       const principal = ethers.parseEther('0.5');
 
       const [, , lender] = await ethers.getSigners();
-      await vault.connect(borrower).createLoan(ethers.ZeroAddress, principal, 0, 0, 7n * 86400n, { value: collateral });
+      await vault
+        .connect(borrower)
+        .createLoan(ethers.ZeroAddress, principal, 0, 0, 7n * 86400n, 8000, { value: collateral });
       await vault.connect(lender).fundLoan(0, { value: principal });
 
       await expect(vault.connect(borrower).repayLoanWithERC20(0, principal)).to.be.revertedWith(
@@ -1004,7 +1010,7 @@ describe('VouchVault', function () {
       const principal = ethers.parseEther('1.0');
       await vault
         .connect(borrower)
-        .createLoan(await token.getAddress(), principal, 3650, 30n * 86400n, 7n * 86400n, { value: collateral });
+        .createLoan(await token.getAddress(), principal, 3650, 30n * 86400n, 7n * 86400n, 8000, { value: collateral });
       await token.mint(lender.address, principal);
       await token.connect(lender).approve(await vault.getAddress(), principal);
       await vault.connect(lender).fundLoanWithERC20(0, await token.getAddress(), principal);
@@ -1054,6 +1060,7 @@ describe('VouchVault', function () {
             interestRateBps,
             0,
             7n * 86400n,
+            8000,
           );
 
         await principalToken.transfer(lender.address, principalAmount);
@@ -1138,7 +1145,7 @@ describe('VouchVault', function () {
 
         await vault
           .connect(borrower)
-          .createLoan(await token.getAddress(), principal, Number(interestRateBps), 60n * 86400n, 7n * 86400n, {
+          .createLoan(await token.getAddress(), principal, Number(interestRateBps), 60n * 86400n, 7n * 86400n, 8000, {
             value: collateral,
           });
         await token.mint(lender.address, principal);
@@ -1196,7 +1203,7 @@ describe('VouchVault', function () {
       const expectedTotalDue = principal + (principal * 3650n * 10n) / (10000n * 365n);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 3650, durationSeconds, 7n * 86400n, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 3650, durationSeconds, 7n * 86400n, 8000, { value: collateral });
       await vault.connect(lender).fundLoan(0, { value: principal });
 
       // Advance past the term so accrued interest is capped at exactly 10 whole days (deterministic).
@@ -1230,7 +1237,7 @@ describe('VouchVault', function () {
       const principal = ethers.parseEther('1.0');
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, interestRateBps, durationSeconds, 7n * 86400n, {
+        .createLoan(ethers.ZeroAddress, principal, interestRateBps, durationSeconds, 7n * 86400n, 8000, {
           value: collateral,
         });
       await vault.connect(lender).fundLoan(0, { value: principal });
@@ -1271,7 +1278,7 @@ describe('VouchVault', function () {
       const principal = ethers.parseEther('1.0');
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, interestRateBps, durationSeconds, 7n * 86400n, {
+        .createLoan(ethers.ZeroAddress, principal, interestRateBps, durationSeconds, 7n * 86400n, 8000, {
           value: collateral,
         });
       await vault.connect(lender).fundLoan(0, { value: principal });
@@ -1353,7 +1360,7 @@ describe('VouchVault', function () {
 
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 3650, 30n * 86400n, 7n * 86400n, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 3650, 30n * 86400n, 7n * 86400n, 8000, { value: collateral });
       await vault.connect(lender).fundLoan(0, { value: principal });
 
       const floor = (principal * 500n) / 10000n; // 0.05 ETH
@@ -1383,7 +1390,7 @@ describe('VouchVault', function () {
 
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 3650, 30n * 86400n, 7n * 86400n, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 3650, 30n * 86400n, 7n * 86400n, 8000, { value: collateral });
       await vault.connect(lender).fundLoan(0, { value: principal });
 
       const floor = (principal * 500n) / 10000n; // 0.05 ETH
@@ -1418,7 +1425,7 @@ describe('VouchVault', function () {
       const principal = ethers.parseEther('1.0');
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 500, 86400, 7n * 86400n, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 500, 86400, 7n * 86400n, 8000, { value: collateral });
       return { vault, owner, borrower, lender, collateral, principal };
     }
 
@@ -1478,6 +1485,7 @@ describe('VouchVault', function () {
           500,
           86400,
           7n * 86400n,
+          8000,
         );
 
       const before = await token.balanceOf(borrower.address);
@@ -1549,7 +1557,7 @@ describe('VouchVault', function () {
       const durationSeconds = 30n * 86400n;
       await vault
         .connect(borrower)
-        .createLoan(await token.getAddress(), principal, 1000, durationSeconds, 7n * 86400n, { value: collateral });
+        .createLoan(await token.getAddress(), principal, 1000, durationSeconds, 7n * 86400n, 8000, { value: collateral });
       await token.mint(lender.address, principal);
       await token.connect(lender).approve(await vault.getAddress(), principal);
       await vault.connect(lender).fundLoanWithERC20(0, await token.getAddress(), principal);
@@ -1596,7 +1604,7 @@ describe('VouchVault', function () {
       // Borrower opens an ETH-principal loan, funded by the rejecting contract.
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 500, 30n * 86400n, 7n * 86400n, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 500, 30n * 86400n, 7n * 86400n, 8000, { value: collateral });
       await rejecter.fund(await vault.getAddress(), 0, { value: principal });
 
       // No time elapsed → no interest; totalDue == principal.
@@ -1627,7 +1635,7 @@ describe('VouchVault', function () {
 
       await vault
         .connect(borrower)
-        .createLoan(tokenAddr, principal, 0, 30n * 86400n, 7n * 86400n, { value: collateral });
+        .createLoan(tokenAddr, principal, 0, 30n * 86400n, 7n * 86400n, 8000, { value: collateral });
 
       await token.mint(lender.address, principal);
       await token.connect(lender).approve(await vault.getAddress(), principal);
@@ -1653,6 +1661,208 @@ describe('VouchVault', function () {
         .withArgs(lender.address, tokenAddr, principal);
       expect((await token.balanceOf(lender.address)) - before).to.equal(principal);
       expect(await vault.pendingPayments(lender.address, tokenAddr)).to.equal(0n);
+    });
+  });
+
+  describe('Chainlink & health factor', function () {
+    async function deployWithFeeds() {
+      const [owner, lender, borrower] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      // ETH/USD at $3200, 8 decimals (standard Chainlink)
+      const ethFeed = await MockAgg.deploy(8, 3200n * 10n ** 8n);
+      // MOCK/USD at $1000, 8 decimals
+      const mockFeed = await MockAgg.deploy(8, 1000n * 10n ** 8n);
+
+      const MockERC20 = await ethers.getContractFactory('MockERC20');
+      const mockToken = await MockERC20.deploy('MOCK', 'MOCK', 18, ethers.parseEther('1000000'));
+
+      await vault.connect(owner).setPriceFeed(ethers.ZeroAddress, await ethFeed.getAddress(), 18);
+      await vault.connect(owner).setPriceFeed(await mockToken.getAddress(), await mockFeed.getAddress(), 18);
+
+      return { vault, ethFeed, mockFeed, mockToken, owner, lender, borrower };
+    }
+
+    it('setPriceFeed reverts for non-owner', async function () {
+      const { vault, ethFeed, borrower } = await deployWithFeeds();
+      await expect(
+        vault.connect(borrower).setPriceFeed(ethers.ZeroAddress, await ethFeed.getAddress(), 18)
+      ).to.be.revertedWithCustomError(vault, 'OwnableUnauthorizedAccount');
+    });
+
+    it('setPriceFeed reverts if decimals_ exceeds 18', async function () {
+      const { vault, ethFeed, owner } = await deployWithFeeds();
+      await expect(
+        vault.connect(owner).setPriceFeed(ethers.ZeroAddress, await ethFeed.getAddress(), 19)
+      ).to.be.revertedWith('Decimals must be <= 18');
+    });
+
+    it('setPriceFeed reverts if decimals_ is 0', async function () {
+      const { vault, ethFeed, owner } = await deployWithFeeds();
+      await expect(
+        vault.connect(owner).setPriceFeed(ethers.ZeroAddress, await ethFeed.getAddress(), 0)
+      ).to.be.revertedWith('Decimals must be > 0');
+    });
+
+    it('getHealthFactor reverts if the price feed reports a stale round', async function () {
+      const { vault, mockToken, ethFeed, lender, borrower } = await deployWithFeeds();
+      const collateral = ethers.parseEther('1');
+      const principal = ethers.parseUnits('2', 18);
+      await vault.connect(borrower).createLoan(
+        await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral }
+      );
+      await mockToken.transfer(lender.address, principal);
+      await mockToken.connect(lender).approve(await vault.getAddress(), principal);
+      await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
+
+      await ethFeed.setStaleRound(true);
+
+      await expect(vault.getHealthFactor(0)).to.be.revertedWith('Stale round');
+    });
+
+    it('getHealthFactor reverts if the price feed reports a future timestamp', async function () {
+      const { vault, mockToken, ethFeed, lender, borrower } = await deployWithFeeds();
+      const collateral = ethers.parseEther('1');
+      const principal = ethers.parseUnits('2', 18);
+      await vault.connect(borrower).createLoan(
+        await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral }
+      );
+      await mockToken.transfer(lender.address, principal);
+      await mockToken.connect(lender).approve(await vault.getAddress(), principal);
+      await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
+
+      const latestBlock = await ethers.provider.getBlock('latest');
+      await ethFeed.setUpdatedAt(latestBlock!.timestamp + 3600);
+
+      await expect(vault.getHealthFactor(0)).to.be.revertedWith('Price timestamp in the future');
+    });
+
+    it('getHealthFactor reverts if the price feed reports decimals > 18', async function () {
+      const { vault, mockToken, ethFeed, lender, borrower } = await deployWithFeeds();
+      const collateral = ethers.parseEther('1');
+      const principal = ethers.parseUnits('2', 18);
+      await vault.connect(borrower).createLoan(
+        await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral }
+      );
+      await mockToken.transfer(lender.address, principal);
+      await mockToken.connect(lender).approve(await vault.getAddress(), principal);
+      await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
+
+      await ethFeed.setDecimals(19);
+
+      await expect(vault.getHealthFactor(0)).to.be.revertedWith('Feed decimals too large');
+    });
+
+    it('getHealthFactor returns correct value for ETH-collateral loan', async function () {
+      // ETH collateral $3200, MOCK principal $1000 each, threshold 8000 bps (80%)
+      // collateral = 1 ETH = 1e18 wei, borrow = 2 MOCK tokens
+      // healthFactor = (1e18 * 3200e18 * 8000 * 1e18) / (2e18 * 1000e18 * 10000)
+      //              = (3200 * 8000 * 1e18) / (2000 * 10000) = 1.28e18
+      const { vault, mockToken, lender, borrower } = await deployWithFeeds();
+
+      const collateral = ethers.parseEther('1');
+      const principal = ethers.parseUnits('2', 18); // 2 MOCK tokens
+      const thresholdBps = 8000;
+
+      await vault.connect(borrower).createLoan(
+        await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, thresholdBps, { value: collateral }
+      );
+
+      // Fund the loan
+      await mockToken.transfer(lender.address, principal);
+      await mockToken.connect(lender).approve(await vault.getAddress(), principal);
+      await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
+
+      const hf = await vault.getHealthFactor(0);
+      // Expected: 1.28e18
+      expect(hf).to.equal(128n * 10n ** 16n);
+    });
+
+    it('getHealthFactor reverts if loan not funded', async function () {
+      const { vault } = await deployWithFeeds();
+      const collateral = ethers.parseEther('1');
+      await vault.createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, { value: collateral });
+      await expect(vault.getHealthFactor(0)).to.be.revertedWith('Loan not funded');
+    });
+
+    it('liquidate reverts if health factor >= 1', async function () {
+      const { vault, mockToken, lender, borrower } = await deployWithFeeds();
+      const collateral = ethers.parseEther('1');
+      const principal = ethers.parseUnits('2', 18);
+      await vault.connect(borrower).createLoan(
+        await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral }
+      );
+      await mockToken.transfer(lender.address, principal);
+      await mockToken.connect(lender).approve(await vault.getAddress(), principal);
+      await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
+
+      await expect(vault.liquidate(0)).to.be.revertedWith('Loan is not undercollateralized');
+    });
+
+    it('liquidate reverts with not implemented when undercollateralized', async function () {
+      const { vault, mockToken, ethFeed, lender, borrower } = await deployWithFeeds();
+      const collateral = ethers.parseEther('1');
+      const principal = ethers.parseUnits('2', 18);
+      await vault.connect(borrower).createLoan(
+        await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral }
+      );
+      await mockToken.transfer(lender.address, principal);
+      await mockToken.connect(lender).approve(await vault.getAddress(), principal);
+      await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
+
+      // Crash ETH price so health factor drops below 1
+      await ethFeed.updateAnswer(100n * 10n ** 8n); // $100
+
+      await expect(vault.liquidate(0))
+        .to.be.revertedWith('liquidate: not implemented');
+    });
+
+    it('getHealthFactor: correct for mismatched token decimals (18-dec collateral, 6-dec principal)', async function () {
+      // ETH (18-dec) collateral @ $3200, USDC (6-dec) principal @ $1
+      // 1 ETH collateral, 1000 USDC principal, threshold 9000 bps (90%)
+      //
+      // normalizedCollateral = 1e18 (ETH, already 18-dec)
+      // normalizedDebt       = 1000 * 1e6 * 1e12 = 1000 * 1e18 (USDC 6->18)
+      // collateralUSD = 1e18 * 3200e18 = 3200e36
+      // debtUSD       = 1000e18 * 1e18 = 1000e36
+      // healthFactor  = (3200e36 * 9000 * 1e18) / (1000e36 * 10000)
+      //               = (3200 * 9000) / (1000 * 10000) * 1e18
+      //               = 2.88e18
+      const { vault, owner, lender, borrower } = await deployWithFeeds();
+
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      // USDC/USD: $1, 8 decimals
+      const usdcFeed = await MockAgg.deploy(8, 1n * 10n ** 8n);
+      await usdcFeed.waitForDeployment();
+
+      const MockERC20 = await ethers.getContractFactory('MockERC20');
+      const usdc = await MockERC20.deploy('USD Coin', 'USDC', 6, 0n);
+      await usdc.waitForDeployment();
+      const usdcAddress = await usdc.getAddress();
+
+      // Register USDC price feed with 6 decimals
+      await vault.connect(owner).setPriceFeed(usdcAddress, await usdcFeed.getAddress(), 6);
+
+      // Mint USDC to lender
+      const principalUsdc = ethers.parseUnits('1000', 6); // 1000 USDC
+      await usdc.mint(lender.address, principalUsdc);
+      await usdc.connect(lender).approve(await vault.getAddress(), principalUsdc);
+
+      // Borrower creates loan: 1 ETH collateral, 1000 USDC principal, threshold 9000 bps
+      const collateralEth = ethers.parseEther('1');
+      await vault.connect(borrower).createLoan(
+        usdcAddress, principalUsdc, 0, 0, 7n * 86400n, 9000, { value: collateralEth }
+      );
+
+      // Lender funds the loan (loan ID is 0 — first loan in this fixture)
+      await vault.connect(lender).fundLoanWithERC20(0, usdcAddress, principalUsdc);
+
+      const hf = await vault.getHealthFactor(0);
+      // Expected: (3200 * 9000) / (1000 * 10000) * 1e18 = 2.88e18
+      const expected = (3200n * 9000n * 10n ** 18n) / (1000n * 10000n);
+      expect(hf).to.equal(expected);
     });
   });
 });

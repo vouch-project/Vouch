@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { getTokenMeta } from '$lib/ltv';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
+  import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
   import TokenAutocomplete from '../ui/TokenAutocomplete.svelte';
 
   let {
@@ -20,10 +20,10 @@
   } = $props();
 
   const collateralUsd = $derived(
-    (parseFloat(collateralAmount) || 0) * getTokenMeta(selectedCollateralToken).priceUsd,
+    (parseFloat(collateralAmount) || 0) * tokenPrices.getTokenMeta(selectedCollateralToken).priceUsd,
   );
   const borrowUsd = $derived(
-    (parseFloat(borrowAmount) || 0) * getTokenMeta(selectedBorrowToken).priceUsd,
+    (parseFloat(borrowAmount) || 0) * tokenPrices.getTokenMeta(selectedBorrowToken).priceUsd,
   );
 </script>
 

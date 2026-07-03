@@ -2,6 +2,7 @@ import { RedisModule } from '@nestjs-modules/ioredis';
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { SupabaseModule } from '../supabase/supabase.module';
+import { PriceFeedService } from './price-feed.service';
 import { TokensService } from './tokens.service';
 
 @Module({
@@ -10,7 +11,7 @@ import { TokensService } from './tokens.service';
     SupabaseModule,
     RedisModule,
   ],
-  providers: [TokensService],
-  exports: [TokensService],
+  providers: [TokensService, PriceFeedService],
+  exports: [TokensService, PriceFeedService],
 })
 export class TokensModule {}

@@ -25,6 +25,7 @@ const createEthLoan = async (
   interestRateBps: number,
   durationSeconds: number,
   fundWindowSeconds: number,
+  liquidationThresholdBps: number,
 ): Promise<ethers.TransactionResponse> => {
   const value = ethers.parseEther(collateralAmount);
   const principalTokenAddress = isNativeToken(principalToken) ? ethers.ZeroAddress : principalToken.address;
@@ -35,6 +36,7 @@ const createEthLoan = async (
     interestRateBps,
     durationSeconds,
     fundWindowSeconds,
+    liquidationThresholdBps,
     { value },
   );
 };
@@ -53,6 +55,7 @@ const createErc20Loan = async (
   interestRateBps: number,
   durationSeconds: number,
   fundWindowSeconds: number,
+  liquidationThresholdBps: number,
 ): Promise<ethers.TransactionResponse> => {
   const amount = ethers.parseUnits(collateralAmount, token.decimals ?? 18);
 
@@ -75,6 +78,7 @@ const createErc20Loan = async (
     interestRateBps,
     durationSeconds,
     fundWindowSeconds,
+    liquidationThresholdBps,
   );
 };
 
@@ -91,6 +95,7 @@ export const createLoan = async (
   interestRateBps: number,
   durationSeconds: number,
   fundWindowSeconds: number,
+  liquidationThresholdBps: number,
 ): Promise<CreateLoanResult> => {
   const contract = await getVouchVaultContract();
 
@@ -103,6 +108,7 @@ export const createLoan = async (
         interestRateBps,
         durationSeconds,
         fundWindowSeconds,
+        liquidationThresholdBps,
       )
     : createErc20Loan(
         contract,
@@ -113,6 +119,7 @@ export const createLoan = async (
         interestRateBps,
         durationSeconds,
         fundWindowSeconds,
+        liquidationThresholdBps,
       ));
 
   const receipt = await tx.wait();
@@ -223,6 +230,16 @@ export const repayLoanWithERC20 = async (
   const receipt = await tx.wait();
   if (!receipt) throw new Error('Transaction failed');
   return receipt;
+};
+
+/**
+ * Returns the health factor for a funded, non-repaid loan.
+ * Scaled to 1e18: 1e18n = 1.0, 1.5e18n = 1.5, etc.
+ * Reverts if loan is not funded or already repaid.
+ */
+export const getHealthFactor = async (onChainLoanId: bigint): Promise<bigint> => {
+  const contract = await getVouchVaultContract();
+  return contract.getHealthFactor(onChainLoanId) as Promise<bigint>;
 };
 
 /**

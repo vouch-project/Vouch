@@ -9,6 +9,7 @@
   import { formatUint256 } from '$lib/formatUint256';
   import { formatLoanTerm } from '$lib/loans/loanMath';
   import { maxLtv } from '$lib/ltv';
+  import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
   import { navLinksMap } from '$lib/navLinks';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { supabase } from '$lib/supabase';
@@ -326,7 +327,7 @@
               {:else}
                 {#each loans as loan (loan.id)}
                   {@const score = scores[loan.borrowerAddress]}
-                  {@const ltv = maxLtv(loan.collateralToken?.symbol, loan.principalToken?.symbol, score)}
+                  {@const ltv = maxLtv(tokenPrices.getTokenMeta(loan.collateralToken?.symbol), tokenPrices.getTokenMeta(loan.principalToken?.symbol), score)}
                   {@const risk = score !== undefined ? getRiskLevel(score) : null}
                   {@const isOwnLoan = wallet.address?.toLowerCase() === loan.borrowerAddress.toLowerCase()}
                   {@const grossApr = Number(loan.interestRate ?? 0) / 100}
