@@ -14,21 +14,31 @@ export class LoggingInterceptor implements NestInterceptor {
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const req = context.switchToHttp().getRequest<Request>();
-    const { method, url } = req;
+    const { method, path } = req;
     const start = Date.now();
 
     return next.handle().pipe(
       tap({
-        next: () => {
+        complete: () => {
           const res = context.switchToHttp().getResponse<Response>();
           this.logger.log(
-            `${method} ${url} ${res.statusCode} ${Date.now() - start}ms`,
+            `${method} ${path} ${res.statusCode} ${Date.now() - start}ms`,
           );
         },
-        error: (err: { status?: number }) => {
-          const status = err?.status ?? 500;
+        error: (err: unknown) => {
+          const anyErr = err as {
+            status?: number;
+            statusCode?: number;
+            getStatus?: () => number;
+          };
+          const status =
+            typeof anyErr?.getStatus === 'function'
+              ? anyErr.getStatus()
+              : anyErr?.statusCode ?? anyErr?.status ?? 500;
+
           this.logger.error(
-            `${method} ${url} ${status} ${Date.now() - start}ms`,
+            `${method} ${path} ${status} ${Date.now() - start}ms`,
+            err instanceof Error ? err.stack : undefined,
           );
         },
       }),
