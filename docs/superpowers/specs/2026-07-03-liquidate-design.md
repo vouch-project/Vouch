@@ -8,20 +8,41 @@ storage-layout append rules are followed as good practice but versioning/migrati
 
 ## Goal
 
-Let anyone repay an undercollateralized loan's full debt on behalf of the lender and, in exchange,
-seize collateral worth the debt plus a liquidation bonus. Any collateral beyond that is returned to
-the borrower. This makes the lender whole and clears the loan.
+Let anyone clear an undercollateralized loan on behalf of the lender. The liquidator pays down the
+loan and, in exchange, seizes the collateral. When the position is healthy-but-liquidatable the
+liquidator pays the full debt, the lender is made whole, and any excess collateral returns to the
+borrower. When the position is underwater the liquidator pays only what the collateral is worth (net
+of the bonus), so liquidation remains profitable and still happens; the lender recovers that amount
+and realizes the shortfall as a loss. Either way the loan ends fully closed.
+
+### What we tell users
+
+Collateralized ≠ risk-free. Like every collateralized lending protocol, a lender can lose money if
+the collateral's market value falls through the loan's safety margin faster than the position can be
+liquidated. The protections are: (1) the per-loan `liquidationThresholdBps` triggers liquidation
+*before* collateral drops below the debt, leaving a cushion; (2) the protocol's own keeper liquidates
+all eligible loans, not just profitable-for-third-parties ones; and (3) when a loss is unavoidable,
+liquidation recovers as much as possible *immediately* rather than letting the position rot. The
+per-loan threshold is the lender's risk dial — lower threshold, bigger cushion.
 
 ## Decisions (settled during brainstorming)
 
-1. **Liquidation model — seize debt + bonus, refund the rest (Aave-style).**
-   Liquidator repays the full debt; receives collateral worth `debt × (1 + bonus)` priced via the
-   existing oracle; excess collateral returns to the borrower. When the position is deep enough
-   underwater that collateral is worth less than `debt × (1 + bonus)`, the seizure caps at the
-   available collateral and the borrower receives nothing.
+1. **Liquidation model — seize collateral, pay lender up to the debt (Aave-style).**
+   The liquidator pays `liquidatorPays = min(debt, collateralValue / (1 + bonus))` and receives the
+   collateral, priced via the existing oracle.
+   - **Healthy-but-liquidatable** (`collateralValue ≥ debt × (1 + bonus)`): `liquidatorPays == debt`,
+     lender is made whole, liquidator seizes collateral worth `debt × (1 + bonus)`, and the excess
+     collateral returns to the borrower.
+   - **Underwater** (`collateralValue < debt × (1 + bonus)`): `liquidatorPays < debt`, the liquidator
+     takes **all** the collateral (still profiting by the bonus over what they paid), the borrower
+     gets nothing, and the lender realizes a loss of `debt − liquidatorPays`.
+   The two cases share one formula; the second is not a special-case branch, it's the same
+   `min(...)` binding to its other argument.
 
-2. **Full liquidation only** (no partial / close-factor). The liquidator must repay exactly the
-   current debt. Keeps state transitions simple: the loan goes straight to fully-repaid/inactive.
+2. **Full close only** (no partial / close-factor). One `liquidate` call clears the whole loan: the
+   loan goes straight to fully-repaid/inactive. "Full close" refers to the loan lifecycle, not to the
+   payment amount — the amount paid is `liquidatorPays`, which may be less than the debt when
+   underwater.
 
 3. **Liquidation bonus — owner-settable bps with a hard cap** (mirrors `protocolFeeBps` /
    `minInterestBps`). Default `500` (5%), capped at `MAX_LIQUIDATION_BONUS_BPS = 2000` (20%).
@@ -66,7 +87,7 @@ Replace the existing declaration:
 event LoanLiquidated(
     uint256 indexed loanId,
     address indexed liquidator,
-    uint256 debtPaid,
+    uint256 amountPaid,          // liquidatorPays: full debt when healthy, < debt when underwater
     uint256 collateralSeized,
     uint256 collateralReturned,
     uint256 timestamp
@@ -75,29 +96,32 @@ event LoanLiquidated(
 
 ### External entry points
 
+`liquidatorPays` depends on oracle math computed *inside* `_liquidate`, so it can't be required to
+equal a fixed amount up front. Instead each entry point takes a **ceiling** — the most the caller is
+willing to pay — which doubles as slippage protection against a price/interest move between
+transaction submission and mining. The contract charges the computed `liquidatorPays` (≤ ceiling) and
+returns any surplus.
+
 ```solidity
-/// ETH-principal loans. msg.value must equal the current debt.
+/// ETH-principal loans. Send at least the amount owed; any surplus msg.value is refunded.
 function liquidate(uint256 loanId) external payable nonReentrant {
     Loan storage loan = loans[loanId];
     require(loan.requestedPrincipalToken == address(0), "Loan has ERC20 principal; use liquidateWithERC20");
-    _liquidate(loan, loanId, msg.value);
+    _liquidate(loan, loanId, msg.value);   // msg.value is the ceiling; surplus refunded to msg.sender
 }
 
-/// ERC20-principal loans. Pulls `amount` (must equal the current debt) via transferFrom.
-function liquidateWithERC20(uint256 loanId, uint256 amount) external nonReentrant {
+/// ERC20-principal loans. `maxAmount` bounds what the caller will pay; exactly `liquidatorPays`
+/// (<= maxAmount) is pulled via transferFrom.
+function liquidateWithERC20(uint256 loanId, uint256 maxAmount) external nonReentrant {
     Loan storage loan = loans[loanId];
     require(loan.requestedPrincipalToken != address(0), "Loan has ETH principal; use liquidate");
-    // Fee-on-transfer guard, identical to repayLoanWithERC20: payouts assume the vault
-    // received exactly `amount`.
-    uint256 balanceBefore = IERC20(loan.requestedPrincipalToken).balanceOf(address(this));
-    IERC20(loan.requestedPrincipalToken).safeTransferFrom(msg.sender, address(this), amount);
-    uint256 received = IERC20(loan.requestedPrincipalToken).balanceOf(address(this)) - balanceBefore;
-    require(received == amount, "Fee-on-transfer principal not supported");
-    _liquidate(loan, loanId, amount);
+    _liquidate(loan, loanId, maxAmount);   // maxAmount is the ceiling; exact amount pulled inside
 }
 ```
 
-### Internal core `_liquidate(Loan storage loan, uint256 loanId, uint256 debtPaid)`
+### Internal core `_liquidate(Loan storage loan, uint256 loanId, uint256 maxPay)`
+
+`maxPay` is the caller-authorized ceiling (ETH `msg.value`, or the ERC20 `maxAmount`).
 
 Order of operations:
 
@@ -112,57 +136,91 @@ Order of operations:
    interestOutstanding  = interestAccrued > interestAlreadyPaid ? interestAccrued - interestAlreadyPaid : 0
    outstandingPrincipal = principalAmount - principalRepaid
    debt                 = interestOutstanding + outstandingPrincipal
-   require(debtPaid == debt, "Payment must equal debt");
    ```
-5. **Compute seizure** (oracle-priced, with bonus, capped):
+5. **Price collateral and compute seizure + payment** (oracle-priced, with bonus):
    ```
    lockedCollateral = collateralAmount - collateralReleased
 
    collateralPrice = _getPrice(loan.collateralToken)
    principalPrice  = _getPrice(loan.requestedPrincipalToken)
 
-   normalizedDebt = _normalizeAmount(loan.requestedPrincipalToken, debt)
-   debtUSD        = normalizedDebt.mulDiv(principalPrice, 1e18)
-   seizeUSD       = debtUSD.mulDiv(10000 + liquidationBonusBps, 10000)
+   // Full-debt seizure target, in collateral token units.
+   normalizedDebt   = _normalizeAmount(loan.requestedPrincipalToken, debt)
+   debtUSD          = normalizedDebt.mulDiv(principalPrice, 1e18)
+   seizeUSD         = debtUSD.mulDiv(10000 + liquidationBonusBps, 10000)
+   normalizedSeize  = seizeUSD.mulDiv(1e18, collateralPrice)            // 18-dec collateral units
+   targetCollateral = _denormalizeAmount(loan.collateralToken, normalizedSeize)
 
-   // Convert seizeUSD -> collateral token units, then de-normalize back to the token's decimals.
-   normalizedSeize = seizeUSD.mulDiv(1e18, collateralPrice)      // 18-dec collateral units
-   seizeCollateral = _denormalizeAmount(loan.collateralToken, normalizedSeize)
-   if (seizeCollateral > lockedCollateral) seizeCollateral = lockedCollateral   // underwater cap
-
-   collateralReturned = lockedCollateral - seizeCollateral       // excess back to borrower
+   if (targetCollateral <= lockedCollateral) {
+       // Healthy-but-liquidatable: seize debt+bonus worth, refund the rest, pay full debt.
+       seizeCollateral    = targetCollateral
+       collateralReturned = lockedCollateral - seizeCollateral
+       liquidatorPays     = debt
+   } else {
+       // Underwater: seize ALL collateral, borrower gets nothing, liquidator pays what the
+       // collateral is worth net of the bonus (still profitable), lender eats the shortfall.
+       seizeCollateral    = lockedCollateral
+       collateralReturned = 0
+       // collateralValue / (1 + bonus), expressed in principal-token units.
+       lockedUSD          = _normalizeAmount(loan.collateralToken, lockedCollateral).mulDiv(collateralPrice, 1e18)
+       payUSD             = lockedUSD.mulDiv(10000, 10000 + liquidationBonusBps)
+       normalizedPay      = payUSD.mulDiv(1e18, principalPrice)         // 18-dec principal units
+       liquidatorPays     = _denormalizeAmount(loan.requestedPrincipalToken, normalizedPay)
+       if (liquidatorPays > debt) liquidatorPays = debt;               // never charge above debt
+   }
    ```
-   A small internal helper `_denormalizeAmount` (inverse of `_normalizeAmount`) is added, since the
-   contract currently only normalizes *up* to 18 decimals and here we must go back to the collateral
-   token's native decimals to transfer the right amount.
-6. **Update state** (loan fully closed):
+   Two small internal helpers are added: `_denormalizeAmount` (inverse of the existing
+   `_normalizeAmount`), since the contract currently only normalizes *up* to 18 decimals and here we
+   must return values in each token's native decimals.
+6. **Collect payment against the ceiling**:
    ```
-   loan.amountRepaid    += debtPaid
-   loan.principalRepaid  = loan.principalAmount
+   require(liquidatorPays <= maxPay, "Exceeds max payment");
+   ```
+   - **ETH** (`requestedPrincipalToken == address(0)`): the vault already holds `msg.value`; refund
+     the surplus `maxPay - liquidatorPays` to `msg.sender` via `_payoutEth` at the end (see payouts).
+   - **ERC20**: pull exactly `liquidatorPays` via `safeTransferFrom(msg.sender, this, liquidatorPays)`
+     with the fee-on-transfer guard (`balanceBefore`/`received`) identical to `repayLoanWithERC20`.
+     Nothing to refund — only the exact amount is pulled.
+7. **Determine the interest portion actually covered** (for the protocol fee). When underwater,
+   `liquidatorPays < debt`; interest-first accounting means the payment covers interest before
+   principal, so `interestPaid = min(liquidatorPays, interestOutstanding)`:
+   ```
+   interestPaid = liquidatorPays < interestOutstanding ? liquidatorPays : interestOutstanding
+   principalPaid = liquidatorPays - interestPaid
+   protocolFee   = _protocolFee(interestPaid)
+   ```
+8. **Update state** (loan fully closed regardless of shortfall):
+   ```
+   loan.amountRepaid      += liquidatorPays
+   loan.principalRepaid   += principalPaid       // == principalAmount only when not underwater
    loan.collateralReleased = loan.collateralAmount
-   loan.repaid           = true
-   loan.active           = false
-   loan.collateralLocked = false
+   loan.repaid            = true
+   loan.active            = false
+   loan.collateralLocked  = false
    ```
-7. **Payouts** (reusing existing helpers — hybrid direct-then-credit, so a reverting recipient can
+   Note `principalRepaid` may end below `principalAmount` when underwater — that gap is the lender's
+   realized loss and is intentional; the loan is still closed (`repaid = true`).
+9. **Payouts** (reusing existing helpers — hybrid direct-then-credit, so a reverting recipient can
    never brick the liquidation):
-   - Protocol fee on the interest portion: `protocolFee = _protocolFee(interestOutstanding)`.
-   - Lender: `debtPaid - protocolFee` in the principal token (`_payoutEth` / `_payoutToken`).
-   - Treasury: `protocolFee` (emit `ProtocolFeeCollected`).
-   - Liquidator: `seizeCollateral` of the collateral token (ETH branch decrements
+   - Lender: `liquidatorPays - protocolFee` in the principal token (`_payoutEth` / `_payoutToken`).
+   - Treasury: `protocolFee` (emit `ProtocolFeeCollected`) when > 0.
+   - Liquidator: `seizeCollateral` of the collateral token (ETH-collateral branch decrements
      `lockedEthCollateral[borrower]` by `lockedCollateral`; ERC20 branch uses `safeTransfer`).
-   - Borrower: `collateralReturned` of the collateral token (same branch handling).
-   - The `lockedEthCollateral[borrower]` decrement (when collateral is ETH) is the *full*
-     `lockedCollateral`, done once, since both the seized and returned portions leave the locked pool.
-8. **Emit** `LoanLiquidated(loanId, msg.sender, debtPaid, seizeCollateral, collateralReturned, block.timestamp)`.
+   - Borrower: `collateralReturned` of the collateral token (same branch handling; 0 when underwater).
+   - **ETH-principal surplus refund**: `_payoutEth(msg.sender, maxPay - liquidatorPays)` when > 0.
+   - The `lockedEthCollateral[borrower]` decrement (ETH collateral) is the *full* `lockedCollateral`,
+     done once, since both the seized and returned portions leave the locked pool.
+10. **Emit** `LoanLiquidated(loanId, msg.sender, liquidatorPays, seizeCollateral, collateralReturned, block.timestamp)`.
 
 ## Edge cases
 
 | Case | Handling |
 |------|----------|
 | Loan healthy (HF ≥ 1e18) | Reverts `Loan is not undercollateralized`. |
-| Wrong payment amount | `require(debtPaid == debt)` reverts. |
-| Deeply underwater (collateral worth < debt+bonus) | `seizeCollateral` caps at `lockedCollateral`; borrower gets nothing; liquidator still pays full debt (rational liquidators self-select — accepted for this reputation-backed protocol). |
+| Ceiling too low | `require(liquidatorPays <= maxPay)` reverts `Exceeds max payment` (slippage guard). |
+| Healthy-but-liquidatable | Seize `debt × (1+bonus)` worth of collateral, refund excess to borrower, lender paid full debt. |
+| Underwater (collateral worth < debt+bonus) | Seize ALL collateral; borrower gets nothing; liquidator pays `collateralValue/(1+bonus)` (still profits by the bonus, capped at debt); lender realizes `debt − liquidatorPays` as a loss. Loan still closes. |
+| ETH surplus | Any `msg.value` above `liquidatorPays` is refunded to the liquidator. |
 | Reentrancy | `nonReentrant` on both external entry points. |
 | Stale / zero / future oracle price | Inherited from `_getPrice` guards via `getHealthFactor` and the seizure pricing. |
 | Reverting lender / treasury / borrower on payout | Hybrid `_payoutEth` / `_payoutToken` fall back to credited pull-payments. |
@@ -174,18 +232,27 @@ Order of operations:
 
 Replace the two existing stub tests (`liquidate reverts with not implemented ...`) and add:
 
-- Successful **ETH-principal** liquidation: lender credited debt−fee, liquidator receives seized
-  collateral, borrower receives excess, loan marked repaid/inactive, event fields correct.
-- Successful **ERC20-principal** liquidation (via `liquidateWithERC20`): same assertions.
-- **Bonus math**: assert `seizeCollateral` equals `debtUSD × (1+bonus)` converted to collateral
-  units for a known price/threshold setup.
+- **Healthy-but-liquidatable, ETH principal**: liquidator pays full debt, lender credited debt−fee,
+  liquidator receives `debt × (1+bonus)` worth of collateral, borrower receives the excess, loan
+  marked repaid/inactive, event fields correct.
+- **Healthy-but-liquidatable, ERC20 principal** (via `liquidateWithERC20`): same assertions; assert
+  exactly `liquidatorPays` is pulled (not `maxAmount`).
+- **Bonus math**: assert `seizeCollateral` equals `debtUSD × (1+bonus)` converted to collateral units
+  for a known price/threshold setup.
 - **Excess to borrower**: over-collateralized-but-liquidatable position returns the remainder.
-- **Underwater cap**: crash price so collateral < debt+bonus; liquidator gets all collateral,
-  borrower gets nothing, lender still credited full debt.
-- **Reverts**: healthy loan; wrong `debtPaid`/`msg.value`; wrong entry point for principal type;
-  already-repaid / inactive loan.
-- **Protocol fee** routed to treasury on the interest portion.
-- **Mismatched decimals** (e.g. 18-dec ETH collateral, 6-dec USDC principal) seizure amount correct.
+- **Underwater**: crash price so collateral < debt+bonus. Liquidator receives ALL collateral and pays
+  `collateralValue/(1+bonus)` (< debt); borrower gets nothing; lender credited that reduced amount
+  (the shortfall `debt − liquidatorPays` is the lender's realized loss); `principalRepaid` ends below
+  `principalAmount`; loan still `repaid`/inactive; `amountPaid` in the event equals `liquidatorPays`.
+- **ETH surplus refund**: send `msg.value > liquidatorPays`; assert the surplus is returned to the
+  liquidator (net of gas).
+- **Ceiling too low**: `maxAmount` / `msg.value` below `liquidatorPays` reverts `Exceeds max payment`.
+- **Reverts**: healthy loan (`Loan is not undercollateralized`); wrong entry point for principal type;
+  already-repaid / inactive / unfunded loan.
+- **Protocol fee** routed to treasury on the interest portion (both healthy and underwater — assert
+  the fee is taken on `interestPaid`, which is capped by `liquidatorPays` when underwater).
+- **Mismatched decimals** (e.g. 18-dec ETH collateral, 6-dec USDC principal) seizure and payment
+  amounts correct.
 - `setLiquidationBonusBps`: owner-only, cap enforcement, `LiquidationBonusUpdated` event.
 - **Reentrancy**: a malicious collateral/principal token or recipient cannot re-enter.
 
