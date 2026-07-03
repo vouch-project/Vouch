@@ -774,17 +774,20 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 normalizedCollateral = _normalizeAmount(loan.collateralToken, lockedCollateral);
         uint256 normalizedDebt       = _normalizeAmount(loan.requestedPrincipalToken, remainingDebt);
 
-        // Prices are 1e18-scaled USD per token-unit.
-        uint256 lockedCollateralUSD = normalizedCollateral * collateralPrice;
-        uint256 remainingDebtUSD    = normalizedDebt * principalPrice;
+        // Prices are 1e18-scaled USD per token-unit. Both amount and price are
+        // already ~1e18-scale, so a plain amount * price intermediate is ~1e36 and
+        // can exceed uint256 for a sufficiently large deposit/price combination
+        // even though the real-world USD value is always representable. mulDiv
+        // divides by 1e18 in the same step, so the ~1e36 intermediate this
+        // produces internally uses 512-bit precision and never needs to fit in
+        // uint256 on its own — only the final (properly 1e18-scaled) result does.
+        uint256 lockedCollateralUSD = normalizedCollateral.mulDiv(collateralPrice, 1e18);
+        uint256 remainingDebtUSD    = normalizedDebt.mulDiv(principalPrice, 1e18);
 
         // healthFactor is scaled to 1e18; >= 1e18 means healthy.
-        // lockedCollateralUSD is already ~1e36-scale; multiplying it again by
-        // liquidationThresholdBps * 1e18 before dividing can exceed uint256 as a
-        // plain intermediate for large enough loans, even though the final ratio
-        // is always small. mulDiv(x, y, denominator) computes x*y/denominator using
-        // 512-bit precision internally, so that product never needs to fit in
-        // uint256 on its own — only the final result does.
+        // Same reasoning applies here: lockedCollateralUSD * liquidationThresholdBps
+        // * 1e18 before dividing can exceed uint256 as a plain intermediate for
+        // large enough loans, even though the final ratio is always small.
         uint256 thresholdScaled = uint256(loan.liquidationThresholdBps) * 1e18;
         return lockedCollateralUSD.mulDiv(thresholdScaled, remainingDebtUSD * 10000);
     }

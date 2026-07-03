@@ -20,20 +20,27 @@ async function updatePriceFeedAddress(
   const maxAttempts = 10;
   const delayMs = 1000;
 
+  // The tokens table stores EIP-55 checksummed addresses (TokensService writes
+  // them via validAddress -> ethers.getAddress). tokenAddress here can come
+  // straight from .env (e.g. HARDCODED_MOCK_ERC20_ADDRESS), which isn't
+  // guaranteed to already be checksummed — normalize before comparing, or the
+  // UPDATE silently matches 0 rows even when the token row exists.
+  const checksummedAddress = ethers.getAddress(tokenAddress);
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const result = await db.query(
       `UPDATE tokens
        SET price_feed_address = $1
        WHERE "chainId" = (SELECT id FROM chains WHERE "networkId" = $2)
          AND address = $3`,
-      [feedAddress, networkId, tokenAddress],
+      [feedAddress, networkId, checksummedAddress],
     );
 
     if (result.rowCount && result.rowCount > 0) return;
 
     if (attempt === maxAttempts) {
       console.warn(
-        `Warning: no tokens row found for address ${tokenAddress} on networkId ${networkId} after ${maxAttempts} attempts — ` +
+        `Warning: no tokens row found for address ${checksummedAddress} on networkId ${networkId} after ${maxAttempts} attempts — ` +
           'price_feed_address was NOT set. Is the API running (TokensService syncs the tokens table on startup)?',
       );
       return;

@@ -18,6 +18,7 @@ const AGGREGATOR_ABI = [
 const STALE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
 const REDIS_KEY = 'prices:cache';
 const REDIS_TTL = 30; // seconds
+const DEFAULT_INTERVAL_MS = 60000;
 
 // Keyed by "chainId:address" — tokens are only unique per chain (see the
 // tokens_chainId_address_unique index), and symbols can collide across chains.
@@ -37,9 +38,16 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
     private readonly configService: ConfigService,
     @InjectRedis() private readonly redis: Redis,
   ) {
-    this.intervalMs = Number(
-      this.configService.get<string>('PRICE_FEED_INTERVAL_MS') ?? '60000',
+    const configured = Number(
+      this.configService.get<string>('PRICE_FEED_INTERVAL_MS'),
     );
+    // A non-numeric PRICE_FEED_INTERVAL_MS would otherwise make setInterval run
+    // effectively immediately (Node clamps a NaN delay to ~1ms), hammering the
+    // RPC provider, DB, and Redis on every tick.
+    this.intervalMs =
+      Number.isFinite(configured) && configured > 0
+        ? configured
+        : DEFAULT_INTERVAL_MS;
   }
 
   async onModuleInit() {
@@ -130,9 +138,29 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
               );
               return;
             }
-            if (Date.now() - Number(updatedAt) * 1000 > STALE_THRESHOLD_MS) {
+            const updatedAtMs = Number(updatedAt) * 1000;
+            // Without this check, a feed reporting a future timestamp would make
+            // Date.now() - updatedAtMs negative — which is always <= the staleness
+            // threshold, so the price would be wrongly treated as fresh.
+            if (updatedAtMs > Date.now()) {
+              this.logger.warn(
+                `Future timestamp for chain ${token.chainId} ${token.symbol}`,
+              );
+              return;
+            }
+            if (Date.now() - updatedAtMs > STALE_THRESHOLD_MS) {
               this.logger.warn(
                 `Stale price for chain ${token.chainId} ${token.symbol}`,
+              );
+              return;
+            }
+            // decimals is untrusted external input (the feed contract's own
+            // decimals() call); VouchVault._getPrice caps at 18 for the same
+            // reason — without this, the API could cache a price the contract
+            // would itself reject.
+            if (decimals > 18) {
+              this.logger.warn(
+                `Feed decimals too large for chain ${token.chainId} ${token.symbol}`,
               );
               return;
             }
