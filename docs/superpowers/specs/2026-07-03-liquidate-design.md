@@ -44,6 +44,15 @@ per-loan threshold is the lender's risk dial — lower threshold, bigger cushion
    payment amount — the amount paid is `liquidatorPays`, which may be less than the debt when
    underwater.
 
+3. **Two liquidation triggers — undercollateralized OR expired.** A loan is liquidatable when either:
+   - `getHealthFactor(loanId) < 1e18` — collateral value has fallen below the threshold, or
+   - `loan.durationSeconds > 0 && block.timestamp > loan.fundedAt + loan.durationSeconds` — the loan
+     term expired and the borrower never repaid.
+   The keeper bot handles both cases automatically so neither trigger depends on lender action.
+   When a loan is healthy-but-expired the borrower still receives any excess collateral (the bonus
+   comes out of their surplus, a fair consequence of time default). The revert message is
+   `"Loan is not liquidatable"` to cover both triggers.
+
 3. **Liquidation bonus — owner-settable bps with a hard cap** (mirrors `protocolFeeBps` /
    `minInterestBps`). Default `500` (5%), capped at `MAX_LIQUIDATION_BONUS_BPS = 2000` (20%).
 
@@ -128,8 +137,16 @@ Order of operations:
 1. **Validate loan state**: `require(loan.funded)`, `require(loan.active)`, `require(!loan.repaid)`.
 2. **Crystallize interest**: `_accrue(loan)` — so the debt reflects whole-day interest up to now,
    consistent with the repayment path.
-3. **Eligibility**: `require(getHealthFactor(loanId) < 1e18, "Loan is not undercollateralized")`.
-   (`getHealthFactor` re-reads the same crystallized state and enforces the oracle staleness guards.)
+3. **Eligibility** — either trigger suffices:
+   ```
+   bool undercollateralized = getHealthFactor(loanId) < 1e18;
+   bool expired = loan.durationSeconds > 0
+       && block.timestamp > loan.fundedAt + loan.durationSeconds;
+   require(undercollateralized || expired, "Loan is not liquidatable");
+   ```
+   `getHealthFactor` enforces oracle staleness guards; for expired-but-healthy loans the health factor
+   check is skipped via short-circuit if `expired` is true, so a stale price feed cannot block
+   liquidation of a genuinely time-defaulted loan.
 4. **Compute debt** (same formula as the repayment functions):
    ```
    interestAlreadyPaid  = amountRepaid - principalRepaid
@@ -218,13 +235,14 @@ Order of operations:
 
 | Case | Handling |
 |------|----------|
-| Loan healthy (HF ≥ 1e18) | Reverts `Loan is not undercollateralized`. |
+| Loan healthy and not expired | Reverts `Loan is not liquidatable`. |
+| Loan expired (past `fundedAt + durationSeconds`) | Liquidatable regardless of health factor; same seizure math applies; borrower receives excess collateral if healthy. |
 | Ceiling too low | `require(liquidatorPays <= maxPay)` reverts `Exceeds max payment` (slippage guard). |
 | Healthy-but-liquidatable | Seize `debt × (1+bonus)` worth of collateral, refund excess to borrower, lender paid full debt. |
 | Underwater (collateral worth < debt+bonus) | Seize ALL collateral; borrower gets nothing; liquidator pays `collateralValue/(1+bonus)` (still profits by the bonus, capped at debt); lender receives full `liquidatorPays` (no fee, maximizing recovery); lender realizes `debt − liquidatorPays` as a loss. Loan still closes. |
 | ETH surplus | Any `msg.value` above `liquidatorPays` is refunded to the liquidator. |
 | Reentrancy | `nonReentrant` on both external entry points. |
-| Stale / zero / future oracle price | Inherited from `_getPrice` guards via `getHealthFactor` and the seizure pricing. |
+| Stale / zero / future oracle price | Inherited from `_getPrice` guards. For the eligibility check, `expired` is evaluated first — a stale feed cannot block liquidation of a time-defaulted loan. Seizure pricing still requires a fresh feed. |
 | Reverting lender / treasury / borrower on payout | Hybrid `_payoutEth` / `_payoutToken` fall back to credited pull-payments. |
 | Collateral token == principal token | Handled naturally; payouts are independent transfers. |
 | ETH vs ERC20 collateral | Existing branch pattern (`collateralToken == address(0)`). |
@@ -249,8 +267,10 @@ Replace the two existing stub tests (`liquidate reverts with not implemented ...
 - **ETH surplus refund**: send `msg.value > liquidatorPays`; assert the surplus is returned to the
   liquidator (net of gas).
 - **Ceiling too low**: `maxAmount` / `msg.value` below `liquidatorPays` reverts `Exceeds max payment`.
-- **Reverts**: healthy loan (`Loan is not undercollateralized`); wrong entry point for principal type;
-  already-repaid / inactive / unfunded loan.
+- **Expired-but-healthy**: advance time past `fundedAt + durationSeconds`; assert liquidation
+  succeeds, borrower receives excess collateral, lender credited full debt minus fee.
+- **Reverts**: healthy non-expired loan (`Loan is not liquidatable`); wrong entry point for principal
+  type; already-repaid / inactive / unfunded loan.
 - **Protocol fee** routed to treasury on the interest portion for a healthy close; assert fee is
   zero and lender receives the full `liquidatorPays` when underwater.
 - **Mismatched decimals** (e.g. 18-dec ETH collateral, 6-dec USDC principal) seizure and payment
