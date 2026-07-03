@@ -1798,7 +1798,7 @@ describe('VouchVault', function () {
       await mockToken.connect(lender).approve(await vault.getAddress(), principal);
       await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
 
-      await expect(vault.liquidate(0))
+      await expect(vault.liquidate(0, ethers.ZeroAddress))
         .to.be.revertedWith('Loan has ERC20 principal; use liquidateWithERC20');
     });
 
@@ -1911,7 +1911,7 @@ describe('VouchVault', function () {
         await mockToken.connect(lender).approve(await vault.getAddress(), principal);
         await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
         // ETH principal route should reject for an ERC20-principal loan
-        await expect(vault.liquidate(0, { value: principal }))
+        await expect(vault.liquidate(0, ethers.ZeroAddress, { value: principal }))
           .to.be.revertedWith('Loan has ERC20 principal; use liquidateWithERC20');
       });
 
@@ -1919,7 +1919,7 @@ describe('VouchVault', function () {
         const { vault } = await deployWithFeeds();
         const collateral = ethers.parseEther('1');
         await vault.createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, { value: collateral });
-        await expect(vault.liquidate(0, { value: collateral }))
+        await expect(vault.liquidate(0, ethers.ZeroAddress, { value: collateral }))
           .to.be.revertedWith('Loan is not funded');
       });
     });
@@ -1928,7 +1928,7 @@ describe('VouchVault', function () {
       it('reverts on a healthy non-expired loan', async function () {
         const { vault, mockToken, lender, borrower } = await deployForLiquidation();
         // health factor > 1 → not liquidatable
-        await expect(vault.liquidateWithERC20(0, ethers.parseUnits('2', 18)))
+        await expect(vault.liquidateWithERC20(0, ethers.parseUnits('2', 18), ethers.ZeroAddress))
           .to.be.revertedWith('Loan is not liquidatable');
       });
 
@@ -1937,7 +1937,7 @@ describe('VouchVault', function () {
         const collateral = ethers.parseEther('1');
         // ETH-principal loan
         await vault.createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, { value: collateral });
-        await expect(vault.liquidateWithERC20(0, collateral))
+        await expect(vault.liquidateWithERC20(0, collateral, ethers.ZeroAddress))
           .to.be.revertedWith('Loan has ETH principal; use liquidate');
       });
 
@@ -1947,7 +1947,7 @@ describe('VouchVault', function () {
         const principal = ethers.parseUnits('2', 18);
         await mockToken.connect(borrower).approve(await vault.getAddress(), principal);
         await vault.connect(borrower).repayLoanWithERC20(0, principal);
-        await expect(vault.liquidateWithERC20(0, principal))
+        await expect(vault.liquidateWithERC20(0, principal, ethers.ZeroAddress))
           .to.be.revertedWith('Loan already repaid');
       });
 
@@ -1981,7 +1981,7 @@ describe('VouchVault', function () {
         const expectedExcess    = ethers.parseEther('1') - expectedSeize; // 0.125 ETH
 
         // Protocol fee = 0 (no interest accrued, interest-rate 0)
-        const tx = await vault.connect(liquidator).liquidateWithERC20(0, debt);
+        const tx = await vault.connect(liquidator).liquidateWithERC20(0, debt, ethers.ZeroAddress);
         const receipt = await tx.wait();
 
         await expect(tx)
@@ -2048,7 +2048,7 @@ describe('VouchVault', function () {
         const treasuryBefore = await mockToken.balanceOf(treasury);
         const lenderBefore   = await mockToken.balanceOf(lender.address);
 
-        await vault.connect(liquidator).liquidateWithERC20(0, debt);
+        await vault.connect(liquidator).liquidateWithERC20(0, debt, ethers.ZeroAddress);
 
         // protocolFee = 10% of 0.2 MOCK = 0.02 MOCK
         const fee = ethers.parseUnits('0.02', 18);
@@ -2086,7 +2086,7 @@ describe('VouchVault', function () {
         const borrowerEthBefore = await ethers.provider.getBalance(borrower.address);
         const liquidatorEthBefore = await ethers.provider.getBalance(liquidator.address);
 
-        const tx = await vault.connect(liquidator).liquidateWithERC20(0, expectedPay + 1n);
+        const tx = await vault.connect(liquidator).liquidateWithERC20(0, expectedPay + 1n, ethers.ZeroAddress);
         const receipt = await tx.wait();
 
         // All collateral goes to liquidator
@@ -2120,7 +2120,7 @@ describe('VouchVault', function () {
         const tooLow = ethers.parseUnits('1', 18); // less than debt (2 MOCK)
         await mockToken.transfer(liquidator.address, tooLow);
         await mockToken.connect(liquidator).approve(await vault.getAddress(), tooLow);
-        await expect(vault.connect(liquidator).liquidateWithERC20(0, tooLow))
+        await expect(vault.connect(liquidator).liquidateWithERC20(0, tooLow, ethers.ZeroAddress))
           .to.be.revertedWith('Exceeds max payment');
       });
 
@@ -2156,7 +2156,7 @@ describe('VouchVault', function () {
         await mockToken.connect(liquidator).approve(await vault.getAddress(), debt);
 
         // Should succeed even though HF > 1
-        await expect(vault.connect(liquidator).liquidateWithERC20(0, debt))
+        await expect(vault.connect(liquidator).liquidateWithERC20(0, debt, ethers.ZeroAddress))
           .to.emit(vault, 'LoanLiquidated');
 
         const loan = await vault.loans(0);
@@ -2172,8 +2172,34 @@ describe('VouchVault', function () {
         await ethFeed.updateAnswer(3200n * 10n ** 8n);
         await mockFeed.updateAnswer(1000n * 10n ** 8n);
         // HF still > 1 (price unchanged at $3200)
-        await expect(vault.liquidateWithERC20(0, ethers.parseUnits('2', 18)))
+        await expect(vault.liquidateWithERC20(0, ethers.parseUnits('2', 18), ethers.ZeroAddress))
           .to.be.revertedWith('Loan is not liquidatable');
+      });
+
+      it('explicit collateralRecipient receives seized collateral instead of msg.sender', async function () {
+        const { vault, mockToken, ethFeed, lender, borrower } = await deployForLiquidation();
+        const signers = await ethers.getSigners();
+        const liquidator = signers[3];
+        const treasury   = signers[4];
+
+        await ethFeed.updateAnswer(2400n * 10n ** 8n); // HF < 1, healthy close
+
+        const debt = ethers.parseUnits('2', 18);
+        await mockToken.transfer(liquidator.address, debt);
+        await mockToken.connect(liquidator).approve(await vault.getAddress(), debt);
+
+        const treasuryEthBefore   = await ethers.provider.getBalance(treasury.address);
+        const liquidatorEthBefore = await ethers.provider.getBalance(liquidator.address);
+
+        const tx = await vault.connect(liquidator).liquidateWithERC20(0, debt, treasury.address);
+        const receipt = await tx.wait();
+        const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
+
+        // seize = debt($2000) * 1.05 / $2400 = 2000*1.05/2400 ETH = 0.875 ETH
+        const expectedSeize = (2000n * 10n**18n * 10500n) / (10000n * 2400n);
+        expect(await ethers.provider.getBalance(treasury.address) - treasuryEthBefore).to.equal(expectedSeize);
+        // Liquidator ETH balance only decreases by gas (no collateral received)
+        expect(liquidatorEthBefore - (await ethers.provider.getBalance(liquidator.address))).to.equal(gasUsed);
       });
 
       it('mismatched decimals: 18-dec ETH collateral, 6-dec USDC principal', async function () {
@@ -2218,7 +2244,7 @@ describe('VouchVault', function () {
         const liquidatorEthBefore  = await ethers.provider.getBalance(liquidator.address);
         const lenderUsdcBefore     = await usdc.balanceOf(lender.address);
 
-        const tx = await vault.connect(liquidator).liquidateWithERC20(0, principalUsdc);
+        const tx = await vault.connect(liquidator).liquidateWithERC20(0, principalUsdc, ethers.ZeroAddress);
         const receipt = await tx.wait();
         const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
 

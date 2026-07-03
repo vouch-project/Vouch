@@ -843,26 +843,30 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     /**
      * @notice Liquidate an undercollateralized or expired ETH-principal loan.
-     * @dev    Send at least the computed liquidatorPays as msg.value; any surplus is refunded.
-     *         See liquidateWithERC20 for ERC20-principal loans.
+     * @dev    Send at least the computed liquidatorPays as msg.value; any surplus is refunded
+     *         to msg.sender. Seized collateral is sent to `collateralRecipient`
+     *         (address(0) defaults to msg.sender — useful for bots routing to a treasury).
+     * @param collateralRecipient Address to receive the seized collateral, or address(0) for msg.sender.
      */
-    function liquidate(uint256 loanId) external payable nonReentrant {
+    function liquidate(uint256 loanId, address collateralRecipient) external payable nonReentrant {
         Loan storage loan = loans[loanId];
         require(loan.requestedPrincipalToken == address(0), "Loan has ERC20 principal; use liquidateWithERC20");
-        _liquidate(loan, loanId, msg.value);
+        _liquidate(loan, loanId, msg.value, collateralRecipient == address(0) ? msg.sender : collateralRecipient);
     }
 
     /**
      * @notice Liquidate an undercollateralized or expired ERC20-principal loan.
      * @dev    Pulls exactly the computed liquidatorPays (≤ maxAmount) via transferFrom.
-     *         See liquidate for ETH-principal loans.
-     * @param loanId    The loan to liquidate.
-     * @param maxAmount Maximum the caller is willing to pay (slippage guard).
+     *         Seized collateral is sent to `collateralRecipient`
+     *         (address(0) defaults to msg.sender — useful for bots routing to a treasury).
+     * @param loanId              The loan to liquidate.
+     * @param maxAmount           Maximum the caller is willing to pay (slippage guard).
+     * @param collateralRecipient Address to receive the seized collateral, or address(0) for msg.sender.
      */
-    function liquidateWithERC20(uint256 loanId, uint256 maxAmount) external nonReentrant {
+    function liquidateWithERC20(uint256 loanId, uint256 maxAmount, address collateralRecipient) external nonReentrant {
         Loan storage loan = loans[loanId];
         require(loan.requestedPrincipalToken != address(0), "Loan has ETH principal; use liquidate");
-        _liquidate(loan, loanId, maxAmount);
+        _liquidate(loan, loanId, maxAmount, collateralRecipient == address(0) ? msg.sender : collateralRecipient);
     }
 
     struct LiquidationAmounts {
@@ -919,9 +923,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /**
      * @dev Core liquidation logic shared by both entry points.
      *      maxPay is msg.value (ETH) or maxAmount (ERC20) — the caller's ceiling.
-     *      The contract computes the exact liquidatorPays (≤ maxPay) and charges that.
+     *      collateralRecipient is the resolved recipient (never address(0) by the time it reaches here).
      */
-    function _liquidate(Loan storage loan, uint256 loanId, uint256 maxPay) internal {
+    function _liquidate(Loan storage loan, uint256 loanId, uint256 maxPay, address collateralRecipient) internal {
         require(loan.funded,   "Loan is not funded");
         require(!loan.repaid,  "Loan already repaid");
         require(loan.active,   "Loan is not active");
@@ -986,14 +990,14 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             emit ProtocolFeeCollected(loanId, loan.requestedPrincipalToken, protocolFee);
         }
 
-        // Collateral: liquidator seizes, borrower gets any excess.
+        // Collateral: recipient seizes, borrower gets any excess.
         if (loan.collateralToken == address(0)) {
             lockedEthCollateral[loan.borrower] -= lockedCollateral;
-            (bool ok, ) = payable(msg.sender).call{value: a.seizeCollateral}("");
-            if (!ok) _creditPayment(msg.sender, address(0), a.seizeCollateral);
+            (bool ok, ) = payable(collateralRecipient).call{value: a.seizeCollateral}("");
+            if (!ok) _creditPayment(collateralRecipient, address(0), a.seizeCollateral);
             if (a.collateralReturned > 0) _payoutEth(loan.borrower, a.collateralReturned);
         } else {
-            IERC20(loan.collateralToken).safeTransfer(msg.sender, a.seizeCollateral);
+            IERC20(loan.collateralToken).safeTransfer(collateralRecipient, a.seizeCollateral);
             if (a.collateralReturned > 0) {
                 IERC20(loan.collateralToken).safeTransfer(loan.borrower, a.collateralReturned);
             }
