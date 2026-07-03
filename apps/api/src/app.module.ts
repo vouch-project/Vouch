@@ -49,6 +49,7 @@ import { TokensModule } from './tokens/tokens.module';
             privateKey: readKey(privateKeyPath, 'SUPABASE_EC_PRIVATE_KEY_PATH'),
             publicKey: readKey(publicKeyPath, 'SUPABASE_EC_PUBLIC_KEY_PATH'),
             signOptions: { expiresIn: '1h', algorithm: 'ES256' },
+            verifyOptions: { algorithms: ['ES256'] },
           };
         }
         const secret = configService.get<string>('JWT_SECRET');
@@ -59,7 +60,8 @@ import { TokensModule } from './tokens/tokens.module';
         }
         return {
           secret,
-          signOptions: { expiresIn: '1h' },
+          signOptions: { expiresIn: '1h', algorithm: 'HS256' },
+          verifyOptions: { algorithms: ['HS256'] },
         };
       },
       inject: [ConfigService],
