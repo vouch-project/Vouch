@@ -1,8 +1,11 @@
 -- Add price feed columns to tokens table.
 -- All nullable: existing rows are not broken before prices are populated.
+-- price_usd uses numeric (not float8) to match this codebase's convention for
+-- USD-denominated values (see 20260520000000_training_dataset.sql) and avoid
+-- floating-point imprecision in LTV/health-factor-adjacent calculations.
 ALTER TABLE public.tokens
-  ADD COLUMN IF NOT EXISTS price_usd          float8,
-  ADD COLUMN IF NOT EXISTS volatility         float4,
+  ADD COLUMN IF NOT EXISTS price_usd          numeric(30, 8),
+  ADD COLUMN IF NOT EXISTS volatility         numeric(4, 3) CHECK (volatility >= 0 AND volatility <= 1),
   ADD COLUMN IF NOT EXISTS price_feed_address text;
 
 -- Seed volatility for known symbols. price_usd will be populated by PriceFeedService.

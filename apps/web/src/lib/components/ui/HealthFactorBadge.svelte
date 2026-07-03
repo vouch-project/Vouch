@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Badge } from '$lib/components/ui/badge';
-  import { ethers } from 'ethers';
 
   type Props = {
     healthFactor: bigint | null;
@@ -21,12 +20,21 @@
           : 'Liquidation Risk',
   );
 
-  // healthFactor is a raw 1e18-scaled uint256; divide via formatUnits (exact decimal
-  // string math) rather than Number(healthFactor) / 1e18, which converts to a lossy
-  // float before dividing and can misrepresent values above Number.MAX_SAFE_INTEGER.
-  const formatted = $derived(
-    healthFactor !== null ? Number(ethers.formatUnits(healthFactor, 18)).toFixed(2) : null,
-  );
+  // Round healthFactor (1e18-scaled) to 2dp using bigint arithmetic throughout, so
+  // a value large enough to overflow/lose precision as a JS float still displays
+  // correctly. Rounding to 2dp of an 18dp fixed-point value is just dividing by
+  // 1e16 with round-half-up, then reinserting the decimal point — BigInt division
+  // truncates, so add half the divisor first to get round-half-up instead of
+  // round-down.
+  const formatHealthFactor = (hf: bigint): string => {
+    const scale = 10n ** 16n; // 1e18 / 100 -> 2 decimal places
+    const hundredths = (hf + scale / 2n) / scale;
+    const whole = hundredths / 100n;
+    const frac = hundredths % 100n;
+    return `${whole}.${frac.toString().padStart(2, '0')}`;
+  };
+
+  const formatted = $derived(healthFactor !== null ? formatHealthFactor(healthFactor) : null);
 </script>
 
 {#if loading}

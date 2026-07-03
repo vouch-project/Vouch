@@ -5,6 +5,9 @@ contract MockV3Aggregator {
     uint8 public decimals;
     int256 public latestAnswer;
     uint256 public updatedAt;
+    // When true, latestRoundData reports answeredInRound < roundId — simulating a
+    // carried-over stale round (e.g. during a real aggregator outage) for tests.
+    bool public staleRound;
 
     constructor(uint8 _decimals, int256 _initialAnswer) {
         decimals = _decimals;
@@ -17,6 +20,10 @@ contract MockV3Aggregator {
         updatedAt = block.timestamp;
     }
 
+    function setStaleRound(bool _staleRound) external {
+        staleRound = _staleRound;
+    }
+
     function latestRoundData() external view returns (
         uint80 roundId,
         int256 answer,
@@ -24,6 +31,6 @@ contract MockV3Aggregator {
         uint256 updatedAt_,
         uint80 answeredInRound
     ) {
-        return (1, latestAnswer, updatedAt, updatedAt, 1);
+        return (2, latestAnswer, updatedAt, updatedAt, staleRound ? 1 : 2);
     }
 }

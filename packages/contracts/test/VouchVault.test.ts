@@ -1699,6 +1699,29 @@ describe('VouchVault', function () {
       ).to.be.revertedWith('Decimals must be <= 18');
     });
 
+    it('setPriceFeed reverts if decimals_ is 0', async function () {
+      const { vault, ethFeed, owner } = await deployWithFeeds();
+      await expect(
+        vault.connect(owner).setPriceFeed(ethers.ZeroAddress, await ethFeed.getAddress(), 0)
+      ).to.be.revertedWith('Decimals must be > 0');
+    });
+
+    it('getHealthFactor reverts if the price feed reports a stale round', async function () {
+      const { vault, mockToken, ethFeed, lender, borrower } = await deployWithFeeds();
+      const collateral = ethers.parseEther('1');
+      const principal = ethers.parseUnits('2', 18);
+      await vault.connect(borrower).createLoan(
+        await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral }
+      );
+      await mockToken.transfer(lender.address, principal);
+      await mockToken.connect(lender).approve(await vault.getAddress(), principal);
+      await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
+
+      await ethFeed.setStaleRound(true);
+
+      await expect(vault.getHealthFactor(0)).to.be.revertedWith('Stale round');
+    });
+
     it('getHealthFactor returns correct value for ETH-collateral loan', async function () {
       // ETH collateral $3200, MOCK principal $1000 each, threshold 8000 bps (80%)
       // collateral = 1 ETH = 1e18 wei, borrow = 2 MOCK tokens

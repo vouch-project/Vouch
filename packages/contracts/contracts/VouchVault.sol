@@ -7,11 +7,13 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title VouchVault (Upgradeable)
 /// @notice Lending vault contract for the Vouch protocol supporting collateralized loans
 contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     using SafeERC20 for IERC20;
+    using Math for uint256;
     
     struct Loan {
         // Borrower & collateral
@@ -704,6 +706,10 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // 10 ** (dec - 18) branch unreachable, so a misconfigured value can't make
         // getHealthFactor revert (and become permanently unusable) for this token.
         require(decimals_ <= 18, "Decimals must be <= 18");
+        // 0 is also rejected: _normalizeAmount treats a stored 0 as "not set" and
+        // defaults it to 18, so an accidental 0 here would silently pass through
+        // as if this token had 18 decimals instead of reverting loudly.
+        require(decimals_ > 0, "Decimals must be > 0");
         priceFeeds[token] = AggregatorV3Interface(feed);
         tokenDecimals[token] = decimals_;
     }
@@ -711,8 +717,13 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     function _getPrice(address token) internal view returns (uint256) {
         AggregatorV3Interface feed = priceFeeds[token];
         require(address(feed) != address(0), "No price feed for token");
-        (, int256 price, , uint256 updatedAt, ) = feed.latestRoundData();
+        (uint80 roundId, int256 price, , uint256 updatedAt, uint80 answeredInRound) = feed.latestRoundData();
         require(price > 0, "Invalid price");
+        require(updatedAt != 0, "Round not complete");
+        // Per Chainlink's own guidance: answeredInRound < roundId means this round
+        // carried over a stale answer from an earlier round (e.g. during an
+        // aggregator outage) rather than a fresh one.
+        require(answeredInRound >= roundId, "Stale round");
         require(block.timestamp - updatedAt <= STALE_PRICE_THRESHOLD, "Stale price");
         uint8 feedDecimals = feed.decimals();
         // Normalize to 18 decimals
@@ -754,11 +765,18 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 normalizedDebt       = _normalizeAmount(loan.requestedPrincipalToken, remainingDebt);
 
         // Prices are 1e18-scaled USD per token-unit.
-        // healthFactor is scaled to 1e18; >= 1e18 means healthy.
         uint256 lockedCollateralUSD = normalizedCollateral * collateralPrice;
-        uint256 remainingDebtUSD    = normalizedDebt       * principalPrice;
+        uint256 remainingDebtUSD    = normalizedDebt * principalPrice;
 
-        return (lockedCollateralUSD * loan.liquidationThresholdBps * 1e18) / (remainingDebtUSD * 10000);
+        // healthFactor is scaled to 1e18; >= 1e18 means healthy.
+        // lockedCollateralUSD is already ~1e36-scale; multiplying it again by
+        // liquidationThresholdBps * 1e18 before dividing can exceed uint256 as a
+        // plain intermediate for large enough loans, even though the final ratio
+        // is always small. mulDiv(x, y, denominator) computes x*y/denominator using
+        // 512-bit precision internally, so that product never needs to fit in
+        // uint256 on its own — only the final result does.
+        uint256 thresholdScaled = uint256(loan.liquidationThresholdBps) * 1e18;
+        return lockedCollateralUSD.mulDiv(thresholdScaled, remainingDebtUSD * 10000);
     }
 
     function liquidate(uint256 loanId) external {

@@ -1,5 +1,10 @@
 import { InjectRedis } from '@nestjs-modules/ioredis';
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
 import type { Redis } from 'ioredis';
@@ -22,9 +27,10 @@ export const priceKey = (chainId: string, address: string): string =>
   `${chainId}:${address.toLowerCase()}`;
 
 @Injectable()
-export class PriceFeedService implements OnModuleInit {
+export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PriceFeedService.name);
   private readonly intervalMs: number;
+  private intervalHandle: NodeJS.Timeout | undefined;
 
   constructor(
     private readonly supabaseService: SupabaseService,
@@ -38,7 +44,14 @@ export class PriceFeedService implements OnModuleInit {
 
   async onModuleInit() {
     await this.refreshPrices();
-    setInterval(() => void this.refreshPrices(), this.intervalMs);
+    this.intervalHandle = setInterval(
+      () => void this.refreshPrices(),
+      this.intervalMs,
+    );
+  }
+
+  onModuleDestroy() {
+    clearInterval(this.intervalHandle);
   }
 
   /** Returns the cached price map, keyed by `priceKey(chainId, address)`. */
