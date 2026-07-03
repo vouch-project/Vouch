@@ -43,6 +43,17 @@ services:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       ML_ENGINE_URL: http://ml-engine:8001
+      SUPABASE_EC_PRIVATE_KEY_PATH: /run/secrets/supabase_ec_private.pem
+      SUPABASE_EC_PUBLIC_KEY_PATH: /run/secrets/supabase_ec_public.pem
+    volumes:
+      - type: bind
+        source: ${SUPABASE_EC_PRIVATE_KEY_PATH:?SUPABASE_EC_PRIVATE_KEY_PATH is required}
+        target: /run/secrets/supabase_ec_private.pem
+        read_only: true
+      - type: bind
+        source: ${SUPABASE_EC_PUBLIC_KEY_PATH:?SUPABASE_EC_PUBLIC_KEY_PATH is required}
+        target: /run/secrets/supabase_ec_public.pem
+        read_only: true
 
   web:
     build:
