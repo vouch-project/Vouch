@@ -23,10 +23,12 @@ const MOCK_AGGREGATOR_ABI = [
 // block.timestamp, resetting the 1-hour staleness window enforced by VouchVault.
 async function main() {
   const [signer] = await ethers.getSigners();
+  const { chainId } = await signer.provider.getNetwork();
+  if (chainId !== 1337n) {
+    throw new Error(`refresh-mock-prices must be run against local chainId 1337, got ${chainId}`);
+  }
 
   const envPath = path.resolve(__dirname, '../../../.env');
-  if (!existsSync(envPath)) throw new Error('.env not found');
-  const env = readFileSync(envPath, 'utf-8');
 
   const databaseUrlMatch = env.match(/^DATABASE_URL=(.*)$/m);
   if (!databaseUrlMatch) throw new Error('DATABASE_URL not set in .env');
