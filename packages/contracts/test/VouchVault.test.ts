@@ -1810,6 +1810,20 @@ describe('VouchVault', function () {
       ).to.be.revertedWith('Loan is undercollateralized');
     });
 
+    it('fundLoan reverts when loan is undercollateralized at funding time', async function () {
+      // ETH collateral $3200, ETH principal $3200, threshold 8000 bps (80%)
+      // collateral = 0.001 ETH = $3.20, principal = 1 ETH = $3200 => HF = 0.0008 < 1
+      const { vault, borrower, lender } = await deployWithFeeds();
+      const collateral = ethers.parseEther('0.001'); // $3.20 collateral
+      const principal = ethers.parseEther('1');       // $3200 principal => HF << 1
+      await vault.connect(borrower).createLoan(
+        ethers.ZeroAddress, principal, 0, 0, 7n * 86400n, 8000, { value: collateral }
+      );
+      await expect(
+        vault.connect(lender).fundLoan(0, { value: principal })
+      ).to.be.revertedWith('Loan is undercollateralized');
+    });
+
     it('liquidate reverts if health factor >= 1', async function () {
       const { vault, mockToken, lender, borrower } = await deployWithFeeds();
       const collateral = ethers.parseEther('1');
