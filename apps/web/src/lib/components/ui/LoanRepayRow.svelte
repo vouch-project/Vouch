@@ -151,7 +151,7 @@
       .then(({ liquidationThresholdBps, requestedPrincipalAmount }) => {
         // For pending loans principalAmount in DB is 0; use the on-chain requested amount.
         const actualBorrowedUsd =
-          (Number(requestedPrincipalAmount) / 10 ** principalDecimals_) * principalPriceUsd;
+          parseFloat(ethers.formatUnits(requestedPrincipalAmount, principalDecimals_)) * principalPriceUsd;
         projectedHf = calculateHealthFactor(collateralUsd, actualBorrowedUsd, liquidationThresholdBps / 100);
       })
       .catch(() => {
