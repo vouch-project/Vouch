@@ -1,6 +1,7 @@
 <script lang="ts">
   import { axiosApi } from '$api/axiosApi';
   import { maxLtv } from '$lib/ltv';
+  import { calculateHealthFactor } from '$lib/loans/loanMath';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
   import { createLoan } from '$lib/wallet/vouchVault';
@@ -47,6 +48,7 @@
   const borrowUsd = $derived((parseFloat(borrowAmount) || 0) * borrowMeta.priceUsd);
   const currentLtv = $derived(collateralUsd > 0 ? (borrowUsd / collateralUsd) * 100 : 0);
   const ltvExceeded = $derived(currentLtv > computedMaxLtv);
+  const projectedHf = $derived(calculateHealthFactor(collateralUsd, borrowUsd, computedMaxLtv));
 
   // ── Recommended APR (credit score + LTV risk) ────────────────────────────
   // Score sets the ceiling (300→15%, 850→5%). LTV utilization scales it down:
@@ -186,7 +188,7 @@
     bind:fundWindowDays
   />
 
-  <LtvIndicator {computedMaxLtv} {creditScore} {currentLtv} {ltvExceeded} />
+  <LtvIndicator {computedMaxLtv} {creditScore} {currentLtv} {ltvExceeded} {projectedHf} />
 
   {#if totalRepayment !== null}
     <RepaymentSummary

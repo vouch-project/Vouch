@@ -4,11 +4,11 @@
   import LoanStatusBadge from '$lib/components/ui/LoanStatusBadge.svelte';
   import * as Table from '$lib/components/ui/table';
   import { formatUint256 } from '$lib/formatUint256';
-  import { computeProgressPct, computeRemaining, computeTotalDue, formatDueDateLabel } from '$lib/loans/loanMath';
+  import { calculateHealthFactor, computeProgressPct, computeRemaining, computeTotalDue, formatDueDateLabel } from '$lib/loans/loanMath';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import type { LoanFull } from '$lib/types';
   import { cn } from '$lib/utils';
-  import { cancelLoan, getHealthFactor, getRepaymentDetails, type RepaymentDetails } from '$lib/wallet/vouchVault';
+  import { cancelLoan, getHealthFactor, getLoanLiquidationThreshold, getRepaymentDetails, type RepaymentDetails } from '$lib/wallet/vouchVault';
   import { Check, Copy } from '@lucide/svelte';
   import { ethers } from 'ethers';
   import { tableColumns } from '../dashboard/columns';
@@ -84,6 +84,7 @@
   let chainError = $state('');
   let healthFactor = $state<bigint | null>(null);
   let hfLoading = $state(false);
+  let projectedHf = $state<ReturnType<typeof calculateHealthFactor>>(null);
 
   // Chain state is authoritative once loaded; DB status is the initial fallback
   // while the blockchain listener hasn't yet written the update.
@@ -132,6 +133,29 @@
       })
       .finally(() => {
         hfLoading = false;
+      });
+  });
+
+  $effect(() => {
+    if (loan.onChainLoanId === null || loan.status !== 'pending') return;
+    const collateralPriceUsd = loan.collateralToken?.price_usd ?? null;
+    const principalPriceUsd = loan.principalToken?.price_usd ?? null;
+    if (collateralPriceUsd === null || principalPriceUsd === null) return;
+
+    const collateralDecimals_ = loan.collateralToken?.decimals ?? 18;
+    const principalDecimals_ = loan.principalToken?.decimals ?? 18;
+    const collateralUsd =
+      (Number(BigInt(loan.collateralAmount ?? '0')) / 10 ** collateralDecimals_) * collateralPriceUsd;
+
+    getLoanLiquidationThreshold(BigInt(loan.onChainLoanId))
+      .then(({ liquidationThresholdBps, requestedPrincipalAmount }) => {
+        // For pending loans principalAmount in DB is 0; use the on-chain requested amount.
+        const actualBorrowedUsd =
+          (Number(requestedPrincipalAmount) / 10 ** principalDecimals_) * principalPriceUsd;
+        projectedHf = calculateHealthFactor(collateralUsd, actualBorrowedUsd, liquidationThresholdBps / 100);
+      })
+      .catch(() => {
+        projectedHf = null;
       });
   });
 
@@ -329,7 +353,20 @@
 
   <!-- Health Factor -->
   <Table.Cell class="px-2 sm:px-4 py-3 whitespace-nowrap text-center">
-    <HealthFactorBadge {healthFactor} loading={hfLoading} />
+    {#if isPending && projectedHf !== null}
+      <span
+        class="text-xs font-semibold {projectedHf.riskStatus === 'Safe'
+          ? 'text-green-500'
+          : projectedHf.riskStatus === 'Warning'
+            ? 'text-yellow-500'
+            : 'text-destructive'}"
+        title="Projected at current prices"
+      >
+        ~{projectedHf.healthFactor.toFixed(2)}
+      </span>
+    {:else}
+      <HealthFactorBadge {healthFactor} loading={hfLoading} />
+    {/if}
   </Table.Cell>
 
   <!-- Status -->
