@@ -1780,11 +1780,34 @@ describe('VouchVault', function () {
       expect(hf).to.equal(128n * 10n ** 16n);
     });
 
-    it('getHealthFactor reverts if loan not funded', async function () {
-      const { vault } = await deployWithFeeds();
+    it('getHealthFactor works for unfunded loan using requestedPrincipalAmount', async function () {
+      // ETH collateral $3200, MOCK principal $1000 each, threshold 8000 bps (80%)
+      // HF = (1e18 * 3200e18 * 8000) / (2e18 * 1000e18 * 10000) = 1.28e18
+      const { vault, mockToken, borrower } = await deployWithFeeds();
       const collateral = ethers.parseEther('1');
-      await vault.createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, { value: collateral });
-      await expect(vault.getHealthFactor(0)).to.be.revertedWith('Loan not funded');
+      const principal = ethers.parseUnits('2', 18);
+      await vault.connect(borrower).createLoan(
+        await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral }
+      );
+      const hf = await vault.getHealthFactor(0);
+      expect(hf).to.equal(128n * 10n ** 16n); // 1.28e18
+    });
+
+    it('fundLoanWithERC20 reverts when loan is undercollateralized at funding time', async function () {
+      // Collateral $100 ETH equivalent, borrow 2 MOCK at $1000 each => HF = 0.04 < 1
+      const { vault, mockToken, lender, borrower } = await deployWithFeeds();
+      // ETH feed price = $3200, MOCK feed price = $1000 (set in deployWithFeeds)
+      // Use tiny collateral and large principal to make HF < 1
+      const collateral = ethers.parseEther('0.01'); // $32 collateral
+      const principal = ethers.parseUnits('2', 18);  // $2000 principal => HF=0.0128
+      await vault.connect(borrower).createLoan(
+        await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral }
+      );
+      await mockToken.transfer(lender.address, principal);
+      await mockToken.connect(lender).approve(await vault.getAddress(), principal);
+      await expect(
+        vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal)
+      ).to.be.revertedWith('Loan is undercollateralized');
     });
 
     it('liquidate reverts if health factor >= 1', async function () {

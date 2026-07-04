@@ -653,6 +653,10 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(block.timestamp <= loan.fundDeadline, "Funding window passed");
         require(loan.requestedPrincipalToken == address(0), "Token does not match requested principal token");
         require(msg.value == loan.requestedPrincipalAmount, "msg.value must equal requested principal amount");
+        if (address(priceFeeds[loan.collateralToken]) != address(0) &&
+            address(priceFeeds[loan.requestedPrincipalToken]) != address(0)) {
+            require(getHealthFactor(loanId) >= 1e18, "Loan is undercollateralized");
+        }
 
         loan.lender = msg.sender;
         loan.principalAmount = loan.requestedPrincipalAmount;
@@ -683,6 +687,10 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(amount > 0, "Funding amount must be > 0");
         require(token == loan.requestedPrincipalToken, "Token does not match requested principal token");
         require(amount == loan.requestedPrincipalAmount, "Amount does not match requested principal amount");
+        if (address(priceFeeds[loan.collateralToken]) != address(0) &&
+            address(priceFeeds[loan.requestedPrincipalToken]) != address(0)) {
+            require(getHealthFactor(loanId) >= 1e18, "Loan is undercollateralized");
+        }
 
         loan.lender = msg.sender;
         loan.principalAmount = amount;
@@ -755,13 +763,17 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     function getHealthFactor(uint256 loanId) public view returns (uint256) {
         Loan memory loan = loans[loanId];
-        require(loan.funded, "Loan not funded");
         require(!loan.repaid, "Loan already repaid");
 
-        // Mirrors getRepaymentDetails: totalDue/remaining are based on the current
-        // outstanding principal and accrued interest, not the flat interest at origination.
-        uint256 totalDue = loan.principalAmount + _currentInterestOwed(loan);
-        uint256 remainingDebt = totalDue > loan.amountRepaid ? totalDue - loan.amountRepaid : 0;
+        // For funded loans use actual debt (principal + accrued interest - repaid).
+        // For unfunded loans use requestedPrincipalAmount — no interest accrues yet.
+        uint256 remainingDebt;
+        if (loan.funded) {
+            uint256 totalDue = loan.principalAmount + _currentInterestOwed(loan);
+            remainingDebt = totalDue > loan.amountRepaid ? totalDue - loan.amountRepaid : 0;
+        } else {
+            remainingDebt = loan.requestedPrincipalAmount;
+        }
         require(remainingDebt > 0, "No remaining debt");
 
         uint256 lockedCollateral = loan.collateralAmount - loan.collateralReleased;
