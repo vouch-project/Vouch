@@ -1922,6 +1922,48 @@ describe('VouchVault', function () {
         await expect(vault.liquidate(0, ethers.ZeroAddress, { value: collateral }))
           .to.be.revertedWith('Loan is not funded');
       });
+
+      it('expired ETH-principal loan: liquidator pays debt, lender paid, excess collateral returned, LoanLiquidated emitted', async function () {
+        const { vault, ethFeed, lender, borrower } = await deployWithFeeds();
+        const [liquidator] = (await ethers.getSigners()).slice(3);
+
+        // ETH-principal: collateral = 1.5 ETH, principal = 1 ETH, 30-day duration
+        const collateral = ethers.parseEther('1.5');
+        const principal  = ethers.parseEther('1');
+        const duration   = 30n * 86400n;
+
+        await vault.connect(borrower).createLoan(
+          ethers.ZeroAddress, principal, 0, duration, 7n * 86400n, 8000, { value: collateral }
+        );
+        await vault.connect(lender).fundLoan(0, { value: principal });
+
+        // Advance past duration then refresh feed so _getPrice doesn't revert on staleness
+        await ethers.provider.send('evm_increaseTime', [30 * 86400 + 1]);
+        await ethers.provider.send('evm_mine', []);
+        await ethFeed.updateAnswer(3200n * 10n ** 8n); // same price, fresh timestamp
+
+        const lenderBefore   = await ethers.provider.getBalance(lender.address);
+        const borrowerBefore = await ethers.provider.getBalance(borrower.address);
+
+        const tx = await vault.connect(liquidator).liquidate(0, ethers.ZeroAddress, { value: principal });
+
+        await expect(tx).to.emit(vault, 'LoanLiquidated').withArgs(
+          0,
+          liquidator.address,
+          principal,
+          (v: bigint) => v > 0n,
+          (v: bigint) => v >= 0n,
+          (v: bigint) => v > 0n
+        );
+
+        const loan = await vault.loans(0);
+        expect(loan.repaid).to.equal(true);
+
+        // Lender received the debt repayment (no interest, no protocol fee on healthy close)
+        expect(await ethers.provider.getBalance(lender.address)).to.be.gt(lenderBefore);
+        // Borrower received excess collateral (1.5 ETH collateral - 1 ETH debt seized)
+        expect(await ethers.provider.getBalance(borrower.address)).to.be.gt(borrowerBefore);
+      });
     });
 
     describe('liquidateWithERC20 (ERC20 principal)', function () {

@@ -784,6 +784,15 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         return amount;
     }
 
+    // Round-up variant used when undercharging the liquidator would underpay the lender.
+    function _denormalizeAmountCeil(address token, uint256 amount) internal view returns (uint256) {
+        uint8 dec = tokenDecimals[token];
+        if (dec == 0) dec = 18;
+        if (dec < 18) return amount.ceilDiv(10 ** (18 - dec));
+        if (dec > 18) return amount * (10 ** (dec - 18));
+        return amount;
+    }
+
     function getHealthFactor(uint256 loanId) public view returns (uint256) {
         Loan memory loan = loans[loanId];
         require(loan.funded, "Loan not funded");
@@ -909,7 +918,10 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             // Underwater: seize all collateral, liquidator pays collateralValue/(1+bonus).
             r.seizeCollateral    = lockedCollateral;
             r.collateralReturned = 0;
-            uint256 pay = _denormalizeAmount(
+            // Round up so the liquidator always pays at least as much as the collateral is worth;
+            // rounding down (floor) for tokens with <18 decimals (e.g. USDC) would undercharge
+            // the liquidator and leave the lender short.
+            uint256 pay = _denormalizeAmountCeil(
                 loan.requestedPrincipalToken,
                 _normalizeAmount(loan.collateralToken, lockedCollateral)
                     .mulDiv(collateralPrice, 1e18)
@@ -932,9 +944,11 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         _accrue(loan);
 
-        bool undercollateralized = getHealthFactor(loanId) < 1e18;
         bool expired = loan.durationSeconds > 0
             && block.timestamp > loan.fundedAt + loan.durationSeconds;
+        // getHealthFactor calls _getPrice which enforces STALE_PRICE_THRESHOLD; skip it
+        // when expiry alone suffices to avoid reverting on stale oracle data.
+        bool undercollateralized = !expired && getHealthFactor(loanId) < 1e18;
         require(undercollateralized || expired, "Loan is not liquidatable");
 
         uint256 debt = (loan.principalAmount - loan.principalRepaid)
