@@ -47,6 +47,28 @@ export const computeTotalDue = (
   nowMs: number = Date.now(),
 ): bigint => principalRaw + computeAccruedInterest(principalRaw, interestRateBps, fundedAtMs, durationSeconds, nowMs);
 
+export type HealthFactorResult = {
+  healthFactor: number;
+  riskStatus: 'Safe' | 'Warning' | 'Liquidation Risk';
+};
+
+/**
+ * Off-chain projection of the health factor at loan creation time.
+ * Mirrors VouchVault.getHealthFactor: (collateral * (liquidationThreshold / 100)) / borrowed.
+ * `liquidationThreshold` is expected to be a percentage in the 0–100 range (e.g. 80 for 80%).
+ */
+export const calculateHealthFactor = (
+  collateralUsd: number,
+  borrowedUsd: number,
+  liquidationThreshold: number,
+): HealthFactorResult | null => {
+  if (borrowedUsd <= 0 || collateralUsd <= 0) return null;
+  const healthFactor = (collateralUsd * (liquidationThreshold / 100)) / borrowedUsd;
+  const riskStatus =
+    healthFactor >= 1.5 ? 'Safe' : healthFactor >= 1.0 ? 'Warning' : 'Liquidation Risk';
+  return { healthFactor, riskStatus };
+};
+
 /** Repayment progress as a 0–100 integer percentage. */
 export const computeProgressPct = (amountRepaid: bigint, totalDue: bigint, repaid: boolean): number =>
   totalDue > 0n ? Number((amountRepaid * 100n) / totalDue) : repaid ? 100 : 0;
