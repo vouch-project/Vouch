@@ -54,8 +54,8 @@ export type HealthFactorResult = {
 
 /**
  * Off-chain projection of the health factor at loan creation time.
- * Mirrors VouchVault.getHealthFactor: (collateral * threshold) / borrowed.
- * Returns null when either input is zero (no meaningful position yet).
+ * Mirrors VouchVault.getHealthFactor: (collateral * (liquidationThreshold / 100)) / borrowed.
+ * `liquidationThreshold` is expected to be a percentage in the 0–100 range (e.g. 80 for 80%).
  */
 export const calculateHealthFactor = (
   collateralUsd: number,
