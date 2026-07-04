@@ -124,19 +124,24 @@
   $effect(() => {
     if (loan.onChainLoanId === null || (loan.status !== 'active' && loan.status !== 'pending')) {
       healthFactor = null;
+      hfLoading = false;
       return;
     }
+    let cancelled = false;
     hfLoading = true;
     getHealthFactor(BigInt(loan.onChainLoanId))
       .then((hf) => {
-        healthFactor = hf;
+        if (!cancelled) healthFactor = hf;
       })
       .catch(() => {
-        healthFactor = null;
+        if (!cancelled) healthFactor = null;
       })
       .finally(() => {
-        hfLoading = false;
+        if (!cancelled) hfLoading = false;
       });
+    return () => {
+      cancelled = true;
+    };
   });
 
   // ── Due date (from DB field, fallback to chain duration) ──────────────────
