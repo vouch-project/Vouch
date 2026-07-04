@@ -137,26 +137,40 @@
   });
 
   $effect(() => {
-    if (loan.onChainLoanId === null || loan.status !== 'pending') return;
+    if (loan.onChainLoanId === null || loan.status !== 'pending') {
+      projectedHf = null;
+      return;
+    }
+
     const collateralPriceUsd = loan.collateralToken?.price_usd ?? null;
     const principalPriceUsd = loan.principalToken?.price_usd ?? null;
-    if (collateralPriceUsd === null || principalPriceUsd === null) return;
+    if (collateralPriceUsd === null || principalPriceUsd === null) {
+      projectedHf = null;
+      return;
+    }
 
     const collateralDecimals_ = loan.collateralToken?.decimals ?? 18;
     const principalDecimals_ = loan.principalToken?.decimals ?? 18;
     const collateralRaw = BigInt(loan.collateralAmount ?? '0');
     const collateralUsd = parseFloat(ethers.formatUnits(collateralRaw, collateralDecimals_)) * collateralPriceUsd;
 
+    let cancelled = false;
     getLoanLiquidationThreshold(BigInt(loan.onChainLoanId))
       .then(({ liquidationThresholdBps, requestedPrincipalAmount }) => {
+        if (cancelled) return;
         // For pending loans principalAmount in DB is 0; use the on-chain requested amount.
         const actualBorrowedUsd =
           parseFloat(ethers.formatUnits(requestedPrincipalAmount, principalDecimals_)) * principalPriceUsd;
         projectedHf = calculateHealthFactor(collateralUsd, actualBorrowedUsd, liquidationThresholdBps / 100);
       })
       .catch(() => {
+        if (cancelled) return;
         projectedHf = null;
       });
+
+    return () => {
+      cancelled = true;
+    };
   });
 
   // ── Due date (from DB field, fallback to chain duration) ──────────────────
