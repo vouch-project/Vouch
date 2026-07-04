@@ -144,8 +144,8 @@
 
     const collateralDecimals_ = loan.collateralToken?.decimals ?? 18;
     const principalDecimals_ = loan.principalToken?.decimals ?? 18;
-    const collateralUsd =
-      (Number(BigInt(loan.collateralAmount ?? '0')) / 10 ** collateralDecimals_) * collateralPriceUsd;
+    const collateralRaw = BigInt(loan.collateralAmount ?? '0');
+    const collateralUsd = parseFloat(ethers.formatUnits(collateralRaw, collateralDecimals_)) * collateralPriceUsd;
 
     getLoanLiquidationThreshold(BigInt(loan.onChainLoanId))
       .then(({ liquidationThresholdBps, requestedPrincipalAmount }) => {
