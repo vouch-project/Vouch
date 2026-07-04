@@ -1677,9 +1677,9 @@ describe('VouchVault', function () {
       return { vault, borrower, anyone, collateral, fundWindow };
     }
 
-    it('reverts if loan is still within fund window', async function () {
+    it('reverts if loan is still within fund window and no price feeds set', async function () {
       const { vault } = await deployForExpiry();
-      await expect(vault.expireLoan(0)).to.be.revertedWith('Fund window not yet passed');
+      await expect(vault.expireLoan(0)).to.be.revertedWith('Loan cannot be expired yet');
     });
 
     it('reverts if loan is already funded', async function () {
@@ -1692,7 +1692,7 @@ describe('VouchVault', function () {
       await expect(vault.expireLoan(0)).to.be.revertedWith('Loan already funded');
     });
 
-    it('returns collateral to borrower and emits LoanExpired', async function () {
+    it('returns collateral to borrower and emits LoanExpired when deadline passed', async function () {
       const { vault, borrower, anyone, collateral } = await deployForExpiry();
       await ethers.provider.send('evm_increaseTime', [4 * 86400]);
       await ethers.provider.send('evm_mine', []);
@@ -1725,6 +1725,53 @@ describe('VouchVault', function () {
       await ethers.provider.send('evm_mine', []);
       await vault.expireLoan(0);
       await expect(vault.expireLoan(0)).to.be.revertedWith('Loan is not active');
+    });
+
+    async function deployForExpiryWithFeeds() {
+      const [owner, borrower, anyone] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      // ETH/USD at $3200, 8 decimals (standard Chainlink)
+      const ethFeed = await MockAgg.deploy(8, 3200n * 10n ** 8n);
+      const MockERC20 = await ethers.getContractFactory('MockERC20');
+      const mockToken = await MockERC20.deploy('MOCK', 'MCK', 18, ethers.parseEther('1000000'));
+      // MOCK/USD at $1000, 8 decimals
+      const mockFeed = await MockAgg.deploy(8, 1000n * 10n ** 8n);
+      await vault.connect(owner).setPriceFeed(ethers.ZeroAddress, await ethFeed.getAddress(), 18);
+      await vault.connect(owner).setPriceFeed(await mockToken.getAddress(), await mockFeed.getAddress(), 18);
+      return { vault, mockToken, owner, borrower, anyone };
+    }
+
+    it('can be expired within deadline when undercollateralized (price feeds set)', async function () {
+      // HF = (0.001 ETH * $3200 * 80%) / (2 MOCK * $1000) = $2.56 / $2000 = 0.00128 — deeply unhealthy
+      const { vault, mockToken, borrower, anyone } = await deployForExpiryWithFeeds();
+      const collateral = ethers.parseEther('0.001');
+      const principal = ethers.parseUnits('2', 18);
+      await vault.connect(borrower).createLoan(
+        await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral }
+      );
+
+      const balanceBefore = await ethers.provider.getBalance(borrower.address);
+      const tx = await vault.connect(anyone).expireLoan(0);
+      await expect(tx)
+        .to.emit(vault, 'LoanExpired')
+        .withArgs(0, borrower.address, (ts: bigint) => ts > 0n);
+
+      const balanceAfter = await ethers.provider.getBalance(borrower.address);
+      expect(balanceAfter - balanceBefore).to.equal(collateral);
+    });
+
+    it('reverts within deadline when loan is healthy (price feeds set)', async function () {
+      // HF = (1 ETH * $3200 * 80%) / (2 MOCK * $1000) = $2560 / $2000 = 1.28 — healthy
+      const { vault, mockToken, borrower } = await deployForExpiryWithFeeds();
+      const collateral = ethers.parseEther('1');
+      const principal = ethers.parseUnits('2', 18);
+      await vault.connect(borrower).createLoan(
+        await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral }
+      );
+
+      await expect(vault.expireLoan(0)).to.be.revertedWith('Loan cannot be expired yet');
     });
   });
 

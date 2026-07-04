@@ -434,13 +434,19 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         emit LoanCancelled(loanId, loan.borrower, block.timestamp);
     }
 
-    /// @notice Expire a pending loan whose funding window has passed, returning collateral to the borrower.
-    /// @dev Permissionless — anyone can call once block.timestamp > fundDeadline.
+    /// @notice Expire a pending loan, returning collateral to the borrower.
+    /// @dev Permissionless. Valid when the funding deadline has passed OR when price feeds are
+    ///      configured and the loan is already undercollateralized (HF < 1e18).
     function expireLoan(uint256 loanId) external nonReentrant {
         Loan storage loan = loans[loanId];
         require(loan.active, "Loan is not active");
         require(!loan.funded, "Loan already funded");
-        require(block.timestamp > loan.fundDeadline, "Fund window not yet passed");
+
+        bool deadlinePassed = block.timestamp > loan.fundDeadline;
+        bool undercollateralized = address(priceFeeds[loan.collateralToken]) != address(0) &&
+            address(priceFeeds[loan.requestedPrincipalToken]) != address(0) &&
+            getHealthFactor(loanId) < 1e18;
+        require(deadlinePassed || undercollateralized, "Loan cannot be expired yet");
 
         uint256 amount = loan.collateralAmount - loan.collateralReleased;
 
