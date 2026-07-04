@@ -29,6 +29,8 @@ async function main() {
   }
 
   const envPath = path.resolve(__dirname, '../../../.env');
+  if (!existsSync(envPath)) throw new Error('.env not found');
+  const env = readFileSync(envPath, 'utf-8');
 
   const databaseUrlMatch = env.match(/^DATABASE_URL=(.*)$/m);
   if (!databaseUrlMatch) throw new Error('DATABASE_URL not set in .env');
