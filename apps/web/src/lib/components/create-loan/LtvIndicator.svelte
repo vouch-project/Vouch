@@ -51,7 +51,7 @@
     <span class="text-sm font-bold {ltvExceeded ? 'text-destructive' : 'text-foreground'}">
       {currentLtv > 0 ? `${currentLtv.toFixed(1)}%` : '—'}
       {#if projectedHf !== null}
-        <span class="font-semibold {hfColor}"> · {projectedHf.healthFactor.toFixed(2)}</span>
+        <span class="font-semibold {hfColor}"> · {(Math.floor(projectedHf.healthFactor * 100) / 100).toFixed(2)}</span>
       {/if}
     </span>
     {#if ltvExceeded}

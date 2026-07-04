@@ -362,7 +362,7 @@
             : 'text-destructive'}"
         title="Projected at current prices"
       >
-        ~{projectedHf.healthFactor.toFixed(2)}
+        ~{(Math.floor(projectedHf.healthFactor * 100) / 100).toFixed(2)}
       </span>
     {:else}
       <HealthFactorBadge {healthFactor} loading={hfLoading} />
