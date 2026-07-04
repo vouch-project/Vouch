@@ -63,7 +63,7 @@ export const calculateHealthFactor = (
   liquidationThreshold: number,
 ): HealthFactorResult | null => {
   if (borrowedUsd <= 0 || collateralUsd <= 0) return null;
-  const healthFactor = (collateralUsd * liquidationThreshold) / (borrowedUsd * 100);
+  const healthFactor = (collateralUsd * (liquidationThreshold / 100)) / borrowedUsd;
   const riskStatus =
     healthFactor >= 1.5 ? 'Safe' : healthFactor >= 1.0 ? 'Warning' : 'Liquidation Risk';
   return { healthFactor, riskStatus };
