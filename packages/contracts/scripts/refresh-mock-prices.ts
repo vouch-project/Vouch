@@ -35,12 +35,14 @@ async function main() {
   await db.connect();
 
   try {
+    const LOCAL_NETWORK_ID = '1337';
     const result = await db.query<{ price_feed_address: string; symbol: string }>(
       `SELECT t.price_feed_address, t.symbol
        FROM tokens t
        JOIN chains c ON t."chainId" = c.id
-       WHERE c."networkId" = '1337'
+       WHERE c."networkId" = $1
          AND t.price_feed_address IS NOT NULL`,
+      [LOCAL_NETWORK_ID],
     );
 
     if (result.rows.length === 0) {
