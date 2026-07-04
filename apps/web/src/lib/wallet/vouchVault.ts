@@ -243,21 +243,6 @@ export const getHealthFactor = async (onChainLoanId: bigint): Promise<bigint> =>
 };
 
 /**
- * Returns on-chain fields needed to project the health factor for pending (unfunded) loans.
- * `liquidationThresholdBps` and `requestedPrincipalAmount` are not mirrored to the database.
- */
-export const getLoanLiquidationThreshold = async (
-  onChainLoanId: bigint,
-): Promise<{ liquidationThresholdBps: number; requestedPrincipalAmount: bigint }> => {
-  const contract = await getVouchVaultContract();
-  const loan = await contract.loans(onChainLoanId);
-  return {
-    liquidationThresholdBps: Number(loan.liquidationThresholdBps),
-    requestedPrincipalAmount: loan.requestedPrincipalAmount,
-  };
-};
-
-/**
  * Fund an active loan by sending its requested principal to the borrower.
  * Handles both native ETH (principalTokenAddress == address(0)) and ERC20 tokens.
  *

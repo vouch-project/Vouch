@@ -29,6 +29,10 @@
   <Badge class="text-muted-foreground text-xs gap-1" variant="outline">
     <XCircle class="h-3 w-3" /> Cancelled
   </Badge>
+{:else if status === 'expired'}
+  <Badge class="text-muted-foreground text-xs gap-1" variant="outline">
+    <XCircle class="h-3 w-3" /> Expired
+  </Badge>
 {:else if isOverdue}
   <Badge class="text-xs gap-1" variant="destructive">
     <AlertCircle class="h-3 w-3" /> Overdue
