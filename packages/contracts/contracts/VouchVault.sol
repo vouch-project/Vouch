@@ -149,6 +149,12 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 timestamp
     );
 
+    event LoanExpired(
+        uint256 indexed loanId,
+        address indexed borrower,
+        uint256 timestamp
+    );
+
     event ProtocolTreasuryUpdated(address indexed treasury);
     event ProtocolFeeUpdated(uint256 feeBps);
     event ProtocolFeeCollected(uint256 indexed loanId, address indexed token, uint256 amount);
@@ -426,6 +432,33 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         }
 
         emit LoanCancelled(loanId, loan.borrower, block.timestamp);
+    }
+
+    /// @notice Expire a pending loan whose funding window has passed, returning collateral to the borrower.
+    /// @dev Permissionless — anyone can call once block.timestamp > fundDeadline.
+    function expireLoan(uint256 loanId) external nonReentrant {
+        Loan storage loan = loans[loanId];
+        require(loan.active, "Loan is not active");
+        require(!loan.funded, "Loan already funded");
+        require(block.timestamp > loan.fundDeadline, "Fund window not yet passed");
+
+        uint256 amount = loan.collateralAmount - loan.collateralReleased;
+
+        loan.active = false;
+        loan.collateralLocked = false;
+        loan.collateralReleased = loan.collateralAmount;
+
+        if (amount > 0) {
+            if (loan.collateralToken == address(0)) {
+                lockedEthCollateral[loan.borrower] -= amount;
+                (bool ok, ) = payable(loan.borrower).call{value: amount}("");
+                require(ok, "ETH collateral return failed");
+            } else {
+                IERC20(loan.collateralToken).safeTransfer(loan.borrower, amount);
+            }
+        }
+
+        emit LoanExpired(loanId, loan.borrower, block.timestamp);
     }
 
     function withdraw(uint256 amount) external nonReentrant {

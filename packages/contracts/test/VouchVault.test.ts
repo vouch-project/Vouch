@@ -1664,6 +1664,70 @@ describe('VouchVault', function () {
     });
   });
 
+  describe('expireLoan', function () {
+    async function deployForExpiry() {
+      const [owner, borrower, anyone] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      const collateral = ethers.parseEther('1');
+      const fundWindow = 3n * 86400n; // 3 days
+      await vault.connect(borrower).createLoan(
+        ethers.ZeroAddress, collateral, 0, 0, fundWindow, 8000, { value: collateral }
+      );
+      return { vault, borrower, anyone, collateral, fundWindow };
+    }
+
+    it('reverts if loan is still within fund window', async function () {
+      const { vault } = await deployForExpiry();
+      await expect(vault.expireLoan(0)).to.be.revertedWith('Fund window not yet passed');
+    });
+
+    it('reverts if loan is already funded', async function () {
+      const { vault, collateral } = await deployForExpiry();
+      // Fund it first (within window)
+      await vault.fundLoan(0, { value: collateral });
+      // Advance past window
+      await ethers.provider.send('evm_increaseTime', [4 * 86400]);
+      await ethers.provider.send('evm_mine', []);
+      await expect(vault.expireLoan(0)).to.be.revertedWith('Loan already funded');
+    });
+
+    it('returns collateral to borrower and emits LoanExpired', async function () {
+      const { vault, borrower, anyone, collateral } = await deployForExpiry();
+      await ethers.provider.send('evm_increaseTime', [4 * 86400]);
+      await ethers.provider.send('evm_mine', []);
+
+      const balanceBefore = await ethers.provider.getBalance(borrower.address);
+      const tx = await vault.connect(anyone).expireLoan(0);
+      await expect(tx)
+        .to.emit(vault, 'LoanExpired')
+        .withArgs(0, borrower.address, (ts: bigint) => ts > 0n);
+
+      const balanceAfter = await ethers.provider.getBalance(borrower.address);
+      expect(balanceAfter - balanceBefore).to.equal(collateral);
+
+      const loan = await vault.loans(0);
+      expect(loan.active).to.equal(false);
+      expect(loan.collateralLocked).to.equal(false);
+      expect(loan.collateralReleased).to.equal(collateral);
+    });
+
+    it('is permissionless — anyone can expire past-deadline loans', async function () {
+      const { vault, anyone } = await deployForExpiry();
+      await ethers.provider.send('evm_increaseTime', [4 * 86400]);
+      await ethers.provider.send('evm_mine', []);
+      await expect(vault.connect(anyone).expireLoan(0)).to.not.be.reverted;
+    });
+
+    it('reverts if loan is already expired (inactive)', async function () {
+      const { vault } = await deployForExpiry();
+      await ethers.provider.send('evm_increaseTime', [4 * 86400]);
+      await ethers.provider.send('evm_mine', []);
+      await vault.expireLoan(0);
+      await expect(vault.expireLoan(0)).to.be.revertedWith('Loan is not active');
+    });
+  });
+
   describe('Chainlink & health factor', function () {
     async function deployWithFeeds() {
       const [owner, lender, borrower] = await ethers.getSigners();
