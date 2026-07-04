@@ -52,8 +52,9 @@ async function main() {
 
     for (const { price_feed_address, symbol } of result.rows) {
       const feed = new ethers.Contract(price_feed_address, MOCK_AGGREGATOR_ABI, signer);
-      const currentAnswer = await feed.latestAnswer() as bigint;
-      await feed.updateAnswer(currentAnswer);
+      const currentAnswer = (await feed.latestAnswer()) as bigint;
+      const tx = await feed.updateAnswer(currentAnswer);
+      await tx.wait();
       console.log(`Refreshed ${symbol} feed at ${price_feed_address} (answer unchanged: ${currentAnswer})`);
     }
 
