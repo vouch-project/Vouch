@@ -7,6 +7,7 @@ dependencies = [
     "web3>=7.6.0",
     "httpx>=0.28.0",
     "pydantic>=2.10.0",
+    "pydantic-settings>=2.0.0",
     "python-dotenv>=1.0.0",
 ]
 
@@ -27,3 +28,6 @@ select = ["E", "F", "I", "N", "UP", "B"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+
+[tool.setuptools]
+py-modules = ["config", "main"]
