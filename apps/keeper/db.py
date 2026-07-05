@@ -21,9 +21,10 @@ def get_actionable_loans(settings: Settings) -> list[ActionableLoan]:
         "Authorization": f"Bearer {settings.supabase_secret_key}",
     }
     params = {
-        "select": "onChainLoanId,status,fundDeadline",
+        "select": "onChainLoanId,status,fundDeadline,chains!inner(networkId)",
         "status": "in.(active,pending)",
         "onChainLoanId": "not.is.null",
+        "chains.networkId": f"eq.{settings.keeper_network_id}",
     }
     response = httpx.get(
         f"{settings.supabase_url}/rest/v1/loans",
