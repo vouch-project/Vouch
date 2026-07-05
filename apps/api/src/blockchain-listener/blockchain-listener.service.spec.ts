@@ -26,13 +26,21 @@ class TestableListener extends BlockchainListenerService {
   ) {
     return this.handleLoanCancelled(...args);
   }
+
+  callHandleLoanExpired(
+    ...args: Parameters<BlockchainListenerService['handleLoanExpired']>
+  ) {
+    return this.handleLoanExpired(...args);
+  }
 }
 
 describe('BlockchainListenerService', () => {
   let service: TestableListener;
+  let loanService: LoansService;
   let partialRepay: jest.Mock;
   let create: jest.Mock;
   let cancel: jest.Mock;
+  let expire: jest.Mock;
 
   const log = {
     transactionHash: '0xtx',
@@ -65,6 +73,7 @@ describe('BlockchainListenerService', () => {
     partialRepay = jest.fn().mockResolvedValue(undefined);
     create = jest.fn().mockResolvedValue(undefined);
     cancel = jest.fn().mockResolvedValue(undefined);
+    expire = jest.fn().mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -73,12 +82,13 @@ describe('BlockchainListenerService', () => {
         { provide: SupabaseService, useValue: { client: {} } },
         {
           provide: LoansService,
-          useValue: { partialRepay, create, cancel },
+          useValue: { partialRepay, create, cancel, expire },
         },
       ],
     }).compile();
 
     service = module.get(TestableListener);
+    loanService = module.get(LoansService);
 
     // Silence expected error-path logs so they don't clutter test output.
     jest.spyOn(service['logger'], 'error').mockImplementation(() => undefined);
@@ -172,6 +182,38 @@ describe('BlockchainListenerService', () => {
           cancelledAt: new Date(Number(1700000000n) * 1000),
         }),
       );
+    });
+  });
+
+  describe('handleLoanExpired', () => {
+    it('calls loanService.expire with correct parameters', async () => {
+      const loanId = 1n;
+      const borrower = '0xBorrower';
+      const timestamp = 1700000000n;
+      const mockLog = {
+        transactionHash: '0xabc',
+        blockNumber: 100,
+        blockHash: '0xblockhash',
+        index: 0,
+      } as ethers.Log;
+      const mockNetwork = { chainId: 1337n } as ethers.Network;
+      const contractAddress = '0xContract';
+
+      const expireSpy = jest.spyOn(loanService, 'expire').mockResolvedValue(undefined);
+
+      await service.callHandleLoanExpired(loanId, borrower, timestamp, mockLog, mockNetwork, contractAddress);
+
+      expect(expireSpy).toHaveBeenCalledWith({
+        onChainLoanId: loanId,
+        networkId: '1337',
+        contractAddress,
+        borrowerAddress: borrower,
+        txHash: '0xabc',
+        blockNumber: 100,
+        blockHash: '0xblockhash',
+        logIndex: 0,
+        expiredAt: new Date(Number(timestamp) * 1000),
+      });
     });
   });
 });

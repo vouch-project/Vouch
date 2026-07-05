@@ -20,15 +20,13 @@
           : 'Liquidation Risk',
   );
 
-  // Round healthFactor (1e18-scaled) to 2dp using bigint arithmetic throughout, so
-  // a value large enough to overflow/lose precision as a JS float still displays
-  // correctly. Rounding to 2dp of an 18dp fixed-point value is just dividing by
-  // 1e16 with round-half-up, then reinserting the decimal point — BigInt division
-  // truncates, so add half the divisor first to get round-half-up instead of
-  // round-down.
+  // Truncate (floor) healthFactor (1e18-scaled) to 2dp using bigint arithmetic.
+  // Deliberately does NOT round up: 0.9996 must display as "0.99 · Liquidation Risk",
+  // not "1.00 · Liquidation Risk" — rounding up at a threshold boundary would show
+  // a healthy-looking number next to an unhealthy status.
   const formatHealthFactor = (hf: bigint): string => {
     const scale = 10n ** 16n; // 1e18 / 100 -> 2 decimal places
-    const hundredths = (hf + scale / 2n) / scale;
+    const hundredths = hf / scale; // BigInt division truncates — no round-up bias
     const whole = hundredths / 100n;
     const frac = hundredths % 100n;
     return `${whole}.${frac.toString().padStart(2, '0')}`;

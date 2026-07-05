@@ -221,6 +221,22 @@ export class BlockchainListenerService implements OnModuleInit {
     );
 
     void contract.on(
+      contract.getEvent('LoanExpired'),
+      (loanId, borrower, timestamp, event) => {
+        this.enqueue(queueKey, () =>
+          this.handleLoanExpired(
+            loanId,
+            borrower,
+            timestamp,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
       contract.getEvent('ProtocolFeeCollected'),
       (loanId, _token, amount, event) => {
         this.enqueue(queueKey, () =>
@@ -367,6 +383,32 @@ export class BlockchainListenerService implements OnModuleInit {
       this.logger.log(`Loan ${loanId.toString()} cancelled by ${borrower}`);
     } catch (error) {
       this.logger.error('Failed to cancel loan in DB', error);
+    }
+  }
+
+  protected async handleLoanExpired(
+    loanId: bigint,
+    borrower: string,
+    timestamp: bigint,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+  ) {
+    try {
+      await this.loanService.expire({
+        onChainLoanId: loanId,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        borrowerAddress: borrower,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        expiredAt: new Date(Number(timestamp) * 1000),
+      });
+      this.logger.log(`Loan ${loanId.toString()} expired`);
+    } catch (error) {
+      this.logger.error('Failed to expire loan in DB', error);
     }
   }
 

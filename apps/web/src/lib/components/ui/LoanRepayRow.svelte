@@ -90,6 +90,7 @@
   const isRepaid = $derived(chainDetails?.repaid ?? loan.status === 'repaid');
   const isActive = $derived(!isRepaid && loan.status === 'active');
   const isPending = $derived(!isRepaid && loan.status === 'pending');
+  const isExpired = $derived(loan.status === 'expired');
 
   $effect(() => {
     // Guard on loan.status (not the chainDetails-derived `isActive`) so setting
@@ -121,18 +122,26 @@
   });
 
   $effect(() => {
-    if (loan.onChainLoanId === null || loan.status !== 'active') return;
+    if (loan.onChainLoanId === null || (loan.status !== 'active' && loan.status !== 'pending')) {
+      healthFactor = null;
+      hfLoading = false;
+      return;
+    }
+    let cancelled = false;
     hfLoading = true;
     getHealthFactor(BigInt(loan.onChainLoanId))
       .then((hf) => {
-        healthFactor = hf;
+        if (!cancelled) healthFactor = hf;
       })
       .catch(() => {
-        healthFactor = null;
+        if (!cancelled) healthFactor = null;
       })
       .finally(() => {
-        hfLoading = false;
+        if (!cancelled) hfLoading = false;
       });
+    return () => {
+      cancelled = true;
+    };
   });
 
   // ── Due date (from DB field, fallback to chain duration) ──────────────────
@@ -241,7 +250,7 @@
   };
 </script>
 
-<Table.Row class={cn('hover:bg-muted/10 transition-colors', isRepaid && 'opacity-60', isOverdue && 'bg-destructive/5')}>
+<Table.Row class={cn('hover:bg-muted/10 transition-colors', (isRepaid || isExpired) && 'opacity-60', isOverdue && 'bg-destructive/5')}>
   <!-- Loan # -->
   <Table.Cell class="pl-4 sm:pl-6 py-3 font-bold whitespace-nowrap">
     #{loan.onChainLoanId ?? '—'}

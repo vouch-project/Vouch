@@ -1,15 +1,29 @@
 <script lang="ts">
+  import type { HealthFactorResult } from '$lib/loans/loanMath';
+
   let {
     currentLtv,
     computedMaxLtv,
     ltvExceeded,
     creditScore,
+    projectedHf = null,
   }: {
     currentLtv: number;
     computedMaxLtv: number;
     ltvExceeded: boolean;
     creditScore: number | null;
+    projectedHf?: HealthFactorResult | null;
   } = $props();
+
+  const hfColor = $derived(
+    projectedHf === null
+      ? ''
+      : projectedHf.riskStatus === 'Safe'
+        ? 'text-green-500'
+        : projectedHf.riskStatus === 'Warning'
+          ? 'text-yellow-500'
+          : 'text-destructive',
+  );
 </script>
 
 <div
@@ -36,6 +50,9 @@
   <div class="flex justify-between items-center">
     <span class="text-sm font-bold {ltvExceeded ? 'text-destructive' : 'text-foreground'}">
       {currentLtv > 0 ? `${currentLtv.toFixed(1)}%` : '—'}
+      {#if projectedHf !== null}
+        <span class="font-semibold {hfColor}"> · {(Math.floor(projectedHf.healthFactor * 100) / 100).toFixed(2)}</span>
+      {/if}
     </span>
     {#if ltvExceeded}
       <span class="text-xs font-semibold text-destructive">Exceeds max LTV ↑</span>
