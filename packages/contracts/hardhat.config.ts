@@ -36,8 +36,14 @@ const config: HardhatUserConfig = {
       chainId: 1337,
     },
     sepolia: (() => {
-      const idx = process.argv.findIndex((arg) => arg === '--network');
-      const cliNetwork = idx >= 0 ? process.argv[idx + 1] : undefined;
+      const cliNetworkEq = process.argv.find((arg) => arg.startsWith('--network='));
+      const cliNetwork =
+        cliNetworkEq?.split('=')[1] ??
+        (() => {
+          const idx = process.argv.findIndex((arg) => arg === '--network');
+          const next = idx >= 0 ? process.argv[idx + 1] : undefined;
+          return next && !next.startsWith('-') ? next : undefined;
+        })();
       const network = (cliNetwork ?? process.env.HARDHAT_NETWORK ?? '').toLowerCase();
       if (network === 'sepolia') {
         if (!SEPOLIA_RPC_URL) {
