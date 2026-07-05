@@ -1,7 +1,15 @@
 import '@nomicfoundation/hardhat-ethers';
 import '@nomicfoundation/hardhat-toolbox';
 import '@openzeppelin/hardhat-upgrades';
+import * as dotenv from 'dotenv';
 import { HardhatUserConfig } from 'hardhat/config';
+import path from 'path';
+
+// Load the monorepo root .env so network RPC URLs / keys are available at
+// config-evaluation time (network `accounts` are read when this file loads).
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
+const { SEPOLIA_RPC_URL, DEPLOYER_PRIVATE_KEY, ETHERSCAN_API_KEY } = process.env;
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -27,6 +35,14 @@ const config: HardhatUserConfig = {
       url: 'http://127.0.0.1:8545',
       chainId: 1337,
     },
+    sepolia: {
+      url: SEPOLIA_RPC_URL ?? '',
+      chainId: 11155111,
+      accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
+    },
+  },
+  etherscan: {
+    apiKey: ETHERSCAN_API_KEY ?? '',
   },
 };
 
