@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 from web3.exceptions import ContractLogicError
@@ -8,7 +8,7 @@ from main import HF_THRESHOLD, process_loan
 
 HEALTHY = HF_THRESHOLD + 1
 SICK = HF_THRESHOLD - 1
-NOW = datetime.now(timezone.utc)
+NOW = datetime.now(UTC)
 PAST = NOW - timedelta(hours=1)
 FUTURE = NOW + timedelta(hours=24)
 

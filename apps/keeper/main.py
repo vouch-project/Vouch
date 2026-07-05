@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from web3.exceptions import ContractLogicError
 
@@ -46,7 +46,7 @@ def process_loan(loan: ActionableLoan, chain: VaultChain) -> None:
                 )
 
     elif loan.status == "pending":
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if loan.fund_deadline is not None and loan.fund_deadline < now:
             try:
                 chain.expire_loan(loan.on_chain_loan_id)
