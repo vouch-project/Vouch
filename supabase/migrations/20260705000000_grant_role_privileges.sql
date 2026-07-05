@@ -12,7 +12,9 @@
 --   * `anon` / `authenticated` are gated by the public-read + owner-scoped
 --     policies; RLS denies by default on any table without a matching policy.
 -- ---------------------------------------------------------------------------
-GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT USAGE ON SCHEMA public TO anon,
+authenticated,
+service_role;
 
 -- Existing objects.
 GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
