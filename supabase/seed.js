@@ -25,6 +25,20 @@ async function seed() {
       );
     }
 
+    // Insert Sepolia testnet when a Sepolia RPC endpoint is configured.
+    const sepoliaRpcUrl = process.env.SEPOLIA_RPC_URL;
+    if (sepoliaRpcUrl) {
+      await client.query(
+        `
+        INSERT INTO chains ("networkId", "contractAddress", "rpcUrl", "networkType", name)
+        VALUES ('11155111', $1, $2, 'evm', 'Sepolia')
+        ON CONFLICT ("networkId")
+        DO UPDATE SET "contractAddress" = EXCLUDED."contractAddress", "rpcUrl" = EXCLUDED."rpcUrl", "networkType" = EXCLUDED."networkType", name = EXCLUDED.name;
+        `,
+        [contractAddress, sepoliaRpcUrl],
+      );
+    }
+
     // Insert local hardhat only if NODE_ENV is not 'production'
     if (process.env.NODE_ENV !== 'production') {
       await client.query(

@@ -1,7 +1,15 @@
 import '@nomicfoundation/hardhat-ethers';
 import '@nomicfoundation/hardhat-toolbox';
 import '@openzeppelin/hardhat-upgrades';
+import * as dotenv from 'dotenv';
 import { HardhatUserConfig } from 'hardhat/config';
+import path from 'path';
+
+// Load the monorepo root .env so network RPC URLs / keys are available at
+// config-evaluation time (network `accounts` are read when this file loads).
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
+const { SEPOLIA_RPC_URL, DEPLOYER_PRIVATE_KEY, ETHERSCAN_API_KEY } = process.env;
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -27,6 +35,37 @@ const config: HardhatUserConfig = {
       url: 'http://127.0.0.1:8545',
       chainId: 1337,
     },
+    sepolia: (() => {
+      const cliNetworkEq = process.argv.find((arg) => arg.startsWith('--network='));
+      const cliNetwork =
+        cliNetworkEq?.split('=')[1] ??
+        (() => {
+          const idx = process.argv.findIndex((arg) => arg === '--network');
+          const next = idx >= 0 ? process.argv[idx + 1] : undefined;
+          return next && !next.startsWith('-') ? next : undefined;
+        })();
+      const network = (cliNetwork ?? process.env.HARDHAT_NETWORK ?? '').toLowerCase();
+      if (network === 'sepolia') {
+        if (!SEPOLIA_RPC_URL) {
+          throw new Error('SEPOLIA_RPC_URL is required when running with --network sepolia (see .env.example).');
+        }
+        if (!DEPLOYER_PRIVATE_KEY) {
+          throw new Error('DEPLOYER_PRIVATE_KEY is required when running with --network sepolia (see .env.example).');
+        }
+        if (!/^0x[0-9a-fA-F]{64}$/.test(DEPLOYER_PRIVATE_KEY)) {
+          throw new Error('DEPLOYER_PRIVATE_KEY must be a 0x-prefixed 32-byte hex string (see .env.example).');
+        }
+      }
+
+      return {
+        url: SEPOLIA_RPC_URL ?? '',
+        chainId: 11155111,
+        accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
+      };
+    })(),
+  },
+  etherscan: {
+    apiKey: ETHERSCAN_API_KEY ?? '',
   },
 };
 
