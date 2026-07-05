@@ -60,6 +60,7 @@ def process_loan(loan: ActionableLoan, chain: VaultChain) -> None:
             hf = chain.get_health_factor(loan.on_chain_loan_id)
         except ContractLogicError as exc:
             if "No price feed" in str(exc):
+                logger.debug("skipping loan %s: no price feed configured", loan.on_chain_loan_id)
                 return
             logger.exception("get_health_factor failed for loan %s", loan.on_chain_loan_id)
             return

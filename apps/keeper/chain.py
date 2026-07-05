@@ -20,9 +20,27 @@ _MINIMAL_ABI: list[dict[str, Any]] = [
     },
     {
         "inputs": [{"internalType": "uint256", "name": "loanId", "type": "uint256"}],
+        "name": "getRepaymentDetails",
+        "outputs": [
+            {"internalType": "uint16", "name": "interestRateBps", "type": "uint16"},
+            {"internalType": "uint256", "name": "durationSeconds", "type": "uint256"},
+            {"internalType": "bool", "name": "repaid", "type": "bool"},
+            {"internalType": "uint256", "name": "totalDue", "type": "uint256"},
+            {"internalType": "uint256", "name": "amountRepaid", "type": "uint256"},
+            {"internalType": "uint256", "name": "remaining", "type": "uint256"},
+            {"internalType": "uint256", "name": "fundDeadline", "type": "uint256"},
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [
+            {"internalType": "uint256", "name": "loanId", "type": "uint256"},
+            {"internalType": "address", "name": "collateralRecipient", "type": "address"},
+        ],
         "name": "liquidate",
         "outputs": [],
-        "stateMutability": "nonpayable",
+        "stateMutability": "payable",
         "type": "function",
     },
     {
@@ -51,23 +69,30 @@ class VaultChain:
         return result
 
     def liquidate(self, loan_id: int) -> None:
-        self._send_tx(self._contract.functions.liquidate(loan_id))
+        # Fetch the outstanding debt to send as msg.value; contract refunds any surplus.
+        details = self._contract.functions.getRepaymentDetails(loan_id).call()
+        remaining: int = details[5]
+        self._send_tx(
+            self._contract.functions.liquidate(loan_id, self._account.address),
+            value=remaining,
+        )
 
     def expire_loan(self, loan_id: int) -> None:
         self._send_tx(self._contract.functions.expireLoan(loan_id))
 
-    def _send_tx(self, fn: ContractFunction) -> None:
+    def _send_tx(self, fn: ContractFunction, value: int = 0) -> None:
         nonce = self._w3.eth.get_transaction_count(self._account.address)
-        tx = fn.build_transaction(
-            {
-                "from": self._account.address,
-                "nonce": nonce,
-                "gas": 200_000,
-            }
-        )
+        tx_params: dict[str, Any] = {
+            "from": self._account.address,
+            "nonce": nonce,
+            "gas": 200_000,
+        }
+        if value:
+            tx_params["value"] = value
+        tx = fn.build_transaction(tx_params)
         signed = self._account.sign_transaction(tx)
         tx_hash = self._w3.eth.send_raw_transaction(signed.raw_transaction)
-        receipt = self._w3.eth.wait_for_transaction_receipt(tx_hash)
+        receipt = self._w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
         if receipt["status"] != 1:
             raise RuntimeError(f"Transaction reverted: {tx_hash.hex()}")
         logger.info("tx %s mined in block %s", tx_hash.hex(), receipt["blockNumber"])
