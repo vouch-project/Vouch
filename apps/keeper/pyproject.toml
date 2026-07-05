@@ -30,4 +30,4 @@ python_version = "3.11"
 strict = true
 
 [tool.setuptools]
-py-modules = ["config", "main"]
+py-modules = ["config", "main", "db", "chain"]
