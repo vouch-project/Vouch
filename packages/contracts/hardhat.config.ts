@@ -44,6 +44,9 @@ const config: HardhatUserConfig = {
         if (!DEPLOYER_PRIVATE_KEY) {
           throw new Error('DEPLOYER_PRIVATE_KEY is required when running with --network sepolia (see .env.example).');
         }
+        if (!/^0x[0-9a-fA-F]{64}$/.test(DEPLOYER_PRIVATE_KEY)) {
+          throw new Error('DEPLOYER_PRIVATE_KEY must be a 0x-prefixed 32-byte hex string (see .env.example).');
+        }
       }
 
       return {
