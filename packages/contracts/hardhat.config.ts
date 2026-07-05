@@ -36,7 +36,9 @@ const config: HardhatUserConfig = {
       chainId: 1337,
     },
     sepolia: (() => {
-      const network = (process.env.HARDHAT_NETWORK ?? '').toLowerCase();
+      const idx = process.argv.findIndex((arg) => arg === '--network');
+      const cliNetwork = idx >= 0 ? process.argv[idx + 1] : undefined;
+      const network = (cliNetwork ?? process.env.HARDHAT_NETWORK ?? '').toLowerCase();
       if (network === 'sepolia') {
         if (!SEPOLIA_RPC_URL) {
           throw new Error('SEPOLIA_RPC_URL is required when running with --network sepolia (see .env.example).');
