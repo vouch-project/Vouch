@@ -997,8 +997,10 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         bool expired = loan.durationSeconds > 0
             && block.timestamp > loan.fundedAt + loan.durationSeconds;
-        // getHealthFactor calls _getPrice which enforces STALE_PRICE_THRESHOLD; skip it
-        // when expiry alone suffices to avoid reverting on stale oracle data.
+        // getHealthFactor calls _getPrice (staleness-checked). If the loan is expired we skip the
+        // health-factor check here to establish liquidatability, but liquidation still needs fresh
+        // oracle prices later in _liquidationAmounts to compute payouts, so expired liquidations
+        // will still revert on stale feeds.
         bool undercollateralized = !expired && getHealthFactor(loanId) < 1e18;
         require(undercollateralized || expired, "Loan is not liquidatable");
 
