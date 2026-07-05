@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
-import pytest
 from web3.exceptions import ContractLogicError
 
 from db import ActionableLoan
