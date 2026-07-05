@@ -68,4 +68,6 @@ class VaultChain:
         signed = self._account.sign_transaction(tx)
         tx_hash = self._w3.eth.send_raw_transaction(signed.raw_transaction)
         receipt = self._w3.eth.wait_for_transaction_receipt(tx_hash)
+        if receipt["status"] != 1:
+            raise RuntimeError(f"Transaction reverted: {tx_hash.hex()}")
         logger.info("tx %s mined in block %s", tx_hash.hex(), receipt["blockNumber"])
