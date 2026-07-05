@@ -36,11 +36,12 @@ SELECT
     ON ALL SEQUENCES IN SCHEMA public TO anon,
     authenticated;
 
-GRANT
-EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon,
-authenticated;
-
--- Future objects created by the migration owner (`postgres`).
+-- Deliberately NOT granting EXECUTE on all functions to anon/authenticated:
+-- many RPCs are SECURITY DEFINER and intended to be service_role-only (e.g.
+-- fund/repay/cancel/expire loan functions REVOKE ALL FROM PUBLIC and GRANT
+-- EXECUTE only to service_role). Grant EXECUTE explicitly, per function, in
+-- the migration that creates it when it is safe to expose.
+-- Future objects created by the role executing this migration.
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
 GRANT ALL ON TABLES TO service_role;
 
@@ -66,7 +67,6 @@ SELECT
     ON SEQUENCES TO anon,
     authenticated;
 
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT
-EXECUTE ON FUNCTIONS TO anon,
-authenticated;
+-- No default EXECUTE grant on functions for anon/authenticated: any function
+-- meant to be client-callable must add an explicit GRANT EXECUTE in the
+-- migration that creates it.
