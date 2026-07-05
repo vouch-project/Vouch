@@ -91,7 +91,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      RPC_URL: http://hardhat-node:8545
+      KEEPER_RPC_URL: http://hardhat-node:8545
     depends_on:
       hardhat-node:
         condition: service_started
