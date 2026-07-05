@@ -11,7 +11,7 @@ import { REOWN_PROJECT_ID } from '$lib/env';
 import type { AppKit } from '@reown/appkit';
 import { createAppKit } from '@reown/appkit';
 import { EthersAdapter } from '@reown/appkit-adapter-ethers';
-import { localhost, mainnet } from '@reown/appkit/networks';
+import { localhost, mainnet, sepolia } from '@reown/appkit/networks';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -21,11 +21,12 @@ import { localhost, mainnet } from '@reown/appkit/networks';
  * Networks the app supports, in priority order.
  * LocalHost (chain 1337) is added when running in development mode so that
  * testers can connect to the local Hardhat node started by docker-compose.
+ * Sepolia (chain 11155111) is supported for testnet deployments.
  */
 export const SUPPORTED_NETWORKS: Parameters<typeof createAppKit>[0]['networks'] = dev
-  ? [localhost, mainnet]
-  : [mainnet];
-export const DEFAULT_NETWORK = dev ? localhost : mainnet;
+  ? [localhost, sepolia, mainnet]
+  : [sepolia, mainnet];
+export const DEFAULT_NETWORK = dev ? localhost : sepolia;
 
 export const SUPPORTED_CHAIN_IDS = SUPPORTED_NETWORKS.map(({ id }) => BigInt(id));
 
