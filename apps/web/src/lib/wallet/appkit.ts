@@ -26,7 +26,7 @@ import { localhost, mainnet, sepolia } from '@reown/appkit/networks';
 export const SUPPORTED_NETWORKS: Parameters<typeof createAppKit>[0]['networks'] = dev
   ? [localhost, sepolia, mainnet]
   : [sepolia, mainnet];
-export const DEFAULT_NETWORK = dev ? localhost : mainnet;
+export const DEFAULT_NETWORK = dev ? localhost : sepolia;
 
 export const SUPPORTED_CHAIN_IDS = SUPPORTED_NETWORKS.map(({ id }) => BigInt(id));
 
