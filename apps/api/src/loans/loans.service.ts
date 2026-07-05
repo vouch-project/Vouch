@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { asAddress } from '@vouch/database-types';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CancelLoanDto } from './dto/cancel-loan.dto';
+import { ExpireLoanDto } from './dto/expire-loan.dto';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { FundLoanDto } from './dto/fund-loan.dto';
 import { PartialRepayLoanDto } from './dto/partial-repay-loan.dto';
@@ -151,6 +152,35 @@ export class LoansService {
         p_block_hash: blockHash,
         p_log_index: logIndex.toString(),
         p_cancelled_at: cancelledAt.toISOString(),
+      },
+    );
+
+    if (error) throw error;
+  }
+
+  async expire({
+    onChainLoanId,
+    networkId,
+    contractAddress,
+    borrowerAddress,
+    txHash,
+    blockNumber,
+    blockHash,
+    logIndex,
+    expiredAt,
+  }: ExpireLoanDto) {
+    const { error } = await this.supabaseService.client.rpc(
+      'expire_loan_with_transaction',
+      {
+        p_network_id: networkId,
+        p_contract_address: asAddress(contractAddress),
+        p_on_chain_loan_id: onChainLoanId.toString(),
+        p_borrower_address: asAddress(borrowerAddress),
+        p_tx_hash: txHash,
+        p_block_number: blockNumber.toString(),
+        p_block_hash: blockHash,
+        p_log_index: logIndex.toString(),
+        p_expired_at: expiredAt.toISOString(),
       },
     );
 

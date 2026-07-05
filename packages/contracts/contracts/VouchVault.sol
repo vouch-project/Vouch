@@ -149,6 +149,12 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 timestamp
     );
 
+    event LoanExpired(
+        uint256 indexed loanId,
+        address indexed borrower,
+        uint256 timestamp
+    );
+
     event ProtocolTreasuryUpdated(address indexed treasury);
     event ProtocolFeeUpdated(uint256 feeBps);
     event ProtocolFeeCollected(uint256 indexed loanId, address indexed token, uint256 amount);
@@ -428,6 +434,39 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         emit LoanCancelled(loanId, loan.borrower, block.timestamp);
     }
 
+    /// @notice Expire a pending loan, returning collateral to the borrower.
+    /// @dev Permissionless. Valid when the funding deadline has passed OR when price feeds are
+    ///      configured and the loan is already undercollateralized (HF < 1e18).
+    function expireLoan(uint256 loanId) external nonReentrant {
+        Loan storage loan = loans[loanId];
+        require(loan.active, "Loan is not active");
+        require(!loan.funded, "Loan already funded");
+
+        bool deadlinePassed = block.timestamp > loan.fundDeadline;
+        bool undercollateralized = address(priceFeeds[loan.collateralToken]) != address(0) &&
+            address(priceFeeds[loan.requestedPrincipalToken]) != address(0) &&
+            getHealthFactor(loanId) < 1e18;
+        require(deadlinePassed || undercollateralized, "Loan cannot be expired yet");
+
+        uint256 amount = loan.collateralAmount - loan.collateralReleased;
+
+        loan.active = false;
+        loan.collateralLocked = false;
+        loan.collateralReleased = loan.collateralAmount;
+
+        if (amount > 0) {
+            if (loan.collateralToken == address(0)) {
+                lockedEthCollateral[loan.borrower] -= amount;
+                (bool ok, ) = payable(loan.borrower).call{value: amount}("");
+                require(ok, "ETH collateral return failed");
+            } else {
+                IERC20(loan.collateralToken).safeTransfer(loan.borrower, amount);
+            }
+        }
+
+        emit LoanExpired(loanId, loan.borrower, block.timestamp);
+    }
+
     function withdraw(uint256 amount) external nonReentrant {
         require(deposits[msg.sender] >= amount, "Insufficient balance");
         
@@ -653,6 +692,10 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(block.timestamp <= loan.fundDeadline, "Funding window passed");
         require(loan.requestedPrincipalToken == address(0), "Token does not match requested principal token");
         require(msg.value == loan.requestedPrincipalAmount, "msg.value must equal requested principal amount");
+        if (address(priceFeeds[loan.collateralToken]) != address(0) &&
+            address(priceFeeds[loan.requestedPrincipalToken]) != address(0)) {
+            require(getHealthFactor(loanId) >= 1e18, "Loan is undercollateralized");
+        }
 
         loan.lender = msg.sender;
         loan.principalAmount = loan.requestedPrincipalAmount;
@@ -683,6 +726,10 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(amount > 0, "Funding amount must be > 0");
         require(token == loan.requestedPrincipalToken, "Token does not match requested principal token");
         require(amount == loan.requestedPrincipalAmount, "Amount does not match requested principal amount");
+        if (address(priceFeeds[loan.collateralToken]) != address(0) &&
+            address(priceFeeds[loan.requestedPrincipalToken]) != address(0)) {
+            require(getHealthFactor(loanId) >= 1e18, "Loan is undercollateralized");
+        }
 
         loan.lender = msg.sender;
         loan.principalAmount = amount;
@@ -755,13 +802,17 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     function getHealthFactor(uint256 loanId) public view returns (uint256) {
         Loan memory loan = loans[loanId];
-        require(loan.funded, "Loan not funded");
         require(!loan.repaid, "Loan already repaid");
 
-        // Mirrors getRepaymentDetails: totalDue/remaining are based on the current
-        // outstanding principal and accrued interest, not the flat interest at origination.
-        uint256 totalDue = loan.principalAmount + _currentInterestOwed(loan);
-        uint256 remainingDebt = totalDue > loan.amountRepaid ? totalDue - loan.amountRepaid : 0;
+        // For funded loans use actual debt (principal + accrued interest - repaid).
+        // For unfunded loans use requestedPrincipalAmount — no interest accrues yet.
+        uint256 remainingDebt;
+        if (loan.funded) {
+            uint256 totalDue = loan.principalAmount + _currentInterestOwed(loan);
+            remainingDebt = totalDue > loan.amountRepaid ? totalDue - loan.amountRepaid : 0;
+        } else {
+            remainingDebt = loan.requestedPrincipalAmount;
+        }
         require(remainingDebt > 0, "No remaining debt");
 
         uint256 lockedCollateral = loan.collateralAmount - loan.collateralReleased;

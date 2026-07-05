@@ -112,6 +112,7 @@ export type Database = {
           description: string | null
           dueAt: string | null
           duration: string | null
+          expiredAt: string | null
           fundDeadline: string | null
           fundedAt: string | null
           id: string
@@ -140,6 +141,7 @@ export type Database = {
           description?: string | null
           dueAt?: string | null
           duration?: string | null
+          expiredAt?: string | null
           fundDeadline?: string | null
           fundedAt?: string | null
           id?: string
@@ -168,6 +170,7 @@ export type Database = {
           description?: string | null
           dueAt?: string | null
           duration?: string | null
+          expiredAt?: string | null
           fundDeadline?: string | null
           fundedAt?: string | null
           id?: string
@@ -563,6 +566,20 @@ export type Database = {
         Returns: string
       }
       current_wallet_address: { Args: never; Returns: string }
+      expire_loan_with_transaction: {
+        Args: {
+          p_block_hash: string
+          p_block_number: unknown
+          p_borrower_address: unknown
+          p_contract_address: unknown
+          p_expired_at: string
+          p_log_index: unknown
+          p_network_id: string
+          p_on_chain_loan_id: unknown
+          p_tx_hash: string
+        }
+        Returns: undefined
+      }
       fund_loan_with_transaction: {
         Args: {
           p_block_hash: string
@@ -641,6 +658,7 @@ export type Database = {
         | "defaulted"
         | "liquidated"
         | "cancelled"
+        | "expired"
       notificationType:
         | "loan_funded"
         | "loan_repaid"
@@ -794,6 +812,7 @@ export const Constants = {
         "defaulted",
         "liquidated",
         "cancelled",
+        "expired",
       ],
       notificationType: [
         "loan_funded",

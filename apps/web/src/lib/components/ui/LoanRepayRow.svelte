@@ -4,11 +4,11 @@
   import LoanStatusBadge from '$lib/components/ui/LoanStatusBadge.svelte';
   import * as Table from '$lib/components/ui/table';
   import { formatUint256 } from '$lib/formatUint256';
-  import { calculateHealthFactor, computeProgressPct, computeRemaining, computeTotalDue, formatDueDateLabel } from '$lib/loans/loanMath';
+  import { computeProgressPct, computeRemaining, computeTotalDue, formatDueDateLabel } from '$lib/loans/loanMath';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import type { LoanFull } from '$lib/types';
   import { cn } from '$lib/utils';
-  import { cancelLoan, getHealthFactor, getLoanLiquidationThreshold, getRepaymentDetails, type RepaymentDetails } from '$lib/wallet/vouchVault';
+  import { cancelLoan, getHealthFactor, getRepaymentDetails, type RepaymentDetails } from '$lib/wallet/vouchVault';
   import { Check, Copy } from '@lucide/svelte';
   import { ethers } from 'ethers';
   import { tableColumns } from '../dashboard/columns';
@@ -84,13 +84,13 @@
   let chainError = $state('');
   let healthFactor = $state<bigint | null>(null);
   let hfLoading = $state(false);
-  let projectedHf = $state<ReturnType<typeof calculateHealthFactor>>(null);
 
   // Chain state is authoritative once loaded; DB status is the initial fallback
   // while the blockchain listener hasn't yet written the update.
   const isRepaid = $derived(chainDetails?.repaid ?? loan.status === 'repaid');
   const isActive = $derived(!isRepaid && loan.status === 'active');
   const isPending = $derived(!isRepaid && loan.status === 'pending');
+  const isExpired = $derived(loan.status === 'expired');
 
   $effect(() => {
     // Guard on loan.status (not the chainDetails-derived `isActive`) so setting
@@ -122,52 +122,23 @@
   });
 
   $effect(() => {
-    if (loan.onChainLoanId === null || loan.status !== 'active') return;
+    if (loan.onChainLoanId === null || (loan.status !== 'active' && loan.status !== 'pending')) {
+      healthFactor = null;
+      hfLoading = false;
+      return;
+    }
+    let cancelled = false;
     hfLoading = true;
     getHealthFactor(BigInt(loan.onChainLoanId))
       .then((hf) => {
-        healthFactor = hf;
+        if (!cancelled) healthFactor = hf;
       })
       .catch(() => {
-        healthFactor = null;
+        if (!cancelled) healthFactor = null;
       })
       .finally(() => {
-        hfLoading = false;
+        if (!cancelled) hfLoading = false;
       });
-  });
-
-  $effect(() => {
-    if (loan.onChainLoanId === null || loan.status !== 'pending') {
-      projectedHf = null;
-      return;
-    }
-
-    const collateralPriceUsd = loan.collateralToken?.price_usd ?? null;
-    const principalPriceUsd = loan.principalToken?.price_usd ?? null;
-    if (collateralPriceUsd === null || principalPriceUsd === null) {
-      projectedHf = null;
-      return;
-    }
-
-    const collateralDecimals_ = loan.collateralToken?.decimals ?? 18;
-    const principalDecimals_ = loan.principalToken?.decimals ?? 18;
-    const collateralRaw = BigInt(loan.collateralAmount ?? '0');
-    const collateralUsd = parseFloat(ethers.formatUnits(collateralRaw, collateralDecimals_)) * collateralPriceUsd;
-
-    let cancelled = false;
-    getLoanLiquidationThreshold(BigInt(loan.onChainLoanId))
-      .then(({ liquidationThresholdBps, requestedPrincipalAmount }) => {
-        if (cancelled) return;
-        // For pending loans principalAmount in DB is 0; use the on-chain requested amount.
-        const actualBorrowedUsd =
-          parseFloat(ethers.formatUnits(requestedPrincipalAmount, principalDecimals_)) * principalPriceUsd;
-        projectedHf = calculateHealthFactor(collateralUsd, actualBorrowedUsd, liquidationThresholdBps / 100);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        projectedHf = null;
-      });
-
     return () => {
       cancelled = true;
     };
@@ -279,7 +250,7 @@
   };
 </script>
 
-<Table.Row class={cn('hover:bg-muted/10 transition-colors', isRepaid && 'opacity-60', isOverdue && 'bg-destructive/5')}>
+<Table.Row class={cn('hover:bg-muted/10 transition-colors', (isRepaid || isExpired) && 'opacity-60', isOverdue && 'bg-destructive/5')}>
   <!-- Loan # -->
   <Table.Cell class="pl-4 sm:pl-6 py-3 font-bold whitespace-nowrap">
     #{loan.onChainLoanId ?? '—'}
@@ -367,20 +338,7 @@
 
   <!-- Health Factor -->
   <Table.Cell class="px-2 sm:px-4 py-3 whitespace-nowrap text-center">
-    {#if isPending && projectedHf !== null}
-      <span
-        class="text-xs font-semibold {projectedHf.riskStatus === 'Safe'
-          ? 'text-green-500'
-          : projectedHf.riskStatus === 'Warning'
-            ? 'text-yellow-500'
-            : 'text-destructive'}"
-        title="Projected at current prices"
-      >
-        ~{(Math.floor(projectedHf.healthFactor * 100) / 100).toFixed(2)}
-      </span>
-    {:else}
-      <HealthFactorBadge {healthFactor} loading={hfLoading} />
-    {/if}
+    <HealthFactorBadge {healthFactor} loading={hfLoading} />
   </Table.Cell>
 
   <!-- Status -->
