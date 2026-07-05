@@ -97,10 +97,13 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         _reentrancyStatus = _NOT_ENTERED;
     }
 
-    // V5 additions — appended to preserve storage layout
+    // --- Oracle & liquidation ---
     mapping(address token => AggregatorV3Interface) public priceFeeds;
     uint256 public constant STALE_PRICE_THRESHOLD = 1 hours;
     mapping(address token => uint8) public tokenDecimals;
+
+    uint256 public liquidationBonusBps;                          // default 500 = 5%
+    uint256 public constant MAX_LIQUIDATION_BONUS_BPS = 2000;    // hard cap: 20%
 
     // --- Events ---
     event Deposited(address indexed user, uint256 amount);
@@ -163,7 +166,15 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     event PaymentCredited(address indexed account, address indexed token, uint256 amount);
     event PaymentWithdrawn(address indexed account, address indexed token, uint256 amount);
 
-    event LoanLiquidated(uint256 indexed loanId, address indexed liquidator, uint256 timestamp);
+    event LoanLiquidated(
+        uint256 indexed loanId,
+        address indexed liquidator,
+        uint256 amountPaid,
+        uint256 collateralSeized,
+        uint256 collateralReturned,
+        uint256 timestamp
+    );
+    event LiquidationBonusUpdated(uint256 bonusBps);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -181,6 +192,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         _reentrancyStatus = _NOT_ENTERED;
         protocolTreasury = initialOwner; // default treasury; owner can change later
         protocolFeeBps = 1000;           // default 10% of interest
+        liquidationBonusBps = 500;       // default 5% liquidation bonus
     }
 
     /**
@@ -219,6 +231,16 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(newMinInterestBps <= MAX_MIN_INTEREST_BPS, "Min interest exceeds max");
         minInterestBps = newMinInterestBps;
         emit MinInterestUpdated(newMinInterestBps);
+    }
+
+    /**
+     * @notice Set the liquidation bonus paid to liquidators in basis points.
+     * @param newBonusBps Bonus in basis points (500 = 5%), capped at MAX_LIQUIDATION_BONUS_BPS.
+     */
+    function setLiquidationBonusBps(uint256 newBonusBps) external onlyOwner {
+        require(newBonusBps <= MAX_LIQUIDATION_BONUS_BPS, "Bonus exceeds max");
+        liquidationBonusBps = newBonusBps;
+        emit LiquidationBonusUpdated(newBonusBps);
     }
 
     /**
@@ -794,9 +816,27 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     function _normalizeAmount(address token, uint256 amount) internal view returns (uint256) {
         uint8 dec = tokenDecimals[token];
-        if (dec == 0) dec = 18; // default to 18 if not set
+        if (dec == 0) dec = 18;
         if (dec < 18) return amount * (10 ** (18 - dec));
         if (dec > 18) return amount / (10 ** (dec - 18));
+        return amount;
+    }
+
+    // Inverse of _normalizeAmount: converts an 18-dec scaled amount back to the token's native decimals.
+    function _denormalizeAmount(address token, uint256 amount) internal view returns (uint256) {
+        uint8 dec = tokenDecimals[token];
+        if (dec == 0) dec = 18;
+        if (dec < 18) return amount / (10 ** (18 - dec));
+        if (dec > 18) return amount * (10 ** (dec - 18));
+        return amount;
+    }
+
+    // Round-up variant used when undercharging the liquidator would underpay the lender.
+    function _denormalizeAmountCeil(address token, uint256 amount) internal view returns (uint256) {
+        uint8 dec = tokenDecimals[token];
+        if (dec == 0) dec = 18;
+        if (dec < 18) return amount.ceilDiv(10 ** (18 - dec));
+        if (dec > 18) return amount * (10 ** (dec - 18));
         return amount;
     }
 
@@ -861,9 +901,181 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         return ratio / 10000;
     }
 
-    function liquidate(uint256 loanId) external {
-        require(getHealthFactor(loanId) < 1e18, "Loan is not undercollateralized");
-        revert("liquidate: not implemented");
+    /**
+     * @notice Liquidate an undercollateralized or expired ETH-principal loan.
+     * @dev    Send at least the computed liquidatorPays as msg.value; any surplus is refunded
+     *         to msg.sender. Seized collateral is sent to `collateralRecipient`
+     *         (address(0) defaults to msg.sender — useful for bots routing to a treasury).
+     * @param collateralRecipient Address to receive the seized collateral, or address(0) for msg.sender.
+     */
+    function liquidate(uint256 loanId, address collateralRecipient) external payable nonReentrant {
+        Loan storage loan = loans[loanId];
+        require(loan.requestedPrincipalToken == address(0), "Loan has ERC20 principal; use liquidateWithERC20");
+        _liquidate(loan, loanId, msg.value, collateralRecipient == address(0) ? msg.sender : collateralRecipient);
+    }
+
+    /**
+     * @notice Liquidate an undercollateralized or expired ERC20-principal loan.
+     * @dev    Pulls exactly the computed liquidatorPays (≤ maxAmount) via transferFrom.
+     *         Seized collateral is sent to `collateralRecipient`
+     *         (address(0) defaults to msg.sender — useful for bots routing to a treasury).
+     * @param loanId              The loan to liquidate.
+     * @param maxAmount           Maximum the caller is willing to pay (slippage guard).
+     * @param collateralRecipient Address to receive the seized collateral, or address(0) for msg.sender.
+     */
+    function liquidateWithERC20(uint256 loanId, uint256 maxAmount, address collateralRecipient) external nonReentrant {
+        Loan storage loan = loans[loanId];
+        require(loan.requestedPrincipalToken != address(0), "Loan has ETH principal; use liquidate");
+        _liquidate(loan, loanId, maxAmount, collateralRecipient == address(0) ? msg.sender : collateralRecipient);
+    }
+
+    struct LiquidationAmounts {
+        uint256 liquidatorPays;
+        uint256 seizeCollateral;
+        uint256 collateralReturned;
+        uint256 interestOutstanding;
+    }
+
+    /**
+     * @dev Compute seizure and payment amounts for a liquidation.
+     *      Extracted to avoid stack-too-deep in _liquidate.
+     */
+    function _liquidationAmounts(
+        Loan storage loan,
+        uint256 debt,
+        uint256 lockedCollateral
+    ) internal view returns (LiquidationAmounts memory r) {
+        r.interestOutstanding = loan.interestAccrued > (loan.amountRepaid - loan.principalRepaid)
+            ? loan.interestAccrued - (loan.amountRepaid - loan.principalRepaid) : 0;
+
+        uint256 collateralPrice = _getPrice(loan.collateralToken);
+        uint256 principalPrice  = _getPrice(loan.requestedPrincipalToken);
+
+        // Target: collateral units worth debt*(1+bonus).
+        uint256 targetCollateral = _denormalizeAmount(
+            loan.collateralToken,
+            _normalizeAmount(loan.requestedPrincipalToken, debt)
+                .mulDiv(principalPrice, 1e18)
+                .mulDiv(10000 + liquidationBonusBps, 10000)
+                .mulDiv(1e18, collateralPrice)
+        );
+
+        if (targetCollateral <= lockedCollateral) {
+            // Healthy close: liquidator pays full debt, seizes target, borrower gets the rest.
+            r.liquidatorPays     = debt;
+            r.seizeCollateral    = targetCollateral;
+            r.collateralReturned = lockedCollateral - targetCollateral;
+        } else {
+            // Underwater: seize all collateral, liquidator pays collateralValue/(1+bonus).
+            r.seizeCollateral    = lockedCollateral;
+            r.collateralReturned = 0;
+            // Round up so the liquidator always pays at least as much as the collateral is worth;
+            // rounding down (floor) for tokens with <18 decimals (e.g. USDC) would undercharge
+            // the liquidator and leave the lender short.
+            uint256 pay = _denormalizeAmountCeil(
+                loan.requestedPrincipalToken,
+                _normalizeAmount(loan.collateralToken, lockedCollateral)
+                    .mulDiv(collateralPrice, 1e18)
+                    .mulDiv(10000, 10000 + liquidationBonusBps)
+                    .mulDiv(1e18, principalPrice)
+            );
+            r.liquidatorPays = pay > debt ? debt : pay;
+        }
+    }
+
+    /**
+     * @dev Core liquidation logic shared by both entry points.
+     *      maxPay is msg.value (ETH) or maxAmount (ERC20) — the caller's ceiling.
+     *      collateralRecipient is the resolved recipient (never address(0) by the time it reaches here).
+     */
+    function _liquidate(Loan storage loan, uint256 loanId, uint256 maxPay, address collateralRecipient) internal {
+        require(loan.funded,   "Loan is not funded");
+        require(!loan.repaid,  "Loan already repaid");
+        require(loan.active,   "Loan is not active");
+
+        _accrue(loan);
+
+        bool expired = loan.durationSeconds > 0
+            && block.timestamp > loan.fundedAt + loan.durationSeconds;
+        // getHealthFactor calls _getPrice (staleness-checked). If the loan is expired we skip the
+        // health-factor check here to establish liquidatability, but liquidation still needs fresh
+        // oracle prices later in _liquidationAmounts to compute payouts, so expired liquidations
+        // will still revert on stale feeds.
+        bool undercollateralized = !expired && getHealthFactor(loanId) < 1e18;
+        require(undercollateralized || expired, "Loan is not liquidatable");
+
+        uint256 debt = (loan.principalAmount - loan.principalRepaid)
+            + (loan.interestAccrued > (loan.amountRepaid - loan.principalRepaid)
+               ? loan.interestAccrued - (loan.amountRepaid - loan.principalRepaid) : 0);
+
+        uint256 lockedCollateral = loan.collateralAmount - loan.collateralReleased;
+
+        LiquidationAmounts memory a = _liquidationAmounts(loan, debt, lockedCollateral);
+
+        require(a.liquidatorPays <= maxPay, "Exceeds max payment");
+
+        // Protocol fee only on healthy close; waived when underwater (lender keeps full payment).
+        uint256 protocolFee = a.liquidatorPays == debt ? _protocolFee(a.interestOutstanding) : 0;
+
+        // For principalRepaid tracking: on healthy close, credit principal repaid above interest.
+        uint256 principalPaid = (a.liquidatorPays == debt && a.liquidatorPays > a.interestOutstanding)
+            ? a.liquidatorPays - a.interestOutstanding : 0;
+
+        // Collect ERC20 payment (exact amount). ETH already held via msg.value.
+        if (loan.requestedPrincipalToken != address(0)) {
+            uint256 balanceBefore = IERC20(loan.requestedPrincipalToken).balanceOf(address(this));
+            IERC20(loan.requestedPrincipalToken).safeTransferFrom(msg.sender, address(this), a.liquidatorPays);
+            require(
+                IERC20(loan.requestedPrincipalToken).balanceOf(address(this)) - balanceBefore == a.liquidatorPays,
+                "Fee-on-transfer principal not supported"
+            );
+        }
+
+        // Update state — loan fully closed.
+        loan.amountRepaid      += a.liquidatorPays;
+        loan.principalRepaid   += principalPaid;
+        loan.collateralReleased = loan.collateralAmount;
+        loan.repaid            = true;
+        loan.active            = false;
+        loan.collateralLocked  = false;
+
+        // --- Payouts ---
+
+        // Lender receives liquidatorPays minus protocol fee.
+        if (loan.requestedPrincipalToken == address(0)) {
+            _payoutEth(loan.lender, a.liquidatorPays - protocolFee);
+        } else {
+            _payoutToken(loan.requestedPrincipalToken, loan.lender, a.liquidatorPays - protocolFee);
+        }
+
+        if (protocolFee > 0) {
+            if (loan.requestedPrincipalToken == address(0)) {
+                _payoutEth(protocolTreasury, protocolFee);
+            } else {
+                _payoutToken(loan.requestedPrincipalToken, protocolTreasury, protocolFee);
+            }
+            emit ProtocolFeeCollected(loanId, loan.requestedPrincipalToken, protocolFee);
+        }
+
+        // Collateral: recipient seizes, borrower gets any excess.
+        if (loan.collateralToken == address(0)) {
+            lockedEthCollateral[loan.borrower] -= lockedCollateral;
+            (bool ok, ) = payable(collateralRecipient).call{value: a.seizeCollateral}("");
+            if (!ok) _creditPayment(collateralRecipient, address(0), a.seizeCollateral);
+            if (a.collateralReturned > 0) _payoutEth(loan.borrower, a.collateralReturned);
+        } else {
+            IERC20(loan.collateralToken).safeTransfer(collateralRecipient, a.seizeCollateral);
+            if (a.collateralReturned > 0) {
+                IERC20(loan.collateralToken).safeTransfer(loan.borrower, a.collateralReturned);
+            }
+        }
+
+        // Refund surplus ETH to liquidator (ETH-principal only).
+        if (loan.requestedPrincipalToken == address(0) && maxPay > a.liquidatorPays) {
+            _payoutEth(msg.sender, maxPay - a.liquidatorPays);
+        }
+
+        emit LoanLiquidated(loanId, msg.sender, a.liquidatorPays, a.seizeCollateral, a.collateralReturned, block.timestamp);
     }
 
     // --- View Functions ---
