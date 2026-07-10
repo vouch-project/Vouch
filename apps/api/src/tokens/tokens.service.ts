@@ -3,12 +3,12 @@ import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { Tables, validAddress } from '@vouch/database-types';
 import type { UUID } from 'crypto';
 import type { Redis } from 'ioredis';
-import { validAddress, Tables } from '@vouch/database-types';
 import { SupabaseService } from '../supabase/supabase.service';
-import { tokensMock } from './tokens.mock';
 import { PriceFeedService, priceKey } from './price-feed.service';
+import { tokensMock } from './tokens.mock';
 
 export type ResponseToken = {
   chainId: number;
@@ -79,10 +79,26 @@ const runWithConcurrencyLimit = async <T>(
   );
 };
 
+// Testnets whose networkId prefix in RouteScan is "testnet" rather than "mainnet".
+const TESTNET_CHAIN_IDS = new Set(['11155111', '84532', '80002', '43113']);
+
+type RouteScanErc20Token = {
+  chainId: number;
+  address: string;
+  name: string | null;
+  symbol: string;
+  decimals: number;
+};
+
+type RouteScanErc20Response = {
+  items: RouteScanErc20Token[];
+  link?: { next?: string };
+};
+
 @Injectable()
 export class TokensService implements OnModuleInit {
   private readonly logger = new Logger(TokensService.name);
-  private readonly tokenListUrl = 'https://li.quest/v1/tokens?chains=';
+  private readonly routeScanBase = 'https://api.routescan.io/v2/network';
   private readonly redisKeyPrefix = 'tokens:cache:';
 
   constructor(
@@ -99,7 +115,7 @@ export class TokensService implements OnModuleInit {
 
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
   private async fetchTokenList() {
-    this.logger.log('Fetching token list from Li.Fi (li.quest)...');
+    this.logger.log('Fetching token list from RouteScan...');
     try {
       const mockErc20Address = this.getMockErc20Address();
       const evmChains = await this.fetchEvmChains();
@@ -166,22 +182,68 @@ export class TokensService implements OnModuleInit {
     return data.id;
   }
 
+  private routeScanNetworkId(chainId: string): string {
+    return TESTNET_CHAIN_IDS.has(chainId) ? 'testnet' : 'mainnet';
+  }
+
+  private async fetchRouteScanTokens(
+    chainId: string,
+  ): Promise<ResponseToken[]> {
+    const networkId = this.routeScanNetworkId(chainId);
+    const tokens: ResponseToken[] = [];
+    let nextUrl: string | undefined =
+      `${this.routeScanBase}/${networkId}/evm/${chainId}/erc20?limit=100`;
+
+    while (nextUrl) {
+      const currentUrl: string = nextUrl;
+      const res =
+        await this.httpService.axiosRef.get<RouteScanErc20Response>(currentUrl);
+      for (const t of res.data.items ?? []) {
+        tokens.push({
+          chainId: t.chainId,
+          address: t.address,
+          symbol: t.symbol,
+          decimals: t.decimals,
+          name: t.name ?? null,
+          logoURI: null,
+          priceUsd: null,
+          volatility: null,
+        });
+      }
+      nextUrl = res.data.link?.next;
+    }
+
+    return tokens;
+  }
+
   private async fetchRawTokens(
     evmChainIds: string[],
     mockErc20Address?: string,
   ): Promise<ResponseToken[]> {
-    const liFiTokens = (
-      await this.httpService.axiosRef.get<TokenListResponse>(
-        `${this.tokenListUrl}${evmChainIds.join(',')}`,
-      )
-    ).data.tokens;
+    // Skip local dev chain — RouteScan has no record of it.
+    const routeScanChainIds = evmChainIds.filter((id) => id !== '1337');
 
-    const rawTokensByChain = {
-      ...liFiTokens,
-      ...(mockErc20Address && tokensMock(mockErc20Address)),
-    };
+    const results = await Promise.allSettled(
+      routeScanChainIds.map((id) => this.fetchRouteScanTokens(id)),
+    );
 
-    return Object.values(rawTokensByChain).flat();
+    const routeScanTokens: ResponseToken[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      if (result.status === 'fulfilled') {
+        routeScanTokens.push(...result.value);
+      } else {
+        this.logger.warn(
+          `RouteScan fetch failed for chain ${routeScanChainIds[i]}: ${result.reason}`,
+        );
+      }
+    }
+
+    const mockTokens = mockErc20Address
+      ? Object.values(tokensMock(mockErc20Address)).flat()
+      : [];
+
+    return [...routeScanTokens, ...mockTokens];
   }
 
   private mapToUpsertTokens(

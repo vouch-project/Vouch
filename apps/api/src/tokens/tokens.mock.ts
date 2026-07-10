@@ -1,4 +1,4 @@
-import { TokenListResponse } from './tokens.service';
+import type { TokenListResponse } from './tokens.service';
 
 export const tokensMock = (
   HARDCODED_MOCK_ERC20_ADDRESS: string,
@@ -27,3 +27,5 @@ export const tokensMock = (
     },
   ],
 });
+
+
