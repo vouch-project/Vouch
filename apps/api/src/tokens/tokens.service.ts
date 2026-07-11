@@ -57,7 +57,7 @@ const DEFAULT_VOLATILITY_BY_SYMBOL: Record<string, number> = {
 };
 const DEFAULT_VOLATILITY = 0.6;
 
-// Caps how many token updates run concurrently so a large Li.Fi token list
+// Caps how many token updates run concurrently so a large RouteScan token list
 // (hundreds/thousands of tokens) doesn't fire that many simultaneous requests
 // at PostgREST/DB on every API startup and daily cron run.
 const BACKFILL_CONCURRENCY = 10;
@@ -220,24 +220,21 @@ export class TokensService implements OnModuleInit {
     evmChainIds: string[],
     mockErc20Address?: string,
   ): Promise<ResponseToken[]> {
-    // Skip local dev chain — RouteScan has no record of it.
-    const routeScanChainIds = evmChainIds.filter((id) => id !== '1337');
-
-    const results = await Promise.allSettled(
-      routeScanChainIds.map((id) => this.fetchRouteScanTokens(id)),
+    // Skip local dev chains — RouteScan has no record of them.
+    const routeScanChainIds = evmChainIds.filter(
+      (id) => !['1337', '31337'].includes(id),
     );
 
     const routeScanTokens: ResponseToken[] = [];
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
-      if (result.status === 'fulfilled') {
-        routeScanTokens.push(...result.value);
-      } else {
+    await runWithConcurrencyLimit(routeScanChainIds, 3, async (id) => {
+      try {
+        routeScanTokens.push(...(await this.fetchRouteScanTokens(id)));
+      } catch (err) {
         this.logger.warn(
-          `RouteScan fetch failed for chain ${routeScanChainIds[i]}: ${result.reason}`,
+          `RouteScan fetch failed for chain ${id}: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
-    }
+    });
 
     const mockTokens = mockErc20Address
       ? Object.values(tokensMock(mockErc20Address)).flat()
@@ -384,7 +381,7 @@ export class TokensService implements OnModuleInit {
 
     // Enrich with live prices and volatility from DB. Both are scoped by the DB's
     // uuid chainId (not `ResponseToken.chainId`, which is the raw numeric chain id
-    // from the Li.Fi token list) so tokens with the same symbol/address on different
+    // from the RouteScan token list) so tokens with the same symbol/address on different
     // chains never collide.
     const dbChainId = await this.getChainIdByNetworkId(networkId);
     if (!dbChainId)

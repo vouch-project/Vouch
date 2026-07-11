@@ -28,7 +28,7 @@ async function seed() {
     // Insert Sepolia testnet when a Sepolia RPC endpoint is configured.
     const sepoliaRpcUrl = process.env.SEPOLIA_RPC_URL;
     if (sepoliaRpcUrl) {
-      const sepoliaContractAddress = process.env.SEPOLIA_VOUCH_VAULT_ADDRESS ?? contractAddress;
+      const sepoliaContractAddress = process.env.SEPOLIA_VOUCH_VAULT_ADDRESS?.trim() || contractAddress;
       await client.query(
         `
         INSERT INTO chains ("networkId", "contractAddress", "rpcUrl", "networkType", name)
