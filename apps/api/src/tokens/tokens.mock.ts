@@ -1,5 +1,45 @@
 import type { TokenListResponse } from './tokens.service';
 
+const SEPOLIA_CHAIN_ID = 11155111;
+
+/**
+ * A mock token deployed to Sepolia by
+ * `packages/contracts/scripts/deploy-sepolia-mock-tokens.ts`, as serialised into
+ * the SEPOLIA_MOCK_TOKENS env var.
+ */
+type SepoliaMockToken = {
+  symbol: string;
+  name: string;
+  address: string;
+  decimals: number;
+};
+
+/**
+ * Sepolia mocks live in an env var rather than the database because
+ * TokensService builds its Redis cache from the tokens it just upserted. Without
+ * this injection they would sit in Postgres but vanish from the API's token list
+ * on the next sync.
+ */
+export const sepoliaTokensMock = (
+  serialised: string,
+): TokenListResponse['tokens'][string] => {
+  const parsed: unknown = JSON.parse(serialised);
+  if (!Array.isArray(parsed)) {
+    throw new Error('SEPOLIA_MOCK_TOKENS must be a JSON array');
+  }
+
+  return (parsed as SepoliaMockToken[]).map((token) => ({
+    chainId: SEPOLIA_CHAIN_ID,
+    address: token.address,
+    symbol: token.symbol,
+    name: token.name,
+    decimals: token.decimals,
+    logoURI: null,
+    priceUsd: null,
+    volatility: null,
+  }));
+};
+
 export const tokensMock = (
   HARDCODED_MOCK_ERC20_ADDRESS: string,
 ): TokenListResponse['tokens'] => ({

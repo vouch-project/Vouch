@@ -16,7 +16,10 @@
     "build": "hardhat compile && node scripts/extract-abi.mjs && tsc -p tsconfig.build.json && tsc -p tsconfig.build.esm.json && echo '{\"type\":\"module\"}' > dist/esm/package.json",
     "build:types": "tsc -p tsconfig.build.json && tsc -p tsconfig.build.esm.json && echo '{\"type\":\"module\"}' > dist/esm/package.json",
     "test": "hardhat test",
-    "clean": "hardhat clean"
+    "clean": "hardhat clean",
+    "fetch:chainlink-feeds": "hardhat run scripts/fetch-chainlink-feeds.ts",
+    "setup:sepolia-feeds": "hardhat run scripts/setup-sepolia-price-feeds.ts --network sepolia",
+    "setup:sepolia-mocks": "hardhat run scripts/deploy-sepolia-mock-tokens.ts --network sepolia"
   },
   "devDependencies": {
     "@chainlink/contracts": "^1.5.0",

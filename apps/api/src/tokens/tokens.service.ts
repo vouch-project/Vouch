@@ -1,5 +1,4 @@
 import { InjectRedis } from '@nestjs-modules/ioredis';
-import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -8,7 +7,7 @@ import type { UUID } from 'crypto';
 import type { Redis } from 'ioredis';
 import { SupabaseService } from '../supabase/supabase.service';
 import { PriceFeedService, priceKey } from './price-feed.service';
-import { tokensMock } from './tokens.mock';
+import { sepoliaTokensMock, tokensMock } from './tokens.mock';
 
 export type ResponseToken = {
   chainId: number;
@@ -57,10 +56,12 @@ const DEFAULT_VOLATILITY_BY_SYMBOL: Record<string, number> = {
 };
 const DEFAULT_VOLATILITY = 0.6;
 
-// Caps how many token updates run concurrently so a large RouteScan token list
-// (hundreds/thousands of tokens) doesn't fire that many simultaneous requests
-// at PostgREST/DB on every API startup and daily cron run.
+// Caps how many token updates run concurrently so the backfill doesn't fire that
+// many simultaneous requests at PostgREST/DB on every API startup and cron run.
 const BACKFILL_CONCURRENCY = 10;
+
+// Rows per PostgREST upsert batch — keeps request sizes manageable.
+const UPSERT_BATCH_SIZE = 500;
 
 const runWithConcurrencyLimit = async <T>(
   items: T[],
@@ -79,30 +80,12 @@ const runWithConcurrencyLimit = async <T>(
   );
 };
 
-// Testnets whose networkId prefix in RouteScan is "testnet" rather than "mainnet".
-const TESTNET_CHAIN_IDS = new Set(['11155111', '84532', '80002', '43113']);
-
-type RouteScanErc20Token = {
-  chainId: number;
-  address: string;
-  name: string | null;
-  symbol: string;
-  decimals: number;
-};
-
-type RouteScanErc20Response = {
-  items: RouteScanErc20Token[];
-  link?: { next?: string };
-};
-
 @Injectable()
 export class TokensService implements OnModuleInit {
   private readonly logger = new Logger(TokensService.name);
-  private readonly routeScanBase = 'https://api.routescan.io/v2/network';
   private readonly redisKeyPrefix = 'tokens:cache:';
 
   constructor(
-    private readonly httpService: HttpService,
     private readonly supabaseService: SupabaseService,
     private readonly configService: ConfigService,
     private readonly priceFeedService: PriceFeedService,
@@ -115,7 +98,7 @@ export class TokensService implements OnModuleInit {
 
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
   private async fetchTokenList() {
-    this.logger.log('Fetching token list from RouteScan...');
+    this.logger.log('Token sync started');
     try {
       const mockErc20Address = this.getMockErc20Address();
       const evmChains = await this.fetchEvmChains();
@@ -126,20 +109,25 @@ export class TokensService implements OnModuleInit {
 
       const evmChainIds = evmChains.map((chain) => chain.networkId);
       if (evmChainIds.length === 0) {
-        this.logger.warn(
-          'No EVM chains found in database, skipping token list fetch',
-        );
+        this.logger.warn('No EVM chains in database, skipping token sync');
         return;
       }
 
-      const rawTokens = await this.fetchRawTokens(
-        evmChainIds,
-        mockErc20Address,
+      this.logger.log(
+        `Syncing tokens for ${evmChainIds.length} chain(s): ${evmChainIds.join(', ')}`,
       );
-      const tokens = this.mapToUpsertTokens(rawTokens, evmChains);
-      const upsertedTokens = await this.upsertTokens(tokens);
 
+      const rawTokens = this.fetchRawTokens(mockErc20Address);
+      this.logger.log(`Collected ${rawTokens.length} token(s) to sync`);
+
+      const tokens = this.mapToUpsertTokens(rawTokens, evmChains);
+      this.logger.log(
+        `${tokens.length} tokens mapped (${rawTokens.length - tokens.length} dropped — unknown chain or invalid address)`,
+      );
+
+      const upsertedTokens = await this.upsertTokens(tokens);
       if (!upsertedTokens) return;
+      this.logger.log(`Upserted ${upsertedTokens.length} tokens to database`);
 
       await this.backfillVolatility(upsertedTokens);
 
@@ -148,13 +136,41 @@ export class TokensService implements OnModuleInit {
         evmChains,
       );
       await this.cacheTokensByNetwork(tokensByNetwork);
+
+      for (const [networkId, networkTokens] of Object.entries(
+        tokensByNetwork,
+      )) {
+        this.logger.log(
+          `Cached ${networkTokens.length} tokens for chain ${networkId}`,
+        );
+      }
+
+      this.logger.log('Token sync complete');
     } catch (err) {
-      this.logger.error('Token list update failed:', err);
+      this.logger.error('Token sync failed:', err);
     }
   }
 
   private getMockErc20Address(): string | undefined {
     return this.configService.get<string>('HARDCODED_MOCK_ERC20_ADDRESS');
+  }
+
+  /**
+   * Mock ERC20s deployed to Sepolia and wired to real Chainlink feeds, written
+   * by the contracts package's deploy-sepolia-mock-tokens script.
+   */
+  private getSepoliaMockTokens(): ResponseToken[] {
+    const serialised = this.configService.get<string>('SEPOLIA_MOCK_TOKENS');
+    if (!serialised) return [];
+
+    try {
+      return sepoliaTokensMock(serialised);
+    } catch (err) {
+      this.logger.warn(
+        `Ignoring SEPOLIA_MOCK_TOKENS — could not parse: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return [];
+    }
   }
 
   private async fetchEvmChains(): Promise<EvmChain[] | null> {
@@ -182,65 +198,35 @@ export class TokensService implements OnModuleInit {
     return data.id;
   }
 
-  private routeScanNetworkId(chainId: string): string {
-    return TESTNET_CHAIN_IDS.has(chainId) ? 'testnet' : 'mainnet';
-  }
-
-  private async fetchRouteScanTokens(
-    chainId: string,
-  ): Promise<ResponseToken[]> {
-    const networkId = this.routeScanNetworkId(chainId);
-    const tokens: ResponseToken[] = [];
-    let nextUrl: string | undefined =
-      `${this.routeScanBase}/${networkId}/evm/${chainId}/erc20?limit=100`;
-
-    while (nextUrl) {
-      const currentUrl: string = nextUrl;
-      const res =
-        await this.httpService.axiosRef.get<RouteScanErc20Response>(currentUrl);
-      for (const t of res.data.items ?? []) {
-        tokens.push({
-          chainId: t.chainId,
-          address: t.address,
-          symbol: t.symbol,
-          decimals: t.decimals,
-          name: t.name ?? null,
-          logoURI: null,
-          priceUsd: null,
-          volatility: null,
-        });
-      }
-      nextUrl = res.data.link?.next;
-    }
-
-    return tokens;
-  }
-
-  private async fetchRawTokens(
-    evmChainIds: string[],
-    mockErc20Address?: string,
-  ): Promise<ResponseToken[]> {
-    // Skip local dev chains — RouteScan has no record of them.
-    const routeScanChainIds = evmChainIds.filter(
-      (id) => !['1337', '31337'].includes(id),
-    );
-
-    const routeScanTokens: ResponseToken[] = [];
-    await runWithConcurrencyLimit(routeScanChainIds, 3, async (id) => {
-      try {
-        routeScanTokens.push(...(await this.fetchRouteScanTokens(id)));
-      } catch (err) {
-        this.logger.warn(
-          `RouteScan fetch failed for chain ${id}: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    });
-
+  /**
+   * The token universe is now defined entirely by what we deploy and wire to a
+   * Chainlink feed: the local MockERC20, and the Sepolia mocks from
+   * `packages/contracts/scripts/deploy-sepolia-mock-tokens.ts`.
+   *
+   * Third-party token discovery (previously RouteScan) was removed because it
+   * returned thousands of tokens with no price feed, which the frontend then
+   * rendered at its $1 fallback price and the vault accepted as collateral
+   * without any LTV check. Revisit when a mainnet chain is configured.
+   */
+  private fetchRawTokens(mockErc20Address?: string): ResponseToken[] {
     const mockTokens = mockErc20Address
       ? Object.values(tokensMock(mockErc20Address)).flat()
       : [];
 
-    return [...routeScanTokens, ...mockTokens];
+    if (mockTokens.length) {
+      this.logger.log(
+        `Injected ${mockTokens.length} mock token(s) for local chain`,
+      );
+    }
+
+    const sepoliaMockTokens = this.getSepoliaMockTokens();
+    if (sepoliaMockTokens.length) {
+      this.logger.log(
+        `Injected ${sepoliaMockTokens.length} mock token(s) for Sepolia`,
+      );
+    }
+
+    return [...mockTokens, ...sepoliaMockTokens];
   }
 
   private mapToUpsertTokens(
@@ -271,17 +257,30 @@ export class TokensService implements OnModuleInit {
   }
 
   private async upsertTokens(tokens: Token[]): Promise<Token[] | null> {
-    const { data, error } = await this.supabaseService.client
-      .from('tokens')
-      .upsert(tokens, { onConflict: 'chainId,address' })
-      .select('*');
+    const results: Token[] = [];
 
-    if (error) {
-      this.logger.error('Error upserting tokens:', error);
-      return null;
+    for (let i = 0; i < tokens.length; i += UPSERT_BATCH_SIZE) {
+      const batch = tokens.slice(i, i + UPSERT_BATCH_SIZE);
+      const { data, error } = await this.supabaseService.client
+        .from('tokens')
+        .upsert(batch, { onConflict: 'chainId,address' })
+        .select('*');
+
+      if (error) {
+        this.logger.error(
+          `Error upserting token batch ${i}–${i + batch.length - 1}:`,
+          error,
+        );
+        return null;
+      }
+
+      results.push(...(data as Token[]));
+      this.logger.debug(
+        `Upserted batch ${Math.floor(i / UPSERT_BATCH_SIZE) + 1}/${Math.ceil(tokens.length / UPSERT_BATCH_SIZE)} (${results.length}/${tokens.length} tokens)`,
+      );
     }
 
-    return data as Token[];
+    return results;
   }
 
   /**
@@ -380,9 +379,8 @@ export class TokensService implements OnModuleInit {
     }
 
     // Enrich with live prices and volatility from DB. Both are scoped by the DB's
-    // uuid chainId (not `ResponseToken.chainId`, which is the raw numeric chain id
-    // from the RouteScan token list) so tokens with the same symbol/address on different
-    // chains never collide.
+    // uuid chainId (not `ResponseToken.chainId`, which is the raw numeric chain id)
+    // so tokens with the same symbol/address on different chains never collide.
     const dbChainId = await this.getChainIdByNetworkId(networkId);
     if (!dbChainId)
       return tokens.map((t) => ({ ...t, priceUsd: null, volatility: null }));

@@ -48,9 +48,10 @@ export class BlockchainListenerService implements OnModuleInit {
 
     for (const config of chainConfigs) {
       try {
-        const provider = config.rpcUrl.startsWith('ws')
-          ? new ethers.WebSocketProvider(config.rpcUrl)
-          : new ethers.JsonRpcProvider(config.rpcUrl, undefined, {
+        const listenerUrl = config.wsRpcUrl ?? config.rpcUrl;
+        const provider = listenerUrl.startsWith('ws')
+          ? new ethers.WebSocketProvider(listenerUrl)
+          : new ethers.JsonRpcProvider(listenerUrl, undefined, {
               polling: true,
             });
         const network = await provider.getNetwork();
