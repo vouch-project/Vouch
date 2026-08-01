@@ -147,7 +147,10 @@ export class TokensService implements OnModuleInit {
 
       this.logger.log('Token sync complete');
     } catch (err) {
-      this.logger.error('Token sync failed:', err);
+      this.logger.error(
+        'Token sync failed:',
+        err instanceof Error ? err.stack : JSON.stringify(err),
+      );
     }
   }
 
@@ -268,8 +271,8 @@ export class TokensService implements OnModuleInit {
 
       if (error) {
         this.logger.error(
-          `Error upserting token batch ${i}–${i + batch.length - 1}:`,
-          error,
+          `Error upserting token batch ${i}–${i + batch.length - 1}: ${error.message}`,
+          JSON.stringify(error),
         );
         return null;
       }

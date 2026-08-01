@@ -57,7 +57,7 @@ export class BlockchainListenerService implements OnModuleInit {
         const network = await provider.getNetwork();
 
         this.logger.log(
-          `Connected to chain: ${network.chainId} (${network.name}) [${config.rpcUrl}]`,
+          `Connected to chain: ${network.chainId} (${network.name}) [${listenerUrl}]`,
         );
 
         if (provider instanceof ethers.JsonRpcProvider)

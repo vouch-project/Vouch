@@ -26,7 +26,7 @@ async function seed() {
     }
 
     // Insert Sepolia testnet when a Sepolia RPC endpoint is configured.
-    const sepoliaRpcUrl = process.env.SEPOLIA_RPC_URL;
+    const sepoliaRpcUrl = process.env.SEPOLIA_RPC_URL?.trim();
     if (sepoliaRpcUrl) {
       const sepoliaContractAddress = process.env.SEPOLIA_VOUCH_VAULT_ADDRESS?.trim();
       if (!sepoliaContractAddress) throw new Error('SEPOLIA_VOUCH_VAULT_ADDRESS environment variable is not set');
