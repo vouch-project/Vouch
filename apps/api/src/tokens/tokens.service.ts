@@ -323,8 +323,9 @@ export class TokensService implements OnModuleInit {
     evmChains: EvmChain[],
   ): Record<string, Token[]> {
     const networkIdById = new Map(evmChains.map((c) => [c.id, c.networkId]));
-    // Seed every known chain with an empty array so that chains with zero tokens
-    // still get their Redis key overwritten (clearing any stale data).
+    // Seed every known chain with an empty array so the returned map always has
+    // an entry per chain. cacheTokensByNetwork skips writing chains with zero
+    // tokens, so stale cache entries are not cleared for non-mock networks.
     const tokensByNetwork: Record<string, Token[]> = Object.fromEntries(
       evmChains.map((c) => [c.networkId, []]),
     );
@@ -344,6 +345,12 @@ export class TokensService implements OnModuleInit {
     const pipeline = this.redis.pipeline();
 
     for (const [networkId, tokens] of Object.entries(tokensByNetwork)) {
+      // Skip chains with no tokens so we don't overwrite a previously valid
+      // cache entry with an empty list. fetchRawTokens() only knows about
+      // mock networks (local + Sepolia); any other configured chain (e.g.
+      // mainnet) would always produce zero tokens here and incorrectly clear
+      // its cached data.
+      if (tokens.length === 0) continue;
       pipeline.set(
         `${this.redisKeyPrefix}${networkId}`,
         JSON.stringify(tokens),
