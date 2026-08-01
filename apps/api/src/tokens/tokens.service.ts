@@ -323,14 +323,15 @@ export class TokensService implements OnModuleInit {
     evmChains: EvmChain[],
   ): Record<string, Token[]> {
     const networkIdById = new Map(evmChains.map((c) => [c.id, c.networkId]));
-    const tokensByNetwork: Record<string, Token[]> = {};
+    // Seed every known chain with an empty array so that chains with zero tokens
+    // still get their Redis key overwritten (clearing any stale data).
+    const tokensByNetwork: Record<string, Token[]> = Object.fromEntries(
+      evmChains.map((c) => [c.networkId, []]),
+    );
 
     for (const token of tokens) {
       const networkId = networkIdById.get(token.chainId);
       if (!networkId) continue;
-
-      if (!tokensByNetwork[networkId]) tokensByNetwork[networkId] = [];
-
       tokensByNetwork[networkId].push(token);
     }
 

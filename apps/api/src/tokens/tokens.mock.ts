@@ -28,16 +28,31 @@ export const sepoliaTokensMock = (
     throw new Error('SEPOLIA_MOCK_TOKENS must be a JSON array');
   }
 
-  return (parsed as SepoliaMockToken[]).map((token) => ({
-    chainId: SEPOLIA_CHAIN_ID,
-    address: token.address,
-    symbol: token.symbol,
-    name: token.name,
-    decimals: token.decimals,
-    logoURI: null,
-    priceUsd: null,
-    volatility: null,
-  }));
+  return (parsed as unknown[]).map((item, i) => {
+    if (
+      typeof item !== 'object' ||
+      item === null ||
+      typeof (item as SepoliaMockToken).address !== 'string' ||
+      typeof (item as SepoliaMockToken).symbol !== 'string' ||
+      typeof (item as SepoliaMockToken).name !== 'string' ||
+      typeof (item as SepoliaMockToken).decimals !== 'number'
+    ) {
+      throw new Error(
+        `SEPOLIA_MOCK_TOKENS[${i}] is missing required fields or has wrong types (expected address, symbol, name as strings and decimals as number)`,
+      );
+    }
+    const token = item as SepoliaMockToken;
+    return {
+      chainId: SEPOLIA_CHAIN_ID,
+      address: token.address,
+      symbol: token.symbol,
+      name: token.name,
+      decimals: token.decimals,
+      logoURI: null,
+      priceUsd: null,
+      volatility: null,
+    };
+  });
 };
 
 export const tokensMock = (

@@ -47,8 +47,8 @@ export class BlockchainListenerService implements OnModuleInit {
     }
 
     for (const config of chainConfigs) {
+      const listenerUrl = config.wsRpcUrl ?? config.rpcUrl;
       try {
-        const listenerUrl = config.wsRpcUrl ?? config.rpcUrl;
         const provider = listenerUrl.startsWith('ws')
           ? new ethers.WebSocketProvider(listenerUrl)
           : new ethers.JsonRpcProvider(listenerUrl, undefined, {
@@ -71,7 +71,7 @@ export class BlockchainListenerService implements OnModuleInit {
         this.setupEventListener(contract, network, config);
       } catch (error) {
         this.logger.error(
-          `Failed to connect to RPC at ${config.rpcUrl}: ${(error as Error).message}`,
+          `Failed to connect to RPC at ${listenerUrl}: ${(error as Error).message}`,
         );
       }
     }
