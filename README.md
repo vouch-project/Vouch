@@ -95,6 +95,8 @@ docker compose up -d --build
 
 See [docker-compose.yml](docker-compose.yml) and [nginx.conf](nginx.conf) for the full setup.
 
+Sepolia testnet setup is manual and documented separately — see [docs/SEPOLIA_SETUP.md](docs/SEPOLIA_SETUP.md).
+
 ## License
 
 MIT

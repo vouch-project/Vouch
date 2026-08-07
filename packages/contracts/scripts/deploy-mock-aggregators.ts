@@ -7,7 +7,7 @@ import { Client } from 'pg';
 const LOCAL_NETWORK_ID = '1337';
 
 // The tokens table row for a given (chain, address) is created by the API's
-// TokensService on startup (it syncs the Li.Fi token list into Postgres). This
+// TokensService on startup (it syncs the RouteScan token list into Postgres). This
 // script can run before that sync completes, so retry the UPDATE briefly instead
 // of failing outright — a silent 0-row UPDATE would leave price_feed_address
 // unset with no error, which is the exact bug this script exists to avoid.
