@@ -119,15 +119,15 @@ in the database, invisible in the UI.
 ## 6. Verify
 
 ```sql
-SELECT t.symbol, t.address, t.decimals, t.price_usd, t.price_feed_address
+SELECT t.symbol, t.address, t.decimals, t.price_feed_address
 FROM tokens t
 JOIN chains c ON c.id = t."chainId"
 WHERE c."networkId" = '11155111'
 ORDER BY t.symbol;
 ```
 
-`price_feed_address` should be populated for every mock. `price_usd` fills in once
-`PriceFeedService` completes its first poll after the API restarts.
+`price_feed_address` should be populated for every mock. Prices are fetched live
+from Chainlink on-demand and cached in Redis — they are no longer stored in the DB.
 
 ---
 
@@ -142,7 +142,7 @@ feed, or was filtered out in step 4. Check the generated feeds JSON for the vali
 **Tokens in Postgres but missing from the app** — the API didn't restart after step 4, so
 `SEPOLIA_MOCK_TOKENS` was never read. See step 5.
 
-**`price_usd` stays null** — `PriceFeedService` rejects stale answers. Sepolia feeds have
+**Price shows null in the UI** — `PriceFeedService` rejects stale answers. Sepolia feeds have
 heartbeats up to 86400s; confirm the aggregator is still being updated on-chain.
 
 ---
