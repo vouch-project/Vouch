@@ -12,6 +12,7 @@ type SepoliaMockToken = {
   name: string;
   address: string;
   decimals: number;
+  feedAddress: string;
 };
 
 /**
@@ -35,10 +36,11 @@ export const sepoliaTokensMock = (
       typeof (item as SepoliaMockToken).address !== 'string' ||
       typeof (item as SepoliaMockToken).symbol !== 'string' ||
       typeof (item as SepoliaMockToken).name !== 'string' ||
-      typeof (item as SepoliaMockToken).decimals !== 'number'
+      typeof (item as SepoliaMockToken).decimals !== 'number' ||
+      typeof (item as SepoliaMockToken).feedAddress !== 'string'
     ) {
       throw new Error(
-        `SEPOLIA_MOCK_TOKENS[${i}] is missing required fields or has wrong types (expected address, symbol, name as strings and decimals as number)`,
+        `SEPOLIA_MOCK_TOKENS[${i}] is missing required fields or has wrong types (expected address, symbol, name, feedAddress as strings and decimals as number)`,
       );
     }
     const token = item as SepoliaMockToken;
@@ -51,6 +53,7 @@ export const sepoliaTokensMock = (
       logoURI: null,
       priceUsd: null,
       volatility: null,
+      priceFeedAddress: token.feedAddress,
     };
   });
 };
@@ -69,6 +72,7 @@ export const tokensMock = (
         'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2/logo.png',
       priceUsd: null,
       volatility: null,
+      priceFeedAddress: null,
     },
     {
       chainId: 1337,
@@ -79,6 +83,7 @@ export const tokensMock = (
       logoURI: null,
       priceUsd: null,
       volatility: null,
+      priceFeedAddress: null,
     },
   ],
 });

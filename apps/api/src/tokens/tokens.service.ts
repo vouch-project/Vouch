@@ -20,6 +20,7 @@ export type ResponseToken = {
   coinKey?: string;
   priceUsd: number | null;
   volatility: number | null;
+  priceFeedAddress: string | null;
 };
 
 export type TokenListResponse = {
