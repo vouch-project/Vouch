@@ -88,22 +88,28 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
     feedAddress: string,
     rpcUrl: string,
   ): Promise<number | null> {
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const price = await this.fetchPriceFromFeed(
-      chainId,
-      address,
-      feedAddress,
-      provider,
-    );
+    let price: number | null = null;
+    try {
+      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      price = await this.fetchPriceFromFeed(chainId, address, feedAddress, provider);
+    } catch (err) {
+      this.logger.warn(`getPriceForToken failed for chain ${chainId} ${address}: ${err}`);
+      return null;
+    }
+
     if (price === null) return null;
 
-    // Warm the shared Redis cache so the next getPrices() call sees this token.
-    const cached = await this.redis.get(REDIS_KEY);
-    const map: PriceMap = cached
-      ? (this.parsePriceMap(cached, 'cached') ?? {})
-      : {};
-    map[priceKey(chainId, address)] = price;
-    await this.redis.set(REDIS_KEY, JSON.stringify(map), 'EX', REDIS_TTL);
+    // Warm the shared Redis cache — failure here is non-fatal; the price is still returned.
+    try {
+      const cached = await this.redis.get(REDIS_KEY);
+      const map: PriceMap = cached
+        ? (this.parsePriceMap(cached, 'cached') ?? {})
+        : {};
+      map[priceKey(chainId, address)] = price;
+      await this.redis.set(REDIS_KEY, JSON.stringify(map), 'EX', REDIS_TTL);
+    } catch (err) {
+      this.logger.warn(`Failed to warm cache for chain ${chainId} ${address}: ${err}`);
+    }
 
     return price;
   }

@@ -449,7 +449,8 @@ export class TokensService implements OnModuleInit {
         misses.map(({ token, feedAddress, rpcUrl }) =>
           this.priceFeedService
             .getPriceForToken(dbChainId, token.address, feedAddress, rpcUrl)
-            .then((price) => ({ address: token.address.toLowerCase(), price })),
+            .then((price) => ({ address: token.address.toLowerCase(), price }))
+            .catch(() => ({ address: token.address.toLowerCase(), price: null })),
         ),
       );
 
