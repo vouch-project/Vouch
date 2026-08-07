@@ -248,6 +248,9 @@ export class TokensService implements OnModuleInit {
         const addr = validAddress(token.address);
         if (!addr) return null;
 
+        // Drop tokens with no feed — they cannot be priced and the column is NOT NULL.
+        if (!token.priceFeedAddress) return null;
+
         return {
           chainId: chain.id,
           address: addr,
@@ -255,6 +258,7 @@ export class TokensService implements OnModuleInit {
           decimals: token.decimals,
           name: token.name,
           logoURI: token.logoURI,
+          price_feed_address: token.priceFeedAddress,
         };
       })
       .filter((token): token is Token => token !== null);
