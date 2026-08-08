@@ -17,7 +17,7 @@ const AGGREGATOR_ABI = [
 
 const DEFAULT_STALE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour — matches VouchVault.STALE_PRICE_THRESHOLD
 const REDIS_KEY = 'prices:cache';
-const REDIS_TTL = 30; // seconds
+const REDIS_TTL_BUFFER_S = 10; // extra seconds beyond the poll interval to avoid query-triggered refreshes
 const DEFAULT_INTERVAL_MS = 60000;
 
 // Keyed by "chainId:address" — tokens are only unique per chain (see the
@@ -31,6 +31,7 @@ export const priceKey = (chainId: string, address: string): string =>
 export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PriceFeedService.name);
   private readonly intervalMs: number;
+  private readonly redisTtlS: number;
   private readonly staleThresholdMs: number;
   private intervalHandle: NodeJS.Timeout | undefined;
 
@@ -49,6 +50,8 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
       Number.isFinite(configured) && configured > 0
         ? configured
         : DEFAULT_INTERVAL_MS;
+
+    this.redisTtlS = Math.ceil(this.intervalMs / 1000) + REDIS_TTL_BUFFER_S;
 
     const configuredStale = Number(
       this.configService.get<string>('PRICE_FEED_STALE_THRESHOLD_MS'),
@@ -123,7 +126,12 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
         ? (this.parsePriceMap(cached, 'cached') ?? {})
         : {};
       map[priceKey(chainId, address)] = price;
-      await this.redis.set(REDIS_KEY, JSON.stringify(map), 'EX', REDIS_TTL);
+      await this.redis.set(
+        REDIS_KEY,
+        JSON.stringify(map),
+        'EX',
+        this.redisTtlS,
+      );
     } catch (err) {
       this.logger.warn(
         `Failed to warm cache for chain ${chainId} ${address}: ${err}`,
@@ -268,7 +276,7 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
           REDIS_KEY,
           JSON.stringify(priceMap),
           'EX',
-          REDIS_TTL,
+          this.redisTtlS,
         );
         this.logger.log(
           `Prices refreshed: ${Object.keys(priceMap).length} tokens`,
