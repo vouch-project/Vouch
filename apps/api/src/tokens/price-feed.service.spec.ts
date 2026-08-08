@@ -1,9 +1,9 @@
+import { getRedisConnectionToken } from '@nestjs-modules/ioredis';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { ethers } from 'ethers';
-import { getRedisConnectionToken } from '@nestjs-modules/ioredis';
-import { PriceFeedService } from './price-feed.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { PriceFeedService } from './price-feed.service';
 
 jest.mock('ethers', () => {
   const actual = jest.requireActual<typeof import('ethers')>('ethers');
@@ -69,7 +69,10 @@ describe('PriceFeedService.getPriceForToken', () => {
     expect(price).toBeCloseTo(2000, 1);
   });
 
-  it('returns null for a stale feed (updatedAt > STALE_THRESHOLD_MS ago)', async () => {
+  it('returns the price even when the feed is older than staleThresholdMs (first-time seed)', async () => {
+    // getPriceForToken is called precisely when no cached price exists, so it
+    // passes Infinity as the threshold — stale feeds are accepted to ensure the
+    // cache is seeded on boot or after a new token is registered.
     const stale = BigInt(Math.floor(Date.now() / 1000) - 3700); // >1h ago
     mockLatestRoundData.mockResolvedValue([1n, 200000000000n, 0n, stale, 1n]);
     mockDecimals.mockResolvedValue(8n);
@@ -80,7 +83,7 @@ describe('PriceFeedService.getPriceForToken', () => {
       '0xfeed',
       'http://rpc',
     );
-    expect(price).toBeNull();
+    expect(price).toBeCloseTo(2000, 1);
   });
 
   it('returns null when answer is zero', async () => {
@@ -122,11 +125,12 @@ describe('PriceFeedService.getPriceForToken', () => {
       'http://rpc',
     );
 
+    // Default interval is 60s; TTL = ceil(60000/1000) + 10 (buffer) = 70
     expect(redis.set).toHaveBeenCalledWith(
       'prices:cache',
       expect.stringContaining('"db-chain-id:0xtoken"'),
       'EX',
-      30,
+      70,
     );
   });
 });

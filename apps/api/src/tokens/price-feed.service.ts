@@ -103,6 +103,8 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
     let price: number | null = null;
     try {
       const provider = new ethers.JsonRpcProvider(rpcUrl);
+      // Infinity: this is called precisely when no cached price exists for this
+      // token, so accept any non-zero answer regardless of feed age.
       price = await this.fetchPriceFromFeed(
         chainId,
         address,
@@ -158,8 +160,10 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Calls latestRoundData() on a Chainlink aggregator and returns the USD price,
-   * or null if the feed is stale, invalid, or errors. Applies the same checks as
-   * VouchVault._getPrice so the API never shows a price the contract would reject.
+   * or null if the feed is invalid or errors. Staleness is checked against
+   * `staleThresholdOverride` when provided, otherwise `this.staleThresholdMs`.
+   * Pass `Infinity` to skip the staleness check (used when seeding a token for
+   * the first time — no prior price exists so any non-zero answer is acceptable).
    */
   private async fetchPriceFromFeed(
     chainId: string,
