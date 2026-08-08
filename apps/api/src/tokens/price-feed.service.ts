@@ -192,6 +192,10 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
         this.logger.warn(`Stale round for chain ${chainId} ${symbol}`);
         return null;
       }
+      if (updatedAt === 0n) {
+        this.logger.warn(`Round not complete for chain ${chainId} ${symbol}`);
+        return null;
+      }
       const updatedAtMs = Number(updatedAt) * 1000;
       if (updatedAtMs > Date.now()) {
         this.logger.warn(`Future timestamp for chain ${chainId} ${symbol}`);

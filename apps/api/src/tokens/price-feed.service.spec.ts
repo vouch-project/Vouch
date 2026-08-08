@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { ethers } from 'ethers';
 import { SupabaseService } from '../supabase/supabase.service';
-import { PriceFeedService } from './price-feed.service';
+import { PriceFeedService, priceKey } from './price-feed.service';
 
 jest.mock('ethers', () => {
   const actual = jest.requireActual<typeof import('ethers')>('ethers');
@@ -132,5 +132,119 @@ describe('PriceFeedService.getPriceForToken', () => {
       'EX',
       70,
     );
+  });
+
+  it('returns null when updatedAt is zero (round not complete), even with Infinity threshold', async () => {
+    mockLatestRoundData.mockResolvedValue([1n, 200000000000n, 0n, 0n, 1n]);
+    mockDecimals.mockResolvedValue(8n);
+
+    const price = await service.getPriceForToken(
+      'db-chain-id',
+      '0xtoken',
+      '0xfeed',
+      'http://rpc',
+    );
+    expect(price).toBeNull();
+  });
+});
+
+describe('PriceFeedService.refreshPrices staleness logic', () => {
+  let service: PriceFeedService;
+  let redis: { get: jest.Mock; set: jest.Mock };
+  let contractSpy: jest.SpyInstance;
+  let mockLatestRoundData: jest.Mock;
+  let mockDecimals: jest.Mock;
+  let supabaseSelect: jest.Mock;
+
+  const CHAIN_ID = 'chain-abc';
+  const ADDRESS = '0xaaaa';
+  const FEED = '0xfeed';
+
+  const makeModule = async (supabaseImpl: jest.Mock) => {
+    const module = await Test.createTestingModule({
+      providers: [
+        PriceFeedService,
+        {
+          provide: SupabaseService,
+          useValue: {
+            client: { from: () => ({ select: supabaseImpl }) },
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn().mockReturnValue(undefined) },
+        },
+        { provide: getRedisConnectionToken('default'), useValue: redis },
+      ],
+    }).compile();
+    return module.get(PriceFeedService);
+  };
+
+  beforeEach(async () => {
+    jest.useFakeTimers();
+    redis = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue('OK'),
+    };
+    mockLatestRoundData = jest.fn();
+    mockDecimals = jest.fn();
+    contractSpy = jest
+      .spyOn(ethers, 'Contract' as any)
+      .mockImplementation(() => ({
+        latestRoundData: mockLatestRoundData,
+        decimals: mockDecimals,
+      }));
+
+    supabaseSelect = jest.fn().mockResolvedValue({
+      data: [
+        {
+          chainId: CHAIN_ID,
+          address: ADDRESS,
+          symbol: 'TKN',
+          price_feed_address: FEED,
+          chains: { rpcUrl: 'http://rpc' },
+        },
+      ],
+      error: null,
+    });
+    service = await makeModule(supabaseSelect);
+  });
+
+  afterEach(() => {
+    service.onModuleDestroy();
+    contractSpy.mockRestore();
+    jest.useRealTimers();
+  });
+
+  it('caches a stale feed when no prior price exists (Infinity threshold)', async () => {
+    // Token not in Redis — should be seeded regardless of age
+    redis.get.mockResolvedValue(null);
+    const stale = BigInt(Math.floor(Date.now() / 1000) - 3700); // >1h ago
+    mockLatestRoundData.mockResolvedValue([1n, 200000000000n, 0n, stale, 1n]);
+    mockDecimals.mockResolvedValue(8n);
+
+    await service.onModuleInit();
+
+    expect(redis.set).toHaveBeenCalledWith(
+      'prices:cache',
+      expect.stringContaining(`"${priceKey(CHAIN_ID, ADDRESS)}"`),
+      'EX',
+      expect.any(Number),
+    );
+  });
+
+  it('omits a stale feed when a prior price already exists (normal threshold enforced)', async () => {
+    // Token already in Redis — staleness check applies
+    redis.get.mockResolvedValue(
+      JSON.stringify({ [priceKey(CHAIN_ID, ADDRESS)]: 1999 }),
+    );
+    const stale = BigInt(Math.floor(Date.now() / 1000) - 3700); // >1h ago
+    mockLatestRoundData.mockResolvedValue([1n, 200000000000n, 0n, stale, 1n]);
+    mockDecimals.mockResolvedValue(8n);
+
+    await service.onModuleInit();
+
+    // set should not be called because the refresh produced no prices
+    expect(redis.set).not.toHaveBeenCalled();
   });
 });
