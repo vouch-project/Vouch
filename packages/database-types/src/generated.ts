@@ -288,8 +288,7 @@ export type Database = {
           id: string;
           logoURI: string | null;
           name: string | null;
-          price_feed_address: string | null;
-          price_usd: number | null;
+          price_feed_address: string;
           symbol: string;
           volatility: number | null;
         };
@@ -300,8 +299,7 @@ export type Database = {
           id?: string;
           logoURI?: string | null;
           name?: string | null;
-          price_feed_address?: string | null;
-          price_usd?: number | null;
+          price_feed_address: string;
           symbol: string;
           volatility?: number | null;
         };
@@ -312,8 +310,7 @@ export type Database = {
           id?: string;
           logoURI?: string | null;
           name?: string | null;
-          price_feed_address?: string | null;
-          price_usd?: number | null;
+          price_feed_address?: string;
           symbol?: string;
           volatility?: number | null;
         };

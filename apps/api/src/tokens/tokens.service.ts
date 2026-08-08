@@ -20,6 +20,7 @@ export type ResponseToken = {
   coinKey?: string;
   priceUsd: number | null;
   volatility: number | null;
+  priceFeedAddress: string | null;
 };
 
 export type TokenListResponse = {
@@ -247,6 +248,9 @@ export class TokensService implements OnModuleInit {
         const addr = validAddress(token.address);
         if (!addr) return null;
 
+        // Drop tokens with no feed — they cannot be priced and the column is NOT NULL.
+        if (!token.priceFeedAddress) return null;
+
         return {
           chainId: chain.id,
           address: addr,
@@ -254,6 +258,7 @@ export class TokensService implements OnModuleInit {
           decimals: token.decimals,
           name: token.name,
           logoURI: token.logoURI,
+          price_feed_address: token.priceFeedAddress,
         };
       })
       .filter((token): token is Token => token !== null);
@@ -404,22 +409,59 @@ export class TokensService implements OnModuleInit {
 
     const { data: dbTokens } = await this.supabaseService.client
       .from('tokens')
-      .select('address, price_usd, volatility')
+      .select('address, volatility, price_feed_address, chains(rpcUrl)')
       .eq('chainId', dbChainId)
       .in('address', tokenAddresses);
 
     const dbByAddress = new Map(
-      (dbTokens ?? []).map((t) => [t.address.toLowerCase(), t]),
+      (dbTokens ?? []).map((t) => [
+        t.address.toLowerCase(),
+        {
+          volatility: t.volatility,
+          priceFeedAddress: t.price_feed_address,
+          rpcUrl: (t.chains as { rpcUrl: string } | null)?.rpcUrl ?? null,
+        },
+      ]),
     );
 
-    return tokens.map((t) => {
-      const dbToken = dbByAddress.get(t.address.toLowerCase());
+    // First pass: enrich from cache, collect misses
+    const misses: Array<{ token: ResponseToken; feedAddress: string; rpcUrl: string }> = [];
+
+    const enriched = tokens.map((t) => {
+      const db = dbByAddress.get(t.address.toLowerCase());
+      const cachedPrice = prices[priceKey(dbChainId, t.address)] ?? null;
+
+      if (cachedPrice === null && db?.priceFeedAddress && db.rpcUrl) {
+        misses.push({ token: t, feedAddress: db.priceFeedAddress, rpcUrl: db.rpcUrl });
+      }
+
       return {
         ...t,
-        priceUsd:
-          prices[priceKey(dbChainId, t.address)] ?? dbToken?.price_usd ?? null,
-        volatility: dbToken?.volatility ?? null,
+        priceUsd: cachedPrice,
+        volatility: db?.volatility ?? null,
+        priceFeedAddress: db?.priceFeedAddress ?? t.priceFeedAddress ?? null,
       };
     });
+
+    // Second pass: fetch on-demand for cache misses, in parallel
+    if (misses.length > 0) {
+      const fetchedPrices = await Promise.all(
+        misses.map(({ token, feedAddress, rpcUrl }) =>
+          this.priceFeedService
+            .getPriceForToken(dbChainId, token.address, feedAddress, rpcUrl)
+            .then((price) => ({ address: token.address.toLowerCase(), price }))
+            .catch(() => ({ address: token.address.toLowerCase(), price: null })),
+        ),
+      );
+
+      const fetchedByAddress = new Map(fetchedPrices.map((r) => [r.address, r.price]));
+
+      return enriched.map((t) => ({
+        ...t,
+        priceUsd: t.priceUsd ?? fetchedByAddress.get(t.address.toLowerCase()) ?? null,
+      }));
+    }
+
+    return enriched;
   }
 }
