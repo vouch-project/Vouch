@@ -58,14 +58,14 @@ async function main() {
 
   const VouchVault = await ethers.getContractFactory('VouchVault');
 
-  // Check for --upgrade argument
-  const isUpgrade = process.argv.includes('--upgrade');
+  // Check for upgrade mode via env var (Hardhat rejects unknown CLI flags)
+  // Usage: UPGRADE=1 npx hardhat run scripts/deploy.ts --network sepolia
+  const isUpgrade = process.env.UPGRADE === '1';
 
   // .env path and variable — Sepolia deployments write to a separate key so
   // PUBLIC_VOUCH_VAULT_ADDRESS always holds the mainnet/local address.
   const envPath = path.resolve(__dirname, '../../../.env');
-  const envVarName =
-    network.name === 'sepolia' ? 'SEPOLIA_VOUCH_VAULT_ADDRESS' : 'PUBLIC_VOUCH_VAULT_ADDRESS';
+  const envVarName = network.name === 'sepolia' ? 'SEPOLIA_VOUCH_VAULT_ADDRESS' : 'PUBLIC_VOUCH_VAULT_ADDRESS';
   let env = '';
   let proxyAddress = '';
 
