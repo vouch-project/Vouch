@@ -1,0 +1,93 @@
+[
+  {
+    "symbol": "BTC",
+    "name": "BTC / USD",
+    "proxyAddress": "0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43",
+    "decimals": 8,
+    "heartbeat": 3600
+  },
+  {
+    "symbol": "DAI",
+    "name": "DAI / USD",
+    "proxyAddress": "0x14866185B1962B63C3Ea9E03Bc1da838bab34C19",
+    "decimals": 8,
+    "heartbeat": 86400
+  },
+  {
+    "symbol": "ETH",
+    "name": "ETH / USD",
+    "proxyAddress": "0x694AA1769357215DE4FAC081bf1f309aDC325306",
+    "decimals": 8,
+    "heartbeat": 3600
+  },
+  {
+    "symbol": "FORTH",
+    "name": "FORTH / USD",
+    "proxyAddress": "0x070bF128E88A4520b3EfA65AB1e4Eb6F0F9E6632",
+    "decimals": 8,
+    "heartbeat": 86400
+  },
+  {
+    "symbol": "GHO",
+    "name": "GHO / USD",
+    "proxyAddress": "0x635A86F9fdD16Ff09A0701C305D3a845F1758b8E",
+    "decimals": 8,
+    "heartbeat": 86400
+  },
+  {
+    "symbol": "LINK",
+    "name": "LINK / USD",
+    "proxyAddress": "0xc59E3633BAAC79493d908e63626716e204A45EdF",
+    "decimals": 8,
+    "heartbeat": 3600
+  },
+  {
+    "symbol": "PYUSD",
+    "name": "PYUSD / USD",
+    "proxyAddress": "0x57020Ba11D61b188a1Fd390b108D233D87c06057",
+    "decimals": 8,
+    "heartbeat": 86400
+  },
+  {
+    "symbol": "SNX",
+    "name": "SNX / USD",
+    "proxyAddress": "0xc0F82A46033b8BdBA4Bb0B0e28Bc2006F64355bC",
+    "decimals": 8,
+    "heartbeat": 3600
+  },
+  {
+    "symbol": "SUSDE",
+    "name": "SUSDE / USD",
+    "proxyAddress": "0x6f7be09227d98Ce1Df812d5Bc745c0c775507E92",
+    "decimals": 8,
+    "heartbeat": 86400
+  },
+  {
+    "symbol": "USDC",
+    "name": "USDC / USD",
+    "proxyAddress": "0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E",
+    "decimals": 8,
+    "heartbeat": 86400
+  },
+  {
+    "symbol": "USDE",
+    "name": "USDE / USD",
+    "proxyAddress": "0x55ec7c3ed0d7CB5DF4d3d8bfEd2ecaf28b4638fb",
+    "decimals": 8,
+    "heartbeat": 86400
+  },
+  {
+    "symbol": "USDG",
+    "name": "USDG / USD",
+    "proxyAddress": "0x90E422f6B8cB0bD178C0F84764ad790715cbc2aa",
+    "decimals": 8,
+    "heartbeat": 86400
+  },
+  {
+    "symbol": "WSTETH",
+    "name": "WSTETH / USD",
+    "proxyAddress": "0xaaabb530434B0EeAAc9A42E25dbC6A22D7bE218E",
+    "decimals": 8,
+    "heartbeat": 86400
+  }
+]
