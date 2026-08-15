@@ -1,0 +1,106 @@
+{
+  "BTC": {
+    "symbol": "BTC",
+    "name": "Mock Bitcoin",
+    "address": "0x23eC554BA313130dd3eAa29B670f740498E066af",
+    "decimals": 8,
+    "feedAddress": "0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43",
+    "native": false
+  },
+  "DAI": {
+    "symbol": "DAI",
+    "name": "Mock Dai Stablecoin",
+    "address": "0xA23e9Fd57520a7599282EF4c8b161bA6E1fD585D",
+    "decimals": 18,
+    "feedAddress": "0x14866185B1962B63C3Ea9E03Bc1da838bab34C19",
+    "native": false
+  },
+  "ETH": {
+    "symbol": "ETH",
+    "name": "Sepolia Ether",
+    "address": "0x0000000000000000000000000000000000000000",
+    "decimals": 18,
+    "feedAddress": "0x694AA1769357215DE4FAC081bf1f309aDC325306",
+    "native": true
+  },
+  "FORTH": {
+    "symbol": "FORTH",
+    "name": "Mock FORTH",
+    "address": "0xf904Ef5dca605f328Ee0aC8e3e0B5EEEF97c28d1",
+    "decimals": 18,
+    "feedAddress": "0x070bF128E88A4520b3EfA65AB1e4Eb6F0F9E6632",
+    "native": false
+  },
+  "GHO": {
+    "symbol": "GHO",
+    "name": "Mock Gho Token",
+    "address": "0xeFe6342EE6E22E8207e83bE01d9c13767bCBe931",
+    "decimals": 18,
+    "feedAddress": "0x635A86F9fdD16Ff09A0701C305D3a845F1758b8E",
+    "native": false
+  },
+  "LINK": {
+    "symbol": "LINK",
+    "name": "Mock Chainlink Token",
+    "address": "0xb800E8d212556683cE88Ea452e1D45467b99b649",
+    "decimals": 18,
+    "feedAddress": "0xc59E3633BAAC79493d908e63626716e204A45EdF",
+    "native": false
+  },
+  "PYUSD": {
+    "symbol": "PYUSD",
+    "name": "Mock PYUSD",
+    "address": "0x993a663c1C7AFB51f1dA4A8075feBA729373F1B8",
+    "decimals": 6,
+    "feedAddress": "0x57020Ba11D61b188a1Fd390b108D233D87c06057",
+    "native": false
+  },
+  "SNX": {
+    "symbol": "SNX",
+    "name": "Mock Synthetix Network Token",
+    "address": "0x6c17979E3866D45b3Daa8891288Bf750A61f2363",
+    "decimals": 18,
+    "feedAddress": "0xc0F82A46033b8BdBA4Bb0B0e28Bc2006F64355bC",
+    "native": false
+  },
+  "SUSDE": {
+    "symbol": "SUSDE",
+    "name": "Mock SUSDE",
+    "address": "0xC7591b5ca71a2D365a62268457F876172Fa268d1",
+    "decimals": 18,
+    "feedAddress": "0x6f7be09227d98Ce1Df812d5Bc745c0c775507E92",
+    "native": false
+  },
+  "USDC": {
+    "symbol": "USDC",
+    "name": "Mock USD Coin",
+    "address": "0x2D26aC4eaf22872be677D74ABbfd592737410a77",
+    "decimals": 6,
+    "feedAddress": "0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E",
+    "native": false
+  },
+  "USDE": {
+    "symbol": "USDE",
+    "name": "Mock USDE",
+    "address": "0x9ab3Fa066a3F9B937F5a821CC32B112D221074fB",
+    "decimals": 18,
+    "feedAddress": "0x55ec7c3ed0d7CB5DF4d3d8bfEd2ecaf28b4638fb",
+    "native": false
+  },
+  "USDG": {
+    "symbol": "USDG",
+    "name": "Mock USDG",
+    "address": "0xB1dD25E9f36b687b9d0AC604E056b3CA01F4821B",
+    "decimals": 6,
+    "feedAddress": "0x90E422f6B8cB0bD178C0F84764ad790715cbc2aa",
+    "native": false
+  },
+  "WSTETH": {
+    "symbol": "WSTETH",
+    "name": "Mock Wrapped liquid staked Ether",
+    "address": "0x35868f85c3Bbf0a4c3804380bF832707cf6c6B46",
+    "decimals": 18,
+    "feedAddress": "0xaaabb530434B0EeAAc9A42E25dbC6A22D7bE218E",
+    "native": false
+  }
+}
