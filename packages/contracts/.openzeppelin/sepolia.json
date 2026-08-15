@@ -1,0 +1,361 @@
+{
+  "manifestVersion": "3.2",
+  "proxies": [
+    {
+      "address": "0x2051409bB370BDBc71675e52061ae23f6d7d82DD",
+      "txHash": "0x9aa24376ab82441d6762fd79e45ca7f7d0cce1eee445c2e294a9c8e816db07b8",
+      "kind": "uups"
+    }
+  ],
+  "impls": {
+    "d33f6e93ed20507000664c874498fdb4d42a731f9e128f8ccaeea4aeeab47ee9": {
+      "address": "0x87c7096335743241eC9fd8b3738ac10C2E5e7F0f",
+      "txHash": "0xf280b3f1e0c837f03dec77028d23e3fd98412fe5e14c096018c9be8530a6a36a",
+      "layout": {
+        "solcVersion": "0.8.24",
+        "storage": [
+          {
+            "label": "deposits",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:50"
+          },
+          {
+            "label": "loans",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_mapping(t_uint256,t_struct(Loan)5935_storage)",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:51"
+          },
+          {
+            "label": "nextLoanId",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_uint256",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:52"
+          },
+          {
+            "label": "lockedEthCollateral",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:53"
+          },
+          {
+            "label": "protocolTreasury",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_address",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:66"
+          },
+          {
+            "label": "protocolFeeBps",
+            "offset": 0,
+            "slot": "5",
+            "type": "t_uint256",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:67"
+          },
+          {
+            "label": "pendingPayments",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_mapping(t_address,t_mapping(t_address,t_uint256))",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:75"
+          },
+          {
+            "label": "_reentrancyStatus",
+            "offset": 0,
+            "slot": "7",
+            "type": "t_uint256",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:82"
+          },
+          {
+            "label": "minInterestBps",
+            "offset": 0,
+            "slot": "8",
+            "type": "t_uint256",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:90"
+          },
+          {
+            "label": "priceFeeds",
+            "offset": 0,
+            "slot": "9",
+            "type": "t_mapping(t_address,t_contract(AggregatorV3Interface)45)",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:101"
+          },
+          {
+            "label": "tokenDecimals",
+            "offset": 0,
+            "slot": "10",
+            "type": "t_mapping(t_address,t_uint8)",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:103"
+          },
+          {
+            "label": "liquidationBonusBps",
+            "offset": 0,
+            "slot": "11",
+            "type": "t_uint256",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:105"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)353_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)59_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_contract(AggregatorV3Interface)45": {
+            "label": "contract AggregatorV3Interface",
+            "numberOfBytes": "20"
+          },
+          "t_mapping(t_address,t_contract(AggregatorV3Interface)45)": {
+            "label": "mapping(address => contract AggregatorV3Interface)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_mapping(t_address,t_uint256))": {
+            "label": "mapping(address => mapping(address => uint256))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_uint256)": {
+            "label": "mapping(address => uint256)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_uint8)": {
+            "label": "mapping(address => uint8)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_struct(Loan)5935_storage)": {
+            "label": "mapping(uint256 => struct VouchVault.Loan)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(Loan)5935_storage": {
+            "label": "struct VouchVault.Loan",
+            "members": [
+              {
+                "label": "borrower",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "collateralToken",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "collateralAmount",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "collateralLocked",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "collateralReleased",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "createdAt",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "5"
+              },
+              {
+                "label": "active",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "6"
+              },
+              {
+                "label": "funded",
+                "type": "t_bool",
+                "offset": 1,
+                "slot": "6"
+              },
+              {
+                "label": "repaid",
+                "type": "t_bool",
+                "offset": 2,
+                "slot": "6"
+              },
+              {
+                "label": "fundDeadline",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "7"
+              },
+              {
+                "label": "lender",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "8"
+              },
+              {
+                "label": "requestedPrincipalToken",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "9"
+              },
+              {
+                "label": "requestedPrincipalAmount",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "10"
+              },
+              {
+                "label": "principalAmount",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "11"
+              },
+              {
+                "label": "fundedAt",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "12"
+              },
+              {
+                "label": "interestRateBps",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "13"
+              },
+              {
+                "label": "durationSeconds",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "14"
+              },
+              {
+                "label": "amountRepaid",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "15"
+              },
+              {
+                "label": "principalRepaid",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "16"
+              },
+              {
+                "label": "interestAccrued",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "17"
+              },
+              {
+                "label": "lastAccrualAt",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "18"
+              },
+              {
+                "label": "liquidationThresholdBps",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "19"
+              }
+            ],
+            "numberOfBytes": "640"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint8": {
+            "label": "uint8",
+            "numberOfBytes": "1"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
