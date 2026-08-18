@@ -15,7 +15,7 @@
   import { supabase } from '$lib/supabase';
   import type { LoanWithTokens } from '$lib/types';
   import { cn } from '$lib/utils';
-  import { fundLoan } from '$lib/wallet/vouchVault';
+  import { acceptLendOffer, fundLoan } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Check, Clock, Copy, Info, RefreshCw, ShieldCheck, TrendingUp, Wallet, Zap } from '@lucide/svelte';
   import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -35,6 +35,75 @@
   let activeTab: string = $state('borrow');
   let fundingLoanId: string | null = $state(null);
   let copiedAddress: string | null = $state(null);
+
+  // --- Lend Offers tab ---
+  type LendOfferRow = {
+    id: string;
+    onChainOfferId: string;
+    lenderAddress: string;
+    principalAmount: string;
+    minCollateralAmount: string;
+    maxLtvBps: number;
+    interestRateBps: number;
+    duration: string;
+    acceptDeadline: string;
+    status: string;
+    principalToken: { symbol: string; decimals: number; address: string } | null;
+    collateralToken: { symbol: string; decimals: number; address: string } | null;
+  };
+
+  let lendOffers: LendOfferRow[] = $state([]);
+  let lendOffersLoading = $state(true);
+  let lendOffersError: string | null = $state(null);
+  let acceptingOfferId: string | null = $state(null);
+  let collateralInputs: Record<string, string> = $state({});
+
+  const fetchLendOffers = async () => {
+    try {
+      lendOffersError = null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from('lend_offers')
+        .select(
+          `*,
+           principalToken:tokens!lend_offers_principalTokenId_fkey(*),
+           collateralToken:tokens!lend_offers_collateralTokenId_fkey(*)`
+        )
+        .eq('status', 'pending')
+        .gt('acceptDeadline', new Date().toISOString())
+        .order('createdAt', { ascending: false });
+
+      if (error) throw error;
+      lendOffers = ((data as unknown) as LendOfferRow[]) ?? [];
+    } catch (e) {
+      lendOffersError = e instanceof Error ? e.message : 'Failed to load offers';
+    } finally {
+      lendOffersLoading = false;
+    }
+  };
+
+  const handleAcceptOffer = async (offer: LendOfferRow) => {
+    if (!offer.collateralToken) return;
+    const collateralAmount = collateralInputs[offer.id] ?? '';
+    if (!collateralAmount || parseFloat(collateralAmount) <= 0) return;
+    acceptingOfferId = offer.id;
+    try {
+      await acceptLendOffer(
+        BigInt(offer.onChainOfferId),
+        { address: offer.collateralToken.address, symbol: offer.collateralToken.symbol, decimals: offer.collateralToken.decimals } as import('$api/chain').Token,
+        collateralAmount,
+      );
+      await fetchLendOffers();
+    } catch (e) {
+      console.error('Accept offer failed', e);
+    } finally {
+      acceptingOfferId = null;
+    }
+  };
+
+  $effect(() => {
+    void fetchLendOffers();
+  });
 
   const getRiskLevel = (score: number) => {
     if (score > 800) return { label: 'Low', color: 'bg-green-100 text-green-700 border-green-200' };
@@ -462,21 +531,82 @@
     </Tabs.Content>
 
     <Tabs.Content value="lend">
-      <Card.Root class="border-border/50 shadow-xl dark:shadow-none overflow-hidden bg-card/80 backdrop-blur-md">
-        <div class="h-64 flex flex-col items-center justify-center space-y-4 text-center p-8">
-          <div class="h-16 w-16 bg-muted rounded-full flex items-center justify-center">
-            <Wallet class="h-8 w-8 text-muted-foreground/50" />
-          </div>
-          <div>
-            <h3 class="text-xl font-bold">Lend Offers Coming Soon</h3>
-            <p class="text-muted-foreground max-w-sm">
-              We're currently scaling our liquidity pools. Stay tuned to view and fulfill yield-bearing lend offers
-              directly in the marketplace.
-            </p>
-          </div>
-          <Button variant="secondary">Notify Me</Button>
+      {#if lendOffersLoading}
+        <div class="space-y-3">
+          {#each Array(3) as _, i (i)}
+            <div class="h-16 rounded-lg bg-muted animate-pulse"></div>
+          {/each}
         </div>
-      </Card.Root>
+      {:else if lendOffersError}
+        <p class="text-sm text-destructive">{lendOffersError}</p>
+      {:else if lendOffers.length === 0}
+        <div class="text-center py-12 text-muted-foreground">
+          <p class="font-medium">No open lend offers right now.</p>
+        </div>
+      {:else}
+        <Card.Root class="border-border/50 shadow-xl dark:shadow-none overflow-hidden bg-card/80 backdrop-blur-md">
+          <div class="overflow-x-auto">
+            <Table.Root>
+              <Table.Header class="bg-muted/30">
+                <Table.Row class="border-border/50">
+                  <Table.Head>Principal</Table.Head>
+                  <Table.Head>Collateral Token</Table.Head>
+                  <Table.Head>Min Collateral</Table.Head>
+                  <Table.Head>Max LTV</Table.Head>
+                  <Table.Head>Rate (APR)</Table.Head>
+                  <Table.Head>Duration</Table.Head>
+                  <Table.Head>Expires</Table.Head>
+                  <Table.Head class="text-right">Accept</Table.Head>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {#each lendOffers as offer (offer.id)}
+                  <Table.Row class="border-border/30 hover:bg-muted/10 transition-colors">
+                    <Table.Cell class="font-medium">
+                      {formatUint256(offer.principalAmount, offer.principalToken?.decimals ?? 18)}
+                      {offer.principalToken?.symbol ?? ''}
+                    </Table.Cell>
+                    <Table.Cell>{offer.collateralToken?.symbol ?? '—'}</Table.Cell>
+                    <Table.Cell>
+                      {formatUint256(offer.minCollateralAmount, offer.collateralToken?.decimals ?? 18)}
+                      {offer.collateralToken?.symbol ?? ''}
+                    </Table.Cell>
+                    <Table.Cell>{(offer.maxLtvBps / 100).toFixed(2)}%</Table.Cell>
+                    <Table.Cell>{(offer.interestRateBps / 100).toFixed(2)}%</Table.Cell>
+                    <Table.Cell>{formatLoanTerm(offer.duration)}</Table.Cell>
+                    <Table.Cell class="text-muted-foreground text-sm">
+                      {new Date(offer.acceptDeadline).toLocaleDateString()}
+                    </Table.Cell>
+                    <Table.Cell class="text-right">
+                      <div class="flex items-center gap-2 justify-end">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          placeholder="Collateral amount"
+                          bind:value={collateralInputs[offer.id]}
+                          class="w-32 rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground"
+                        />
+                        <Button
+                          size="sm"
+                          class="font-bold"
+                          disabled={acceptingOfferId === offer.id || !wallet.address}
+                          onclick={() => handleAcceptOffer(offer)}
+                        >
+                          {#if acceptingOfferId === offer.id}
+                            <span class="animate-spin mr-1">⟳</span>
+                          {/if}
+                          Accept
+                        </Button>
+                      </div>
+                    </Table.Cell>
+                  </Table.Row>
+                {/each}
+              </Table.Body>
+            </Table.Root>
+          </div>
+        </Card.Root>
+      {/if}
     </Tabs.Content>
   </Tabs.Root>
 
