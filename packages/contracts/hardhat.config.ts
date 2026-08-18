@@ -30,6 +30,11 @@ const config: HardhatUserConfig = {
         auto: true,
         interval: 10000,
       },
+      // Allow contract deployments that exceed the Spurious Dragon 24 KiB limit
+      // so that tests pass locally. This limit is not enforced by the Hardhat
+      // in-process network by default; we opt in here while the contract is
+      // large but still deployable on networks with custom limits (e.g. L2s).
+      allowUnlimitedContractSize: true,
     },
     localhost: {
       url: 'http://127.0.0.1:8545',

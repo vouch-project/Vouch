@@ -2479,4 +2479,106 @@ describe('VouchVault', function () {
       });
     });
   });
+
+  describe('lendOffer', function () {
+    async function deployFixture() {
+      const [owner, lender, borrower] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      return { vault, owner, lender, borrower };
+    }
+
+    it('createLendOffer: locks ETH principal, emits LendOfferCreated', async function () {
+      const { vault, lender } = await deployFixture();
+      const principal = ethers.parseEther('1.0');
+      const tx = await vault.connect(lender).createLendOffer(
+        ethers.ZeroAddress,   // requiredCollateralToken (ETH)
+        ethers.parseEther('1.5'), // minCollateral
+        6500,                 // maxLtvBps
+        800,                  // rateBps
+        30n * 86400n,         // durationSeconds
+        7n * 86400n,          // acceptWindowSeconds
+        { value: principal },
+      );
+      await expect(tx)
+        .to.emit(vault, 'LendOfferCreated')
+        .withArgs(0, lender.address, ethers.ZeroAddress, principal);
+
+      const offer = await vault.lendOffers(0);
+      expect(offer.lender).to.equal(lender.address);
+      expect(offer.principalAmount).to.equal(principal);
+      expect(offer.active).to.equal(true);
+      expect(offer.accepted).to.equal(false);
+    });
+
+    it('createLendOffer: reverts if msg.value is 0', async function () {
+      const { vault, lender } = await deployFixture();
+      await expect(
+        vault.connect(lender).createLendOffer(ethers.ZeroAddress, ethers.parseEther('1.5'), 6500, 800, 30n * 86400n, 7n * 86400n, { value: 0 }),
+      ).to.be.revertedWith('Principal must be > 0');
+    });
+
+    it('acceptLendOffer: borrower posts ETH collateral, creates loan, emits LendOfferAccepted', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const principal = ethers.parseEther('1.0');
+      const collateral = ethers.parseEther('1.6');
+      await vault.connect(lender).createLendOffer(
+        ethers.ZeroAddress, ethers.parseEther('1.5'), 6500, 800, 30n * 86400n, 7n * 86400n, { value: principal },
+      );
+      const tx = await vault.connect(borrower).acceptLendOffer(0, { value: collateral });
+      await expect(tx).to.emit(vault, 'LendOfferAccepted').withArgs(0, 0, borrower.address);
+
+      const offer = await vault.lendOffers(0);
+      expect(offer.accepted).to.equal(true);
+      expect(offer.acceptedLoanId).to.equal(0);
+
+      const loan = await vault.loans(0);
+      expect(loan.borrower).to.equal(borrower.address);
+      expect(loan.lender).to.equal(lender.address);
+      expect(loan.funded).to.equal(true);
+      expect(loan.lendOfferId).to.equal(0);
+    });
+
+    it('acceptLendOffer: reverts if collateral below minCollateralAmount', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const principal = ethers.parseEther('1.0');
+      await vault.connect(lender).createLendOffer(
+        ethers.ZeroAddress, ethers.parseEther('1.5'), 6500, 800, 30n * 86400n, 7n * 86400n, { value: principal },
+      );
+      await expect(
+        vault.connect(borrower).acceptLendOffer(0, { value: ethers.parseEther('1.0') }),
+      ).to.be.revertedWith('Collateral below minimum');
+    });
+
+    it('cancelLendOffer: lender reclaims ETH principal, emits LendOfferCancelled', async function () {
+      const { vault, lender } = await deployFixture();
+      const principal = ethers.parseEther('1.0');
+      await vault.connect(lender).createLendOffer(
+        ethers.ZeroAddress, ethers.parseEther('1.5'), 6500, 800, 30n * 86400n, 7n * 86400n, { value: principal },
+      );
+      const balBefore = await ethers.provider.getBalance(lender.address);
+      const tx = await vault.connect(lender).cancelLendOffer(0);
+      await expect(tx).to.emit(vault, 'LendOfferCancelled').withArgs(0, lender.address);
+      const offer = await vault.lendOffers(0);
+      expect(offer.active).to.equal(false);
+      const balAfter = await ethers.provider.getBalance(lender.address);
+      expect(balAfter).to.be.gt(balBefore); // got refund (minus gas)
+    });
+
+    it('expireLendOffer: permissionless after acceptDeadline, returns ETH principal', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const principal = ethers.parseEther('1.0');
+      await vault.connect(lender).createLendOffer(
+        ethers.ZeroAddress, ethers.parseEther('1.5'), 6500, 800, 30n * 86400n, 1n, // 1s window
+        { value: principal },
+      );
+      // advance time past acceptDeadline
+      await ethers.provider.send('evm_increaseTime', [10]);
+      await ethers.provider.send('evm_mine', []);
+      const tx = await vault.connect(borrower).expireLendOffer(0);
+      await expect(tx).to.emit(vault, 'LendOfferExpired').withArgs(0);
+      const offer = await vault.lendOffers(0);
+      expect(offer.active).to.equal(false);
+    });
+  });
 });
