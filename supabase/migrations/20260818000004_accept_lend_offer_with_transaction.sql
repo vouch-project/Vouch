@@ -53,13 +53,18 @@ BEGIN
         "principalTokenId", "collateralTokenId",
         "principalAmount", "collateralAmount",
         "interestRate", duration,
-        status, "startAt", "fundedAt", "lendOfferId", "createdAt"
+        status, "startAt", "fundedAt", "dueAt", "lendOfferId", "createdAt"
     ) VALUES (
         p_on_chain_loan_id, v_chain_id, p_borrower_address, v_lender_address,
         v_principal_token_id, v_collateral_token_id,
         v_principal_amount, p_collateral_amount,
         v_interest_rate_bps, v_duration,
-        'active', p_accepted_at, p_accepted_at, v_offer_id, p_accepted_at
+        'active', p_accepted_at, p_accepted_at,
+        CASE WHEN v_duration IS NOT NULL AND v_duration > interval '0'
+             THEN p_accepted_at + v_duration
+             ELSE NULL
+        END,
+        v_offer_id, p_accepted_at
     )
     ON CONFLICT ("chainId", "onChainLoanId") DO NOTHING
     RETURNING id INTO v_loan_id;
