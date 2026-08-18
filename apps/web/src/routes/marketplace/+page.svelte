@@ -9,15 +9,15 @@
   import { formatUint256 } from '$lib/formatUint256';
   import { formatLoanTerm } from '$lib/loans/loanMath';
   import { maxLtv } from '$lib/ltv';
-  import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
   import { navLinksMap } from '$lib/navLinks';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
+  import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
   import { supabase } from '$lib/supabase';
   import type { LoanWithTokens } from '$lib/types';
   import { cn } from '$lib/utils';
   import { acceptLendOffer, fundLoan } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
-  import { Check, Clock, Copy, Info, RefreshCw, ShieldCheck, TrendingUp, Wallet, Zap } from '@lucide/svelte';
+  import { Check, Clock, Copy, Info, RefreshCw, ShieldCheck, TrendingUp, Zap } from '@lucide/svelte';
   import type { RealtimeChannel } from '@supabase/supabase-js';
   import type { Address } from '@vouch/database-types';
   import { ethers } from 'ethers';
@@ -56,7 +56,7 @@
   let lendOffersLoading = $state(true);
   let lendOffersError: string | null = $state(null);
   let acceptingOfferId: string | null = $state(null);
-  let collateralInputs: Record<string, string> = $state({});
+  const collateralInputs: Record<string, string> = $state({});
 
   const fetchLendOffers = async () => {
     try {
@@ -67,14 +67,14 @@
         .select(
           `*,
            principalToken:tokens!lend_offers_principalTokenId_fkey(*),
-           collateralToken:tokens!lend_offers_collateralTokenId_fkey(*)`
+           collateralToken:tokens!lend_offers_collateralTokenId_fkey(*)`,
         )
         .eq('status', 'pending')
         .gt('acceptDeadline', new Date().toISOString())
         .order('createdAt', { ascending: false });
 
       if (error) throw error;
-      lendOffers = ((data as unknown) as LendOfferRow[]) ?? [];
+      lendOffers = (data as unknown as LendOfferRow[]) ?? [];
     } catch (e) {
       lendOffersError = e instanceof Error ? e.message : 'Failed to load offers';
     } finally {
@@ -90,7 +90,11 @@
     try {
       await acceptLendOffer(
         BigInt(offer.onChainOfferId),
-        { address: offer.collateralToken.address, symbol: offer.collateralToken.symbol, decimals: offer.collateralToken.decimals } as import('$api/chain').Token,
+        {
+          address: offer.collateralToken.address,
+          symbol: offer.collateralToken.symbol,
+          decimals: offer.collateralToken.decimals,
+        } as import('$api/chain').Token,
         collateralAmount,
       );
       await fetchLendOffers();
@@ -396,7 +400,11 @@
               {:else}
                 {#each loans as loan (loan.id)}
                   {@const score = scores[loan.borrowerAddress]}
-                  {@const ltv = maxLtv(tokenPrices.getTokenMeta(loan.collateralToken?.symbol), tokenPrices.getTokenMeta(loan.principalToken?.symbol), score)}
+                  {@const ltv = maxLtv(
+                    tokenPrices.getTokenMeta(loan.collateralToken?.symbol),
+                    tokenPrices.getTokenMeta(loan.principalToken?.symbol),
+                    score,
+                  )}
                   {@const risk = score !== undefined ? getRiskLevel(score) : null}
                   {@const isOwnLoan = wallet.address?.toLowerCase() === loan.borrowerAddress.toLowerCase()}
                   {@const grossApr = Number(loan.interestRate ?? 0) / 100}
@@ -580,18 +588,18 @@
                     <Table.Cell class="text-right">
                       <div class="flex items-center gap-2 justify-end">
                         <input
-                          type="number"
-                          min="0"
-                          step="any"
-                          placeholder="Collateral amount"
-                          bind:value={collateralInputs[offer.id]}
                           class="w-32 rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground"
+                          min="0"
+                          placeholder="Collateral amount"
+                          step="any"
+                          type="number"
+                          bind:value={collateralInputs[offer.id]}
                         />
                         <Button
-                          size="sm"
                           class="font-bold"
                           disabled={acceptingOfferId === offer.id || !wallet.address}
                           onclick={() => handleAcceptOffer(offer)}
+                          size="sm"
                         >
                           {#if acceptingOfferId === offer.id}
                             <span class="animate-spin mr-1">⟳</span>

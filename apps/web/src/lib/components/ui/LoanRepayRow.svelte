@@ -250,7 +250,13 @@
   };
 </script>
 
-<Table.Row class={cn('hover:bg-muted/10 transition-colors', (isRepaid || isExpired) && 'opacity-60', isOverdue && 'bg-destructive/5')}>
+<Table.Row
+  class={cn(
+    'hover:bg-muted/10 transition-colors',
+    (isRepaid || isExpired) && 'opacity-60',
+    isOverdue && 'bg-destructive/5',
+  )}
+>
   <!-- Loan # -->
   <Table.Cell class="pl-4 sm:pl-6 py-3 font-bold whitespace-nowrap">
     #{loan.onChainLoanId ?? '—'}
@@ -353,10 +359,10 @@
            Surface the counterparty they lent to instead. -->
       {#if loan.borrowerAddress}
         <button
-          type="button"
           class="group/addr inline-flex items-center gap-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
-          title={copiedAddress === loan.borrowerAddress ? 'Copied!' : `${loan.borrowerAddress} (click to copy)`}
           onclick={() => copyAddress(loan.borrowerAddress as string)}
+          title={copiedAddress === loan.borrowerAddress ? 'Copied!' : `${loan.borrowerAddress} (click to copy)`}
+          type="button"
         >
           {loan.borrowerAddress.slice(0, 5)}…
           {#if copiedAddress === loan.borrowerAddress}

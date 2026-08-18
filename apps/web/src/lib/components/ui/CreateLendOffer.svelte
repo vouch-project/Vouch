@@ -1,8 +1,8 @@
 <script lang="ts">
+  import type { Token } from '$api/chain';
   import { Button } from '$lib/components/ui/button';
   import * as Card from '$lib/components/ui/card';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
-  import type { Token } from '$api/chain';
   import { createLendOffer } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Loader2, Wallet } from '@lucide/svelte';
@@ -29,15 +29,15 @@
 
   const canSubmit = $derived(
     !!wallet.address &&
-    !!principalToken &&
-    !!collateralToken &&
-    parseFloat(principalAmount) > 0 &&
-    parseFloat(minCollateral) > 0 &&
-    maxLtvBps > 0 &&
-    rateBps >= 0 &&
-    durationSeconds > 0 &&
-    acceptWindowSeconds > 0 &&
-    !submitting,
+      !!principalToken &&
+      !!collateralToken &&
+      parseFloat(principalAmount) > 0 &&
+      parseFloat(minCollateral) > 0 &&
+      maxLtvBps > 0 &&
+      rateBps >= 0 &&
+      durationSeconds > 0 &&
+      acceptWindowSeconds > 0 &&
+      !submitting,
   );
 
   const handleSubmit = async () => {
@@ -79,28 +79,28 @@
     <!-- Principal -->
     <div class="grid grid-cols-2 gap-3">
       <div class="space-y-1">
-        <label for="principal-token" class="text-sm font-medium text-foreground">Principal Token</label>
+        <label class="text-sm font-medium text-foreground" for="principal-token">Principal Token</label>
         <select
           id="principal-token"
           class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
           bind:value={principalToken}
         >
           <option value={null}>Select token</option>
-          {#each tokens as token}
+          {#each tokens as token (token.address)}
             <option value={token}>{token.symbol}</option>
           {/each}
         </select>
       </div>
       <div class="space-y-1">
-        <label for="principal-amount" class="text-sm font-medium text-foreground">Principal Amount</label>
+        <label class="text-sm font-medium text-foreground" for="principal-amount">Principal Amount</label>
         <input
           id="principal-amount"
-          type="number"
-          min="0"
-          step="any"
-          placeholder="0.00"
-          bind:value={principalAmount}
           class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
+          min="0"
+          placeholder="0.00"
+          step="any"
+          type="number"
+          bind:value={principalAmount}
         />
       </div>
     </div>
@@ -108,28 +108,28 @@
     <!-- Collateral requirements -->
     <div class="grid grid-cols-2 gap-3">
       <div class="space-y-1">
-        <label for="collateral-token" class="text-sm font-medium text-foreground">Required Collateral Token</label>
+        <label class="text-sm font-medium text-foreground" for="collateral-token">Required Collateral Token</label>
         <select
           id="collateral-token"
           class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
           bind:value={collateralToken}
         >
           <option value={null}>Select token</option>
-          {#each tokens as token}
+          {#each tokens as token (token.address)}
             <option value={token}>{token.symbol}</option>
           {/each}
         </select>
       </div>
       <div class="space-y-1">
-        <label for="min-collateral" class="text-sm font-medium text-foreground">Min Collateral Amount</label>
+        <label class="text-sm font-medium text-foreground" for="min-collateral">Min Collateral Amount</label>
         <input
           id="min-collateral"
-          type="number"
-          min="0"
-          step="any"
-          placeholder="0.00"
-          bind:value={minCollateral}
           class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
+          min="0"
+          placeholder="0.00"
+          step="any"
+          type="number"
+          bind:value={minCollateral}
         />
       </div>
     </div>
@@ -137,56 +137,56 @@
     <!-- Terms -->
     <div class="grid grid-cols-2 gap-3">
       <div class="space-y-1">
-        <label for="max-ltv" class="text-sm font-medium text-foreground">Max LTV (%)</label>
+        <label class="text-sm font-medium text-foreground" for="max-ltv">Max LTV (%)</label>
         <input
           id="max-ltv"
-          type="number"
-          min="1"
-          max="100"
-          step="0.01"
-          placeholder="65"
-          bind:value={maxLtvPct}
           class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
+          max="100"
+          min="1"
+          placeholder="65"
+          step="0.01"
+          type="number"
+          bind:value={maxLtvPct}
         />
       </div>
       <div class="space-y-1">
-        <label for="rate-pct" class="text-sm font-medium text-foreground">Interest Rate APR (%)</label>
+        <label class="text-sm font-medium text-foreground" for="rate-pct">Interest Rate APR (%)</label>
         <input
           id="rate-pct"
-          type="number"
-          min="0"
-          max="100"
-          step="0.01"
-          placeholder="8"
-          bind:value={ratePct}
           class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
+          max="100"
+          min="0"
+          placeholder="8"
+          step="0.01"
+          type="number"
+          bind:value={ratePct}
         />
       </div>
     </div>
 
     <div class="grid grid-cols-2 gap-3">
       <div class="space-y-1">
-        <label for="duration-days" class="text-sm font-medium text-foreground">Loan Duration (days)</label>
+        <label class="text-sm font-medium text-foreground" for="duration-days">Loan Duration (days)</label>
         <input
           id="duration-days"
-          type="number"
-          min="1"
-          step="1"
-          placeholder="30"
-          bind:value={durationDays}
           class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
+          min="1"
+          placeholder="30"
+          step="1"
+          type="number"
+          bind:value={durationDays}
         />
       </div>
       <div class="space-y-1">
-        <label for="accept-window" class="text-sm font-medium text-foreground">Accept Window (days)</label>
+        <label class="text-sm font-medium text-foreground" for="accept-window">Accept Window (days)</label>
         <input
           id="accept-window"
-          type="number"
-          min="1"
-          step="1"
-          placeholder="7"
-          bind:value={acceptWindowDays}
           class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
+          min="1"
+          placeholder="7"
+          step="1"
+          type="number"
+          bind:value={acceptWindowDays}
         />
       </div>
     </div>
@@ -205,12 +205,7 @@
     {#if !wallet.address}
       <p class="text-sm text-muted-foreground">Connect your wallet to create an offer.</p>
     {:else}
-      <Button
-        class="w-full font-bold"
-        size="lg"
-        disabled={!canSubmit}
-        onclick={handleSubmit}
-      >
+      <Button class="w-full font-bold" disabled={!canSubmit} onclick={handleSubmit} size="lg">
         {#if submitting}
           <Loader2 class="mr-2 h-4 w-4 animate-spin" />
           Creating Offer…
