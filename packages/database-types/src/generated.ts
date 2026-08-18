@@ -524,6 +524,36 @@ export type Database = {
       };
     };
     Functions: {
+      accept_lend_offer_with_transaction: {
+        Args: {
+          p_accepted_at: string;
+          p_block_hash: string;
+          p_block_number: unknown;
+          p_borrower_address: unknown;
+          p_collateral_amount: string;
+          p_contract_address: unknown;
+          p_log_index: unknown;
+          p_network_id: string;
+          p_on_chain_loan_id: unknown;
+          p_on_chain_offer_id: unknown;
+          p_tx_hash: string;
+        };
+        Returns: undefined;
+      };
+      cancel_lend_offer_with_transaction: {
+        Args: {
+          p_block_hash: string;
+          p_block_number: unknown;
+          p_cancelled_at: string;
+          p_contract_address: unknown;
+          p_lender_address: unknown;
+          p_log_index: unknown;
+          p_network_id: string;
+          p_on_chain_offer_id: unknown;
+          p_tx_hash: string;
+        };
+        Returns: undefined;
+      };
       cancel_loan_with_transaction: {
         Args: {
           p_block_hash: string;
@@ -559,7 +589,42 @@ export type Database = {
         };
         Returns: string;
       };
+      create_lend_offer_with_transaction: {
+        Args: {
+          p_accept_deadline: string;
+          p_block_hash: string;
+          p_block_number: unknown;
+          p_collateral_token_address: unknown;
+          p_contract_address: unknown;
+          p_created_at: string;
+          p_duration_seconds: number;
+          p_interest_rate_bps: number;
+          p_lender_address: unknown;
+          p_log_index: unknown;
+          p_max_ltv_bps: number;
+          p_min_collateral_amount: string;
+          p_network_id: string;
+          p_on_chain_offer_id: unknown;
+          p_principal_amount: string;
+          p_principal_token_address: unknown;
+          p_tx_hash: string;
+        };
+        Returns: undefined;
+      };
       current_wallet_address: { Args: never; Returns: string };
+      expire_lend_offer_with_transaction: {
+        Args: {
+          p_block_hash: string;
+          p_block_number: unknown;
+          p_contract_address: unknown;
+          p_expired_at: string;
+          p_log_index: unknown;
+          p_network_id: string;
+          p_on_chain_offer_id: unknown;
+          p_tx_hash: string;
+        };
+        Returns: undefined;
+      };
       expire_loan_with_transaction: {
         Args: {
           p_block_hash: string;

@@ -131,6 +131,94 @@
     "anonymous": false,
     "inputs": [
       {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      }
+    ],
+    "name": "LendOfferAccepted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "lender",
+        "type": "address"
+      }
+    ],
+    "name": "LendOfferCancelled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "lender",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "principalToken",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "principalAmount",
+        "type": "uint256"
+      }
+    ],
+    "name": "LendOfferCreated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      }
+    ],
+    "name": "LendOfferExpired",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
         "indexed": false,
         "internalType": "uint256",
         "name": "bonusBps",
@@ -650,6 +738,37 @@
   {
     "inputs": [
       {
+        "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      }
+    ],
+    "name": "acceptLendOffer",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "collateralAmount",
+        "type": "uint256"
+      }
+    ],
+    "name": "acceptLendOfferWithERC20",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "address",
         "name": "user",
         "type": "address"
@@ -670,11 +789,110 @@
     "inputs": [
       {
         "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      }
+    ],
+    "name": "cancelLendOffer",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
         "name": "loanId",
         "type": "uint256"
       }
     ],
     "name": "cancelLoan",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "requiredCollateralToken",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "minCollateralAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint16",
+        "name": "maxLtvBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "interestRateBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "durationSeconds",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "acceptWindowSeconds",
+        "type": "uint256"
+      }
+    ],
+    "name": "createLendOffer",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "principalToken",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "principalAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "requiredCollateralToken",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "minCollateralAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint16",
+        "name": "maxLtvBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "interestRateBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "durationSeconds",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "acceptWindowSeconds",
+        "type": "uint256"
+      }
+    ],
+    "name": "createLendOfferWithERC20",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -789,6 +1007,19 @@
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      }
+    ],
+    "name": "expireLendOffer",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -1027,6 +1258,80 @@
     "inputs": [
       {
         "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "lendOffers",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "lender",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "principalToken",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "principalAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "requiredCollateralToken",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "minCollateralAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint16",
+        "name": "maxLtvBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "interestRateBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "durationSeconds",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "acceptDeadline",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "active",
+        "type": "bool"
+      },
+      {
+        "internalType": "bool",
+        "name": "accepted",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint256",
+        "name": "acceptedLoanId",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
         "name": "loanId",
         "type": "uint256"
       },
@@ -1215,6 +1520,11 @@
         "internalType": "uint16",
         "name": "liquidationThresholdBps",
         "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "lendOfferId",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -1261,6 +1571,19 @@
   {
     "inputs": [],
     "name": "minInterestBps",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "nextLendOfferId",
     "outputs": [
       {
         "internalType": "uint256",

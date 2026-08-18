@@ -252,6 +252,70 @@ export class BlockchainListenerService implements OnModuleInit {
         );
       },
     );
+
+    void contract.on(
+      contract.getEvent('LendOfferCreated'),
+      (offerId, lender, principalToken, principalAmount, event) => {
+        this.enqueue(queueKey, () =>
+          this.handleLendOfferCreated(
+            offerId,
+            lender,
+            principalToken,
+            principalAmount,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+            contract,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      contract.getEvent('LendOfferAccepted'),
+      (offerId, loanId, borrower, event) => {
+        this.enqueue(queueKey, () =>
+          this.handleLendOfferAccepted(
+            offerId,
+            loanId,
+            borrower,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+            contract,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      contract.getEvent('LendOfferCancelled'),
+      (offerId, lender, event) => {
+        this.enqueue(queueKey, () =>
+          this.handleLendOfferCancelled(
+            offerId,
+            lender,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      contract.getEvent('LendOfferExpired'),
+      (offerId, event) => {
+        this.enqueue(queueKey, () =>
+          this.handleLendOfferExpired(
+            offerId,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+          ),
+        );
+      },
+    );
   }
 
   protected async handleLoanCreated(
@@ -551,6 +615,162 @@ export class BlockchainListenerService implements OnModuleInit {
         `Failed to record protocol fee for loan ${loanId.toString()}`,
         error,
       );
+    }
+  }
+
+  protected async handleLendOfferCreated(
+    offerId: bigint,
+    lender: string,
+    principalToken: string,
+    principalAmount: bigint,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+    contract: VouchVault,
+  ) {
+    let durationSeconds = 0;
+    let acceptWindowSeconds = 0;
+    let collateralTokenAddress = '';
+    let minCollateralAmount = 0n;
+    let maxLtvBps = 0;
+    let interestRateBps = 0;
+    let createdAt = new Date();
+
+    try {
+      const runner = contract.runner;
+      const provider: ethers.Provider | null =
+        runner &&
+        typeof (runner as Partial<ethers.Provider>).getBlock === 'function'
+          ? (runner as ethers.Provider)
+          : (runner?.provider ?? null);
+
+      const [offer, block] = await Promise.all([
+        contract.lendOffers(offerId),
+        provider ? provider.getBlock(blockNumber) : Promise.resolve(null),
+      ]);
+
+      const createdTimestamp =
+        block?.timestamp ?? Math.floor(Date.now() / 1000);
+      createdAt = new Date(createdTimestamp * 1000);
+
+      durationSeconds = Number(offer.durationSeconds);
+      acceptWindowSeconds =
+        Number(offer.acceptDeadline) - createdTimestamp;
+      collateralTokenAddress = offer.requiredCollateralToken;
+      minCollateralAmount = offer.minCollateralAmount;
+      maxLtvBps = Number(offer.maxLtvBps);
+      interestRateBps = Number(offer.interestRateBps);
+    } catch (err) {
+      this.logger.error('Failed to read lend offer details from chain', err);
+    }
+
+    try {
+      await this.loanService.createLendOffer({
+        offerId,
+        lenderAddress: lender,
+        principalTokenAddress: principalToken,
+        principalAmount,
+        collateralTokenAddress,
+        minCollateralAmount,
+        maxLtvBps,
+        interestRateBps,
+        durationSeconds,
+        acceptWindowSeconds,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        createdAt,
+      });
+      this.logger.log(
+        `LendOffer ${offerId.toString()} created by ${lender}`,
+      );
+    } catch (error) {
+      this.logger.error('Failed to create lend offer in DB', error);
+    }
+  }
+
+  protected async handleLendOfferAccepted(
+    offerId: bigint,
+    loanId: bigint,
+    borrower: string,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+    contract: VouchVault,
+  ) {
+    try {
+      const loan = await contract.loans(loanId);
+      await this.loanService.acceptLendOffer({
+        offerId,
+        loanId,
+        borrowerAddress: borrower,
+        collateralAmount: loan.collateralAmount,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        acceptedAt: new Date(Number(loan.fundedAt) * 1000),
+      });
+      this.logger.log(
+        `LendOffer ${offerId.toString()} accepted by ${borrower} → loan ${loanId.toString()}`,
+      );
+    } catch (error) {
+      this.logger.error('Failed to accept lend offer in DB', error);
+    }
+  }
+
+  protected async handleLendOfferCancelled(
+    offerId: bigint,
+    lender: string,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+  ) {
+    try {
+      await this.loanService.cancelLendOffer({
+        offerId,
+        lenderAddress: lender,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        cancelledAt: new Date(),
+      });
+      this.logger.log(
+        `LendOffer ${offerId.toString()} cancelled by ${lender}`,
+      );
+    } catch (error) {
+      this.logger.error('Failed to cancel lend offer in DB', error);
+    }
+  }
+
+  protected async handleLendOfferExpired(
+    offerId: bigint,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+  ) {
+    try {
+      await this.loanService.expireLendOffer({
+        offerId,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        expiredAt: new Date(),
+      });
+      this.logger.log(`LendOffer ${offerId.toString()} expired`);
+    } catch (error) {
+      this.logger.error('Failed to expire lend offer in DB', error);
     }
   }
 
