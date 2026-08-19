@@ -28,3 +28,10 @@ BEFORE UPDATE ON lend_offers
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 ALTER TABLE lend_offers ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "lend_offers_public_read" ON public.lend_offers;
+
+CREATE POLICY "lend_offers_public_read" ON public.lend_offers FOR
+SELECT
+    TO anon,
+    authenticated USING (TRUE);

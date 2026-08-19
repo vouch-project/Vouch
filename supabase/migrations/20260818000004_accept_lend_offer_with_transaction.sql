@@ -18,7 +18,7 @@ DECLARE
     v_principal_token_id uuid;
     v_collateral_token_id uuid;
     v_principal_amount text;
-    v_lender_address address;
+    v_lender_address public.address;
     v_interest_rate_bps integer;
     v_duration interval;
     v_loan_id uuid;
@@ -66,7 +66,7 @@ BEGIN
         END,
         v_offer_id, p_accepted_at
     )
-    ON CONFLICT ("chainId", "onChainLoanId") DO NOTHING
+    ON CONFLICT ("chainId", "onChainLoanId") WHERE "onChainLoanId" IS NOT NULL DO NOTHING
     RETURNING id INTO v_loan_id;
 
     IF v_loan_id IS NULL THEN

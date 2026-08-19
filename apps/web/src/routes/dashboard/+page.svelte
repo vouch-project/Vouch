@@ -54,7 +54,7 @@
         .eq('lenderAddress', address)
         .order('createdAt', { ascending: false });
       if (error) throw error;
-      myOffers = (data as LendOfferRow[]) ?? [];
+      myOffers = (data as unknown as LendOfferRow[]) ?? [];
     } finally {
       offersLoading = false;
     }

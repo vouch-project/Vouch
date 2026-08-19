@@ -56,7 +56,6 @@
   let lendOffersLoading = $state(true);
   let lendOffersError: string | null = $state(null);
   let acceptingOfferId: string | null = $state(null);
-  const collateralInputs: Record<string, string> = $state({});
 
   const fetchLendOffers = async () => {
     try {
@@ -84,8 +83,10 @@
 
   const handleAcceptOffer = async (offer: LendOfferRow) => {
     if (!offer.collateralToken) return;
-    const collateralAmount = collateralInputs[offer.id] ?? '';
-    if (!collateralAmount || parseFloat(collateralAmount) <= 0) return;
+    const collateralAmount = ethers.formatUnits(
+      BigInt(offer.minCollateralAmount),
+      offer.collateralToken.decimals,
+    );
     acceptingOfferId = offer.id;
     try {
       await acceptLendOffer(
@@ -97,7 +98,7 @@
         } as import('$api/chain').Token,
         collateralAmount,
       );
-      await fetchLendOffers();
+      lendOffers = lendOffers.filter((o) => o.id !== offer.id);
     } catch (e) {
       console.error('Accept offer failed', e);
     } finally {
@@ -539,82 +540,155 @@
     </Tabs.Content>
 
     <Tabs.Content value="lend">
-      {#if lendOffersLoading}
-        <div class="space-y-3">
-          {#each Array(3) as _, i (i)}
-            <div class="h-16 rounded-lg bg-muted animate-pulse"></div>
-          {/each}
-        </div>
-      {:else if lendOffersError}
-        <p class="text-sm text-destructive">{lendOffersError}</p>
-      {:else if lendOffers.length === 0}
-        <div class="text-center py-12 text-muted-foreground">
-          <p class="font-medium">No open lend offers right now.</p>
-        </div>
-      {:else}
-        <Card.Root class="border-border/50 shadow-xl dark:shadow-none overflow-hidden bg-card/80 backdrop-blur-md">
-          <div class="overflow-x-auto">
-            <Table.Root>
-              <Table.Header class="bg-muted/30">
-                <Table.Row class="border-border/50">
-                  <Table.Head>Principal</Table.Head>
-                  <Table.Head>Collateral Token</Table.Head>
-                  <Table.Head>Min Collateral</Table.Head>
-                  <Table.Head>Max LTV</Table.Head>
-                  <Table.Head>Rate (APR)</Table.Head>
-                  <Table.Head>Duration</Table.Head>
-                  <Table.Head>Expires</Table.Head>
-                  <Table.Head class="text-right">Accept</Table.Head>
+      <Card.Root class="border-border/50 shadow-xl dark:shadow-none overflow-hidden bg-card/80 backdrop-blur-md">
+        <div class="overflow-x-auto">
+          <Table.Root>
+            <Table.Header class="bg-muted/30">
+              <Table.Row>
+                <Table.Head class="pl-4 sm:pl-8 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                  Lender
+                </Table.Head>
+                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                  Principal
+                </Table.Head>
+                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                  Collateral
+                </Table.Head>
+                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                  Max LTV
+                </Table.Head>
+                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                  APR
+                </Table.Head>
+                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                  Term
+                </Table.Head>
+                <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                  Expires
+                </Table.Head>
+                <Table.Head class="pr-4 sm:pr-10 py-3 text-right text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                  Action
+                </Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {#if lendOffersLoading}
+                {#each Array(5) as _, i (i)}
+                  <Table.Row>
+                    {#each Array(8) as _, j (j)}
+                      <Table.Cell
+                        class={cn('px-1 sm:px-3 lg:px-6 py-4', j === 0 && 'pl-4 sm:pl-8', j === 7 && 'pr-4 sm:pr-10')}
+                      >
+                        <div class="h-4 w-12 sm:w-16 sm:h-5 bg-muted animate-pulse rounded"></div>
+                      </Table.Cell>
+                    {/each}
+                  </Table.Row>
+                {/each}
+              {:else if lendOffersError}
+                <Table.Row>
+                  <Table.Cell class="h-64 text-center" colspan={8}>
+                    <p class="text-sm text-destructive">{lendOffersError}</p>
+                  </Table.Cell>
                 </Table.Row>
-              </Table.Header>
-              <Table.Body>
+              {:else if lendOffers.length === 0}
+                <Table.Row>
+                  <Table.Cell class="h-64 text-center" colspan={8}>
+                    <div class="flex flex-col items-center justify-center space-y-3">
+                      <Zap class="h-10 w-10 text-muted-foreground/30" />
+                      <p class="text-lg font-medium text-muted-foreground">No open lend offers right now</p>
+                      <Button href={resolve(navLinksMap.Lend, {})} size="sm" variant="outline">Create Offer</Button>
+                    </div>
+                  </Table.Cell>
+                </Table.Row>
+              {:else}
                 {#each lendOffers as offer (offer.id)}
-                  <Table.Row class="border-border/30 hover:bg-muted/10 transition-colors">
-                    <Table.Cell class="font-medium">
-                      {formatUint256(offer.principalAmount, offer.principalToken?.decimals ?? 18)}
-                      {offer.principalToken?.symbol ?? ''}
+                  {@const isOwnOffer = wallet.address?.toLowerCase() === offer.lenderAddress.toLowerCase()}
+                  <Table.Row class="hover:bg-muted/10 transition-colors group">
+                    <Table.Cell class="pl-4 sm:pl-8 py-4 font-mono text-[10px] sm:text-xs font-medium whitespace-nowrap min-w-max">
+                      <div class="flex items-center gap-2 sm:gap-3">
+                        <div class="h-6 w-6 sm:h-8 sm:w-8 shrink-0 rounded-full bg-linear-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center text-emerald-700 dark:text-emerald-300 font-bold text-[9px] sm:text-[10px]">
+                          {offer.lenderAddress.slice(2, 4).toUpperCase()}
+                        </div>
+                        <button
+                          class="group/addr inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+                          onclick={() => copyAddress(offer.lenderAddress)}
+                          title={copiedAddress === offer.lenderAddress ? 'Copied!' : `${offer.lenderAddress} (click to copy)`}
+                          type="button"
+                        >
+                          <span class="hidden xs:inline">{truncateAddress(offer.lenderAddress)}</span>
+                          <span class="xs:hidden">{offer.lenderAddress.slice(0, 4)}...</span>
+                          {#if copiedAddress === offer.lenderAddress}
+                            <Check class="h-3 w-3 shrink-0 text-green-500" />
+                          {:else}
+                            <Copy class="h-3 w-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/addr:opacity-100" />
+                          {/if}
+                        </button>
+                      </div>
                     </Table.Cell>
-                    <Table.Cell>{offer.collateralToken?.symbol ?? '—'}</Table.Cell>
-                    <Table.Cell>
-                      {formatUint256(offer.minCollateralAmount, offer.collateralToken?.decimals ?? 18)}
-                      {offer.collateralToken?.symbol ?? ''}
+                    <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
+                      <div class="font-bold text-foreground text-[10px] sm:text-sm">
+                        {formatUint256(offer.principalAmount, offer.principalToken?.decimals)}
+                        <span class="text-[9px] sm:text-xs font-semibold text-muted-foreground uppercase ml-0.5">
+                          {offer.principalToken?.symbol ?? ''}
+                        </span>
+                      </div>
                     </Table.Cell>
-                    <Table.Cell>{(offer.maxLtvBps / 100).toFixed(2)}%</Table.Cell>
-                    <Table.Cell>{(offer.interestRateBps / 100).toFixed(2)}%</Table.Cell>
-                    <Table.Cell>{formatLoanTerm(offer.duration)}</Table.Cell>
-                    <Table.Cell class="text-muted-foreground text-sm">
+                    <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
+                      <div class="flex items-center gap-1 sm:gap-2 font-medium text-[10px] sm:text-sm">
+                        <div class="h-4 w-4 sm:h-5 sm:w-5 rounded-full bg-muted shrink-0"></div>
+                        <span>
+                          {formatUint256(offer.minCollateralAmount, offer.collateralToken?.decimals)}
+                          {offer.collateralToken?.symbol ?? '—'}
+                        </span>
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap text-[10px] sm:text-sm min-w-max">
+                      <div class="flex items-center gap-1.5 sm:gap-3">
+                        <div class="w-12 sm:w-16 h-1.5 sm:h-2 bg-muted rounded-full overflow-hidden hidden lg:block">
+                          <div style:width="{offer.maxLtvBps / 100}%" class="h-full bg-green-500 transition-all"></div>
+                        </div>
+                        <span class="font-bold text-green-600">{(offer.maxLtvBps / 100).toFixed(1)}%</span>
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 font-bold text-indigo-600 text-left whitespace-nowrap text-[10px] sm:text-sm min-w-max">
+                      {(offer.interestRateBps / 100).toFixed(2)}% APR
+                    </Table.Cell>
+                    <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
+                      <div class="flex items-center gap-1 sm:gap-1.5 font-semibold text-foreground/80 text-[10px] sm:text-sm">
+                        <Clock class="h-3 w-3 sm:h-3.5 sm:w-3.5 text-muted-foreground shrink-0" />
+                        {formatLoanTerm(offer.duration)}
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap text-[10px] sm:text-sm text-muted-foreground min-w-max">
                       {new Date(offer.acceptDeadline).toLocaleDateString()}
                     </Table.Cell>
-                    <Table.Cell class="text-right">
-                      <div class="flex items-center gap-2 justify-end">
-                        <input
-                          class="w-32 rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground"
-                          min="0"
-                          placeholder="Collateral amount"
-                          step="any"
-                          type="number"
-                          bind:value={collateralInputs[offer.id]}
-                        />
+                    <Table.Cell class="pr-4 sm:pr-10 py-4 text-right min-w-max">
+                      {#if isOwnOffer}
+                        <span class="text-[10px] sm:text-xs font-semibold text-muted-foreground italic">Your offer</span>
+                      {:else}
                         <Button
-                          class="font-bold"
+                          class="font-bold transition-transform group-hover:scale-105 h-7 sm:h-9 py-0 px-2 sm:px-3 text-[10px] sm:text-xs"
                           disabled={acceptingOfferId === offer.id || !wallet.address}
                           onclick={() => handleAcceptOffer(offer)}
                           size="sm"
+                          variant="default"
                         >
                           {#if acceptingOfferId === offer.id}
-                            <span class="animate-spin mr-1">⟳</span>
+                            <RefreshCw class="mr-1.5 h-3 w-3 animate-spin" />
+                            Accepting…
+                          {:else}
+                            Accept
                           {/if}
-                          Accept
                         </Button>
-                      </div>
+                      {/if}
                     </Table.Cell>
                   </Table.Row>
                 {/each}
-              </Table.Body>
-            </Table.Root>
-          </div>
-        </Card.Root>
-      {/if}
+              {/if}
+            </Table.Body>
+          </Table.Root>
+        </div>
+      </Card.Root>
     </Tabs.Content>
   </Tabs.Root>
 

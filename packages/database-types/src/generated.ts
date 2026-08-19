@@ -97,6 +97,92 @@ export type Database = {
         };
         Relationships: [];
       };
+      lend_offers: {
+        Row: {
+          acceptDeadline: string;
+          acceptedLoanId: string | null;
+          chainId: string;
+          collateralTokenId: string;
+          createdAt: string;
+          duration: string;
+          id: string;
+          interestRateBps: number;
+          lenderAddress: string;
+          maxLtvBps: number;
+          minCollateralAmount: string;
+          onChainOfferId: number;
+          principalAmount: string;
+          principalTokenId: string;
+          status: Database['public']['Enums']['lendOfferStatus'];
+          updatedAt: string;
+        };
+        Insert: {
+          acceptDeadline: string;
+          acceptedLoanId?: string | null;
+          chainId: string;
+          collateralTokenId: string;
+          createdAt?: string;
+          duration: string;
+          id?: string;
+          interestRateBps: number;
+          lenderAddress: string;
+          maxLtvBps: number;
+          minCollateralAmount: string;
+          onChainOfferId: number;
+          principalAmount: string;
+          principalTokenId: string;
+          status?: Database['public']['Enums']['lendOfferStatus'];
+          updatedAt?: string;
+        };
+        Update: {
+          acceptDeadline?: string;
+          acceptedLoanId?: string | null;
+          chainId?: string;
+          collateralTokenId?: string;
+          createdAt?: string;
+          duration?: string;
+          id?: string;
+          interestRateBps?: number;
+          lenderAddress?: string;
+          maxLtvBps?: number;
+          minCollateralAmount?: string;
+          onChainOfferId?: number;
+          principalAmount?: string;
+          principalTokenId?: string;
+          status?: Database['public']['Enums']['lendOfferStatus'];
+          updatedAt?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'lend_offers_acceptedLoanId_fkey';
+            columns: ['acceptedLoanId'];
+            isOneToOne: false;
+            referencedRelation: 'loans';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'lend_offers_chainId_fkey';
+            columns: ['chainId'];
+            isOneToOne: false;
+            referencedRelation: 'chains';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'lend_offers_collateralTokenId_fkey';
+            columns: ['collateralTokenId'];
+            isOneToOne: false;
+            referencedRelation: 'tokens';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'lend_offers_principalTokenId_fkey';
+            columns: ['principalTokenId'];
+            isOneToOne: false;
+            referencedRelation: 'tokens';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       loans: {
         Row: {
           borrowerAddress: string;
@@ -115,6 +201,7 @@ export type Database = {
           id: string;
           interestRate: number | null;
           lenderAddress: string | null;
+          lendOfferId: string | null;
           liquidatedAt: string | null;
           metadata: Json;
           onChainLoanId: number | null;
@@ -144,6 +231,7 @@ export type Database = {
           id?: string;
           interestRate?: number | null;
           lenderAddress?: string | null;
+          lendOfferId?: string | null;
           liquidatedAt?: string | null;
           metadata?: Json;
           onChainLoanId?: number | null;
@@ -173,6 +261,7 @@ export type Database = {
           id?: string;
           interestRate?: number | null;
           lenderAddress?: string | null;
+          lendOfferId?: string | null;
           liquidatedAt?: string | null;
           metadata?: Json;
           onChainLoanId?: number | null;
@@ -198,6 +287,13 @@ export type Database = {
             columns: ['collateralTokenId'];
             isOneToOne: false;
             referencedRelation: 'tokens';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'loans_lendOfferId_fkey';
+            columns: ['lendOfferId'];
+            isOneToOne: false;
+            referencedRelation: 'lend_offers';
             referencedColumns: ['id'];
           },
           {
@@ -568,27 +664,6 @@ export type Database = {
         };
         Returns: undefined;
       };
-      create_loan_with_transaction: {
-        Args: {
-          p_borrower_address: unknown;
-          p_collateral_amount: string;
-          p_collateral_block_hash: string;
-          p_collateral_block_number: unknown;
-          p_collateral_locked_at: string;
-          p_collateral_token_address: unknown;
-          p_collateral_tx_hash: string;
-          p_contract_address: unknown;
-          p_duration_seconds?: number;
-          p_fund_deadline?: string;
-          p_interest_rate_bps?: number;
-          p_log_index: unknown;
-          p_network_id: string;
-          p_on_chain_loan_id: unknown;
-          p_requested_principal_amount: string;
-          p_requested_principal_token_address: unknown;
-        };
-        Returns: string;
-      };
       create_lend_offer_with_transaction: {
         Args: {
           p_accept_deadline: string;
@@ -610,6 +685,27 @@ export type Database = {
           p_tx_hash: string;
         };
         Returns: undefined;
+      };
+      create_loan_with_transaction: {
+        Args: {
+          p_borrower_address: unknown;
+          p_collateral_amount: string;
+          p_collateral_block_hash: string;
+          p_collateral_block_number: unknown;
+          p_collateral_locked_at: string;
+          p_collateral_token_address: unknown;
+          p_collateral_tx_hash: string;
+          p_contract_address: unknown;
+          p_duration_seconds?: number;
+          p_fund_deadline?: string;
+          p_interest_rate_bps?: number;
+          p_log_index: unknown;
+          p_network_id: string;
+          p_on_chain_loan_id: unknown;
+          p_requested_principal_amount: string;
+          p_requested_principal_token_address: unknown;
+        };
+        Returns: string;
       };
       current_wallet_address: { Args: never; Returns: string };
       expire_lend_offer_with_transaction: {
@@ -710,6 +806,7 @@ export type Database = {
     };
     Enums: {
       addressType: 'evm' | 'solana' | 'bitcoin';
+      lendOfferStatus: 'pending' | 'accepted' | 'cancelled' | 'expired';
       loanStatus: 'pending' | 'active' | 'repaid' | 'defaulted' | 'liquidated' | 'cancelled' | 'expired';
       notificationType:
         | 'loan_funded'
@@ -849,6 +946,7 @@ export const Constants = {
   public: {
     Enums: {
       addressType: ['evm', 'solana', 'bitcoin'],
+      lendOfferStatus: ['pending', 'accepted', 'cancelled', 'expired'],
       loanStatus: ['pending', 'active', 'repaid', 'defaulted', 'liquidated', 'cancelled', 'expired'],
       notificationType: [
         'loan_funded',

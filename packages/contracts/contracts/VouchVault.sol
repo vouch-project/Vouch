@@ -68,8 +68,6 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     mapping(uint256 => Loan) public loans;         // single source of truth for all loan/collateral data
     uint256 public nextLoanId;
     mapping(address => uint256) public lockedEthCollateral; // per-borrower ETH aggregate
-    mapping(uint256 => LendOffer) public lendOffers;
-    uint256 public nextLendOfferId;
 
     // --- Interest accrual cadence ---
     // Interest recomputes once per accrual period. The annual rate is preserved:
@@ -123,6 +121,10 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     uint256 public liquidationBonusBps;                          // default 500 = 5%
     uint256 public constant MAX_LIQUIDATION_BONUS_BPS = 2000;    // hard cap: 20%
+
+    // --- Lend offers ---
+    mapping(uint256 => LendOffer) public lendOffers;
+    uint256 public nextLendOfferId;
 
     // --- Events ---
     event Deposited(address indexed user, uint256 amount);
