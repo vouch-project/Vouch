@@ -630,8 +630,9 @@ export class BlockchainListenerService implements OnModuleInit {
   ) {
     let durationSeconds = 0;
     let acceptWindowSeconds = 0;
-    let collateralTokenAddress = '';
-    let minCollateralAmount = 0n;
+    let collateralRatioBps = 0;
+    let trustedRatioBps = 0;
+    let scoreThreshold = 0;
     let maxLtvBps = 0;
     let interestRateBps = 0;
     let createdAt = new Date();
@@ -654,10 +655,10 @@ export class BlockchainListenerService implements OnModuleInit {
       createdAt = new Date(createdTimestamp * 1000);
 
       durationSeconds = Number(offer.durationSeconds);
-      acceptWindowSeconds =
-        Number(offer.acceptDeadline) - createdTimestamp;
-      collateralTokenAddress = offer.requiredCollateralToken;
-      minCollateralAmount = offer.minCollateralAmount;
+      acceptWindowSeconds = Number(offer.acceptDeadline) - createdTimestamp;
+      collateralRatioBps = Number(offer.collateralRatioBps);
+      trustedRatioBps = Number(offer.trustedRatioBps);
+      scoreThreshold = Number(offer.scoreThreshold);
       maxLtvBps = Number(offer.maxLtvBps);
       interestRateBps = Number(offer.interestRateBps);
     } catch (err) {
@@ -670,8 +671,9 @@ export class BlockchainListenerService implements OnModuleInit {
         lenderAddress: lender,
         principalTokenAddress: principalToken,
         principalAmount,
-        collateralTokenAddress,
-        minCollateralAmount,
+        collateralRatioBps,
+        trustedRatioBps,
+        scoreThreshold,
         maxLtvBps,
         interestRateBps,
         durationSeconds,
@@ -684,9 +686,7 @@ export class BlockchainListenerService implements OnModuleInit {
         logIndex,
         createdAt,
       });
-      this.logger.log(
-        `LendOffer ${offerId.toString()} created by ${lender}`,
-      );
+      this.logger.log(`LendOffer ${offerId.toString()} created by ${lender}`);
     } catch (error) {
       this.logger.error('Failed to create lend offer in DB', error);
     }
@@ -707,6 +707,7 @@ export class BlockchainListenerService implements OnModuleInit {
         offerId,
         loanId,
         borrowerAddress: borrower,
+        collateralTokenAddress: loan.collateralToken,
         collateralAmount: loan.collateralAmount,
         networkId: network.chainId.toString(),
         contractAddress,
@@ -743,9 +744,7 @@ export class BlockchainListenerService implements OnModuleInit {
         logIndex,
         cancelledAt: new Date(),
       });
-      this.logger.log(
-        `LendOffer ${offerId.toString()} cancelled by ${lender}`,
-      );
+      this.logger.log(`LendOffer ${offerId.toString()} cancelled by ${lender}`);
     } catch (error) {
       this.logger.error('Failed to cancel lend offer in DB', error);
     }

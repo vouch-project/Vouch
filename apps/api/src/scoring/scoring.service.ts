@@ -5,10 +5,14 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { firstValueFrom } from 'rxjs';
+import { ConfigService } from '@nestjs/config';
 import { asAddress } from '@vouch/database-types';
+import { ethers } from 'ethers';
+import { firstValueFrom } from 'rxjs';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreditScoreResponseDto } from './dto/credit-score-response.dto';
+
+const ATTESTATION_TTL_S = 5 * 60; // 5 minutes
 
 const SCORE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -31,6 +35,7 @@ export class ScoringService {
   constructor(
     private readonly httpService: HttpService,
     private readonly supabaseService: SupabaseService,
+    private readonly configService: ConfigService,
   ) {}
 
   async getCreditScore(walletAddress: string): Promise<CreditScoreResponseDto> {
@@ -128,5 +133,28 @@ export class ScoringService {
       explanation: mlData.explanation,
       computedAt,
     };
+  }
+
+  async getAttestation(
+    walletAddress: string,
+  ): Promise<{ score: number; expiry: number; sig: string }> {
+    const privateKey = this.configService.get<string>(
+      'SCORE_SIGNER_PRIVATE_KEY',
+    );
+    if (!privateKey) {
+      throw new ServiceUnavailableException('Score attestation not configured');
+    }
+
+    const { score } = await this.getCreditScore(walletAddress);
+    const expiry = Math.floor(Date.now() / 1000) + ATTESTATION_TTL_S;
+
+    const msgHash = ethers.solidityPackedKeccak256(
+      ['address', 'uint16', 'uint256'],
+      [walletAddress, score, expiry],
+    );
+    const wallet = new ethers.Wallet(privateKey);
+    const sig = await wallet.signMessage(ethers.getBytes(msgHash));
+
+    return { score, expiry, sig };
   }
 }

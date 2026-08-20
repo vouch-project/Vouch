@@ -15,7 +15,7 @@
   import { supabase } from '$lib/supabase';
   import type { LoanWithTokens } from '$lib/types';
   import { cn } from '$lib/utils';
-  import { acceptLendOffer, fundLoan } from '$lib/wallet/vouchVault';
+  import { acceptLendOffer, fundLoan, type ScoreAttestation } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Check, Clock, Copy, Info, RefreshCw, ShieldCheck, TrendingUp, Zap } from '@lucide/svelte';
   import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -42,14 +42,15 @@
     onChainOfferId: string;
     lenderAddress: string;
     principalAmount: string;
-    minCollateralAmount: string;
+    collateralRatioBps: number;
+    trustedRatioBps: number;
+    scoreThreshold: number;
     maxLtvBps: number;
     interestRateBps: number;
     duration: string;
     acceptDeadline: string;
     status: string;
     principalToken: { symbol: string; decimals: number; address: string } | null;
-    collateralToken: { symbol: string; decimals: number; address: string } | null;
   };
 
   let lendOffers: LendOfferRow[] = $state([]);
@@ -57,17 +58,16 @@
   let lendOffersError: string | null = $state(null);
   let acceptingOfferId: string | null = $state(null);
 
+  // Per-offer state: which collateral token the borrower wants to post
+  let acceptCollateralSymbol: Record<string, string> = $state({});
+
   const fetchLendOffers = async () => {
     try {
       lendOffersError = null;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any)
         .from('lend_offers')
-        .select(
-          `*,
-           principalToken:tokens!lend_offers_principalTokenId_fkey(*),
-           collateralToken:tokens!lend_offers_collateralTokenId_fkey(*)`,
-        )
+        .select(`*, principalToken:tokens!lend_offers_principalTokenId_fkey(*)`)
         .eq('status', 'pending')
         .gt('acceptDeadline', new Date().toISOString())
         .order('createdAt', { ascending: false });
@@ -81,22 +81,65 @@
     }
   };
 
+  const getAcceptCollateralToken = (offerId: string) => {
+    const symbol = acceptCollateralSymbol[offerId] ?? 'ETH';
+    return chainInfo.tokens?.find((t) => t.symbol === symbol) ?? null;
+  };
+
+  // Per-offer cached attestation (fetched once per offer when wallet is connected)
+  let attestations: Record<string, ScoreAttestation | null> = $state({});
+
+  const getEffectiveRatioBps = (offer: LendOfferRow): number => {
+    const att = attestations[offer.id];
+    if (
+      att &&
+      offer.trustedRatioBps > 0 &&
+      att.score >= offer.scoreThreshold &&
+      att.expiry > Math.floor(Date.now() / 1000)
+    ) {
+      return offer.trustedRatioBps;
+    }
+    return offer.collateralRatioBps;
+  };
+
+  const getRequiredCollateralAmount = (offer: LendOfferRow, symbol: string): string | null => {
+    const colToken = chainInfo.tokens?.find((t) => t.symbol === symbol) ?? null;
+    if (!colToken || !offer.principalToken) return null;
+    const principalUsd =
+      parseFloat(ethers.formatUnits(BigInt(offer.principalAmount), offer.principalToken.decimals)) *
+      tokenPrices.getTokenMeta(offer.principalToken.symbol).priceUsd;
+    const colPriceUsd = tokenPrices.getTokenMeta(symbol).priceUsd;
+    if (principalUsd <= 0 || colPriceUsd <= 0) return null;
+    const ratioBps = getEffectiveRatioBps(offer);
+    const requiredUsd = principalUsd * (ratioBps / 10000);
+    return (requiredUsd / colPriceUsd).toFixed(colToken.decimals ?? 18);
+  };
+
+  const fetchAttestation = async (offerId: string) => {
+    if (!wallet.address || attestations[offerId] !== undefined) return;
+    try {
+      const { data } = await axiosApi.get<ScoreAttestation>(
+        `/scoring/${encodeURIComponent(wallet.address)}/attestation`,
+      );
+      attestations = { ...attestations, [offerId]: data };
+    } catch {
+      attestations = { ...attestations, [offerId]: null };
+    }
+  };
+
   const handleAcceptOffer = async (offer: LendOfferRow) => {
-    if (!offer.collateralToken) return;
-    const collateralAmount = ethers.formatUnits(
-      BigInt(offer.minCollateralAmount),
-      offer.collateralToken.decimals,
-    );
+    const symbol = acceptCollateralSymbol[offer.id] ?? 'ETH';
+    const colToken = getAcceptCollateralToken(offer.id);
+    const colAmount = getRequiredCollateralAmount(offer, symbol);
+    if (!colToken || !colAmount) return;
     acceptingOfferId = offer.id;
     try {
+      const att = attestations[offer.id] ?? undefined;
       await acceptLendOffer(
         BigInt(offer.onChainOfferId),
-        {
-          address: offer.collateralToken.address,
-          symbol: offer.collateralToken.symbol,
-          decimals: offer.collateralToken.decimals,
-        } as import('$api/chain').Token,
-        collateralAmount,
+        colToken as import('$api/chain').Token,
+        colAmount,
+        att ?? undefined,
       );
       lendOffers = lendOffers.filter((o) => o.id !== offer.id);
     } catch (e) {
@@ -552,7 +595,7 @@
                   Principal
                 </Table.Head>
                 <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
-                  Collateral
+                  Col. Ratio
                 </Table.Head>
                 <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
                   Max LTV
@@ -566,7 +609,9 @@
                 <Table.Head class="px-1 sm:px-3 lg:px-6 py-3 text-[10px] sm:text-xs uppercase tracking-wider font-bold">
                   Expires
                 </Table.Head>
-                <Table.Head class="pr-4 sm:pr-10 py-3 text-right text-[10px] sm:text-xs uppercase tracking-wider font-bold">
+                <Table.Head
+                  class="pr-4 sm:pr-10 py-3 text-right text-[10px] sm:text-xs uppercase tracking-wider font-bold"
+                >
                   Action
                 </Table.Head>
               </Table.Row>
@@ -604,15 +649,21 @@
                 {#each lendOffers as offer (offer.id)}
                   {@const isOwnOffer = wallet.address?.toLowerCase() === offer.lenderAddress.toLowerCase()}
                   <Table.Row class="hover:bg-muted/10 transition-colors group">
-                    <Table.Cell class="pl-4 sm:pl-8 py-4 font-mono text-[10px] sm:text-xs font-medium whitespace-nowrap min-w-max">
+                    <Table.Cell
+                      class="pl-4 sm:pl-8 py-4 font-mono text-[10px] sm:text-xs font-medium whitespace-nowrap min-w-max"
+                    >
                       <div class="flex items-center gap-2 sm:gap-3">
-                        <div class="h-6 w-6 sm:h-8 sm:w-8 shrink-0 rounded-full bg-linear-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center text-emerald-700 dark:text-emerald-300 font-bold text-[9px] sm:text-[10px]">
+                        <div
+                          class="h-6 w-6 sm:h-8 sm:w-8 shrink-0 rounded-full bg-linear-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center text-emerald-700 dark:text-emerald-300 font-bold text-[9px] sm:text-[10px]"
+                        >
                           {offer.lenderAddress.slice(2, 4).toUpperCase()}
                         </div>
                         <button
                           class="group/addr inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
                           onclick={() => copyAddress(offer.lenderAddress)}
-                          title={copiedAddress === offer.lenderAddress ? 'Copied!' : `${offer.lenderAddress} (click to copy)`}
+                          title={copiedAddress === offer.lenderAddress
+                            ? 'Copied!'
+                            : `${offer.lenderAddress} (click to copy)`}
                           type="button"
                         >
                           <span class="hidden xs:inline">{truncateAddress(offer.lenderAddress)}</span>
@@ -620,7 +671,9 @@
                           {#if copiedAddress === offer.lenderAddress}
                             <Check class="h-3 w-3 shrink-0 text-green-500" />
                           {:else}
-                            <Copy class="h-3 w-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/addr:opacity-100" />
+                            <Copy
+                              class="h-3 w-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/addr:opacity-100"
+                            />
                           {/if}
                         </button>
                       </div>
@@ -634,15 +687,32 @@
                       </div>
                     </Table.Cell>
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
-                      <div class="flex items-center gap-1 sm:gap-2 font-medium text-[10px] sm:text-sm">
-                        <div class="h-4 w-4 sm:h-5 sm:w-5 rounded-full bg-muted shrink-0"></div>
-                        <span>
-                          {formatUint256(offer.minCollateralAmount, offer.collateralToken?.decimals)}
-                          {offer.collateralToken?.symbol ?? '—'}
+                      {@const effectiveRatio = getEffectiveRatioBps(offer)}
+                      {@const isTrusted = effectiveRatio < offer.collateralRatioBps}
+                      <div class="flex flex-col gap-0.5">
+                        <span
+                          class="font-bold text-foreground text-[10px] sm:text-sm {isTrusted ? 'text-green-600' : ''}"
+                        >
+                          {(effectiveRatio / 100).toFixed(0)}%
                         </span>
+                        {#if isTrusted}
+                          <span class="text-[9px] text-muted-foreground line-through"
+                            >{(offer.collateralRatioBps / 100).toFixed(0)}%</span
+                          >
+                        {:else if offer.trustedRatioBps > 0 && !isOwnOffer}
+                          <button
+                            class="text-[9px] text-primary hover:underline text-left"
+                            onclick={() => fetchAttestation(offer.id)}
+                            type="button"
+                          >
+                            score ≥{offer.scoreThreshold}? unlock {(offer.trustedRatioBps / 100).toFixed(0)}%
+                          </button>
+                        {/if}
                       </div>
                     </Table.Cell>
-                    <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap text-[10px] sm:text-sm min-w-max">
+                    <Table.Cell
+                      class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap text-[10px] sm:text-sm min-w-max"
+                    >
                       <div class="flex items-center gap-1.5 sm:gap-3">
                         <div class="w-12 sm:w-16 h-1.5 sm:h-2 bg-muted rounded-full overflow-hidden hidden lg:block">
                           <div style:width="{offer.maxLtvBps / 100}%" class="h-full bg-green-500 transition-all"></div>
@@ -650,36 +720,68 @@
                         <span class="font-bold text-green-600">{(offer.maxLtvBps / 100).toFixed(1)}%</span>
                       </div>
                     </Table.Cell>
-                    <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 font-bold text-indigo-600 text-left whitespace-nowrap text-[10px] sm:text-sm min-w-max">
+                    <Table.Cell
+                      class="px-1 sm:px-3 lg:px-6 py-4 font-bold text-indigo-600 text-left whitespace-nowrap text-[10px] sm:text-sm min-w-max"
+                    >
                       {(offer.interestRateBps / 100).toFixed(2)}% APR
                     </Table.Cell>
                     <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
-                      <div class="flex items-center gap-1 sm:gap-1.5 font-semibold text-foreground/80 text-[10px] sm:text-sm">
+                      <div
+                        class="flex items-center gap-1 sm:gap-1.5 font-semibold text-foreground/80 text-[10px] sm:text-sm"
+                      >
                         <Clock class="h-3 w-3 sm:h-3.5 sm:w-3.5 text-muted-foreground shrink-0" />
                         {formatLoanTerm(offer.duration)}
                       </div>
                     </Table.Cell>
-                    <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap text-[10px] sm:text-sm text-muted-foreground min-w-max">
+                    <Table.Cell
+                      class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap text-[10px] sm:text-sm text-muted-foreground min-w-max"
+                    >
                       {new Date(offer.acceptDeadline).toLocaleDateString()}
                     </Table.Cell>
-                    <Table.Cell class="pr-4 sm:pr-10 py-4 text-right min-w-max">
+                    <Table.Cell class="pr-4 sm:pr-6 py-4 text-right min-w-[180px]">
                       {#if isOwnOffer}
-                        <span class="text-[10px] sm:text-xs font-semibold text-muted-foreground italic">Your offer</span>
-                      {:else}
-                        <Button
-                          class="font-bold transition-transform group-hover:scale-105 h-7 sm:h-9 py-0 px-2 sm:px-3 text-[10px] sm:text-xs"
-                          disabled={acceptingOfferId === offer.id || !wallet.address}
-                          onclick={() => handleAcceptOffer(offer)}
-                          size="sm"
-                          variant="default"
+                        <span class="text-[10px] sm:text-xs font-semibold text-muted-foreground italic">Your offer</span
                         >
-                          {#if acceptingOfferId === offer.id}
-                            <RefreshCw class="mr-1.5 h-3 w-3 animate-spin" />
-                            Accepting…
-                          {:else}
-                            Accept
-                          {/if}
-                        </Button>
+                      {:else}
+                        {@const colSymbol = acceptCollateralSymbol[offer.id] ?? 'ETH'}
+                        {@const reqAmount = getRequiredCollateralAmount(offer, colSymbol)}
+                        <div class="flex items-center justify-end gap-2">
+                          <select
+                            class="rounded-md border border-border bg-background px-2 py-1 text-[10px] sm:text-xs font-medium focus:outline-none focus:ring-1 focus:ring-ring"
+                            value={colSymbol}
+                            onchange={(e) =>
+                              (acceptCollateralSymbol = {
+                                ...acceptCollateralSymbol,
+                                [offer.id]: (e.target as HTMLSelectElement).value,
+                              })}
+                          >
+                            {#each chainInfo.tokens ?? [] as t (t.symbol)}
+                              <option value={t.symbol}>{t.symbol}</option>
+                            {/each}
+                          </select>
+                          <div class="flex flex-col items-end gap-0.5">
+                            {#if reqAmount}
+                              <span class="text-[9px] text-muted-foreground whitespace-nowrap">
+                                {parseFloat(reqAmount).toFixed(4)}
+                                {colSymbol}
+                              </span>
+                            {/if}
+                            <Button
+                              class="font-bold h-7 py-0 px-2 sm:px-3 text-[10px] sm:text-xs"
+                              disabled={acceptingOfferId === offer.id || !wallet.address || !reqAmount}
+                              onclick={() => handleAcceptOffer(offer)}
+                              size="sm"
+                              variant="default"
+                            >
+                              {#if acceptingOfferId === offer.id}
+                                <RefreshCw class="mr-1.5 h-3 w-3 animate-spin" />
+                                Accepting…
+                              {:else}
+                                Accept
+                              {/if}
+                            </Button>
+                          </div>
+                        </div>
                       {/if}
                     </Table.Cell>
                   </Table.Row>

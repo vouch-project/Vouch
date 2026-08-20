@@ -15,11 +15,14 @@ export class CreateLendOfferDto {
   @IsBigInt()
   principalAmount!: bigint;
 
-  @IsString()
-  collateralTokenAddress!: string;
+  @IsNumber()
+  collateralRatioBps!: number;
 
-  @IsBigInt()
-  minCollateralAmount!: bigint;
+  @IsNumber()
+  trustedRatioBps!: number;
+
+  @IsNumber()
+  scoreThreshold!: number;
 
   @IsNumber()
   maxLtvBps!: number;

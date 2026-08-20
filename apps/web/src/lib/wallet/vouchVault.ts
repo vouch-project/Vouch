@@ -329,24 +329,24 @@ export type CreateLendOfferResult = {
 export const createLendOffer = async (
   principalToken: Token,
   principalAmount: string,
-  collateralToken: Token,
-  minCollateral: string,
+  collateralRatioBps: number,
+  trustedRatioBps: number,
+  scoreThreshold: number,
   maxLtvBps: number,
   rateBps: number,
   durationSeconds: number,
   acceptWindowSeconds: number,
 ): Promise<CreateLendOfferResult> => {
   const contract = await getVouchVaultContract();
-  const collateralTokenAddress = isNativeToken(collateralToken) ? ethers.ZeroAddress : collateralToken.address;
-  const minCollateralParsed = ethers.parseUnits(minCollateral, collateralToken.decimals ?? 18);
 
   let tx: ethers.TransactionResponse;
 
   if (isNativeToken(principalToken)) {
     const value = ethers.parseEther(principalAmount);
     tx = await contract.createLendOffer(
-      collateralTokenAddress,
-      minCollateralParsed,
+      collateralRatioBps,
+      trustedRatioBps,
+      scoreThreshold,
       maxLtvBps,
       rateBps,
       durationSeconds,
@@ -365,8 +365,9 @@ export const createLendOffer = async (
     tx = await contract.createLendOfferWithERC20(
       principalToken.address,
       principalAmountParsed,
-      collateralTokenAddress,
-      minCollateralParsed,
+      collateralRatioBps,
+      trustedRatioBps,
+      scoreThreshold,
       maxLtvBps,
       rateBps,
       durationSeconds,
@@ -399,18 +400,24 @@ export type AcceptLendOfferResult = {
   loanId: bigint;
 };
 
+export type ScoreAttestation = { score: number; expiry: number; sig: string };
+
 export const acceptLendOffer = async (
   offerId: bigint,
   collateralToken: Token,
   collateralAmount: string,
+  attestation?: ScoreAttestation,
 ): Promise<AcceptLendOfferResult> => {
   const contract = await getVouchVaultContract();
   const collateralParsed = ethers.parseUnits(collateralAmount, collateralToken.decimals ?? 18);
+  const score = attestation?.score ?? 0;
+  const expiry = attestation?.expiry ?? 0;
+  const sig = attestation?.sig ?? '0x';
 
   let tx: ethers.TransactionResponse;
 
   if (isNativeToken(collateralToken)) {
-    tx = await contract.acceptLendOffer(offerId, { value: collateralParsed });
+    tx = await contract.acceptLendOffer(offerId, score, expiry, sig, { value: collateralParsed });
   } else {
     const erc20 = new ethers.Contract(collateralToken.address, ERC20_ABI, contract.runner);
     const signer = await (contract.runner as ethers.JsonRpcSigner).getAddress();
@@ -419,7 +426,14 @@ export const acceptLendOffer = async (
       const approveTx = await erc20.approve(contract.target, collateralParsed);
       await approveTx.wait();
     }
-    tx = await contract.acceptLendOfferWithERC20(offerId, collateralParsed);
+    tx = await contract.acceptLendOfferWithERC20(
+      offerId,
+      collateralToken.address,
+      collateralParsed,
+      score,
+      expiry,
+      sig,
+    );
   }
 
   const receipt = await tx.wait();

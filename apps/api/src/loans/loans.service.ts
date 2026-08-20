@@ -5,9 +5,9 @@ import { AcceptLendOfferDto } from './dto/accept-lend-offer.dto';
 import { CancelLendOfferDto } from './dto/cancel-lend-offer.dto';
 import { CancelLoanDto } from './dto/cancel-loan.dto';
 import { CreateLendOfferDto } from './dto/create-lend-offer.dto';
+import { CreateLoanDto } from './dto/create-loan.dto';
 import { ExpireLendOfferDto } from './dto/expire-lend-offer.dto';
 import { ExpireLoanDto } from './dto/expire-loan.dto';
-import { CreateLoanDto } from './dto/create-loan.dto';
 import { FundLoanDto } from './dto/fund-loan.dto';
 import { PartialRepayLoanDto } from './dto/partial-repay-loan.dto';
 import { RecordProtocolFeeDto } from './dto/record-protocol-fee.dto';
@@ -261,8 +261,9 @@ export class LoansService {
     lenderAddress,
     principalTokenAddress,
     principalAmount,
-    collateralTokenAddress,
-    minCollateralAmount,
+    collateralRatioBps,
+    trustedRatioBps,
+    scoreThreshold,
     maxLtvBps,
     interestRateBps,
     durationSeconds,
@@ -288,8 +289,9 @@ export class LoansService {
         p_lender_address: asAddress(lenderAddress),
         p_principal_token_address: asAddress(principalTokenAddress),
         p_principal_amount: principalAmount.toString(),
-        p_collateral_token_address: asAddress(collateralTokenAddress),
-        p_min_collateral_amount: minCollateralAmount.toString(),
+        p_collateral_ratio_bps: collateralRatioBps,
+        p_trusted_ratio_bps: trustedRatioBps,
+        p_score_threshold: scoreThreshold,
         p_max_ltv_bps: maxLtvBps,
         p_interest_rate_bps: interestRateBps,
         p_duration_seconds: durationSeconds,
@@ -308,6 +310,7 @@ export class LoansService {
     offerId,
     loanId,
     borrowerAddress,
+    collateralTokenAddress,
     collateralAmount,
     networkId,
     contractAddress,
@@ -325,6 +328,7 @@ export class LoansService {
         p_on_chain_offer_id: offerId.toString(),
         p_on_chain_loan_id: loanId.toString(),
         p_borrower_address: asAddress(borrowerAddress),
+        p_collateral_token_address: asAddress(collateralTokenAddress),
         p_collateral_amount: collateralAmount.toString(),
         p_tx_hash: txHash,
         p_block_number: blockNumber.toString(),

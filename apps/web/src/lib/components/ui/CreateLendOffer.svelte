@@ -1,19 +1,19 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
   import * as Card from '$lib/components/ui/card';
+  import TokenAutocomplete from '$lib/components/ui/TokenAutocomplete.svelte';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
-  import TokenAutocomplete from '$lib/components/ui/TokenAutocomplete.svelte';
   import { createLendOffer } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Loader2, Sparkles, Wallet } from '@lucide/svelte';
 
   let principalSymbol = $state('MOCK');
   let principalAmount = $state('');
-  let collateralSymbol = $state('ETH');
-  let minCollateral = $state('');
-  let maxLtvPct = $state('65');
-  let ratePct = $state('8');
+  let collateralRatioPct = $state('154');
+  let trustedRatioPct = $state('125');
+  let scoreThreshold = $state('750');
+  let ratePct = $state('8.00');
   let durationDays = $state('30');
   let acceptWindowDays = $state('7');
 
@@ -21,18 +21,49 @@
   let errorMsg = $state<string | null>(null);
 
   const tokens = $derived(chainInfo.tokens ?? []);
-
   const principalToken = $derived(tokens.find((t) => t.symbol === principalSymbol) ?? null);
-  const collateralToken = $derived(tokens.find((t) => t.symbol === collateralSymbol) ?? null);
 
   const principalUsd = $derived(
     (parseFloat(principalAmount) || 0) * tokenPrices.getTokenMeta(principalSymbol).priceUsd,
   );
-  const collateralUsd = $derived(
-    (parseFloat(minCollateral) || 0) * tokenPrices.getTokenMeta(collateralSymbol).priceUsd,
-  );
+  const ethPriceUsd = $derived(tokenPrices.getTokenMeta('ETH').priceUsd);
 
-  const maxLtvBps = $derived(Math.round(parseFloat(maxLtvPct || '0') * 100));
+  const RISK_LEVELS = {
+    conservative: { collateralRatio: '200', trustedRatio: '154', threshold: '700', apr: '5.00', label: 'Conservative' },
+    balanced: { collateralRatio: '154', trustedRatio: '125', threshold: '750', apr: '8.00', label: 'Balanced' },
+    aggressive: { collateralRatio: '125', trustedRatio: '110', threshold: '800', apr: '12.00', label: 'Aggressive' },
+  } as const;
+
+  type RiskLevel = keyof typeof RISK_LEVELS;
+  let selectedRisk = $state<RiskLevel | null>(null);
+  const activeRisk = $derived(selectedRisk ?? 'balanced');
+
+  const suggestedCollateralRatio = $derived(RISK_LEVELS[activeRisk].collateralRatio);
+  const suggestedTrustedRatio = $derived(RISK_LEVELS[activeRisk].trustedRatio);
+  const suggestedThreshold = $derived(RISK_LEVELS[activeRisk].threshold);
+  const suggestedApr = $derived(RISK_LEVELS[activeRisk].apr);
+
+  const maxLtvBps = $derived.by(() => {
+    const ratio = parseFloat(collateralRatioPct || '0');
+    if (ratio <= 0) return 0;
+    return Math.round((10000 / ratio) * 100);
+  });
+
+  const minCollateralEth = $derived.by(() => {
+    const ratio = parseFloat(collateralRatioPct || '0');
+    if (principalUsd <= 0 || ethPriceUsd <= 0 || ratio <= 0) return null;
+    return (principalUsd * (ratio / 100)) / ethPriceUsd;
+  });
+
+  const trustedCollateralEth = $derived.by(() => {
+    const ratio = parseFloat(trustedRatioPct || '0');
+    if (principalUsd <= 0 || ethPriceUsd <= 0 || ratio <= 0) return null;
+    return (principalUsd * (ratio / 100)) / ethPriceUsd;
+  });
+
+  const collateralRatioBps = $derived(Math.round(parseFloat(collateralRatioPct || '0') * 100));
+  const trustedRatioBps = $derived(Math.round(parseFloat(trustedRatioPct || '0') * 100));
+  const scoreThresholdNum = $derived(Math.round(parseFloat(scoreThreshold || '0')));
   const rateBps = $derived(Math.round(parseFloat(ratePct || '0') * 100));
   const durationSeconds = $derived(Math.round(parseFloat(durationDays || '0') * 86400));
   const acceptWindowSeconds = $derived(Math.round(parseFloat(acceptWindowDays || '0') * 86400));
@@ -40,9 +71,10 @@
   const canSubmit = $derived(
     !!wallet.address &&
       !!principalToken &&
-      !!collateralToken &&
       parseFloat(principalAmount) > 0 &&
-      parseFloat(minCollateral) > 0 &&
+      collateralRatioBps >= 10000 &&
+      trustedRatioBps >= 10000 &&
+      trustedRatioBps <= collateralRatioBps &&
       maxLtvBps > 0 &&
       rateBps >= 0 &&
       durationSeconds > 0 &&
@@ -50,48 +82,21 @@
       !submitting,
   );
 
-  const RISK_LEVELS = {
-    conservative: { ltv: '50', apr: '5.00', label: 'Conservative' },
-    balanced:     { ltv: '65', apr: '8.00', label: 'Balanced' },
-    aggressive:   { ltv: '80', apr: '12.00', label: 'Aggressive' },
-  } as const;
-
-  type RiskLevel = keyof typeof RISK_LEVELS;
-
-  let selectedRisk = $state<RiskLevel | null>(null);
-
-  const impliedLtv = $derived(
-    principalUsd > 0 && collateralUsd > 0 ? (principalUsd / collateralUsd) * 100 : null,
-  );
-
-  const activeRisk = $derived.by<RiskLevel | null>(() => {
-    if (selectedRisk !== null) return selectedRisk;
-    if (impliedLtv === null) return null;
-    const levels = Object.entries(RISK_LEVELS) as [RiskLevel, (typeof RISK_LEVELS)[RiskLevel]][];
-    return levels.reduce((best, [key, val]) => {
-      const bestDiff = Math.abs(parseFloat(RISK_LEVELS[best].ltv) - impliedLtv);
-      const thisDiff = Math.abs(parseFloat(val.ltv) - impliedLtv);
-      return thisDiff < bestDiff ? key : best;
-    }, levels[0][0]);
-  });
-
-  const suggestedLtv = $derived(activeRisk ? RISK_LEVELS[activeRisk].ltv : '65');
-  const suggestedApr = $derived(activeRisk ? RISK_LEVELS[activeRisk].apr : '8.00');
-
   const inputClass =
     'border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring transition w-full bg-background';
   const sectionClass = 'flex flex-col gap-3 p-4 rounded-lg border border-border/60 bg-muted/20';
 
   const handleSubmit = async () => {
-    if (!principalToken || !collateralToken) return;
+    if (!principalToken) return;
     submitting = true;
     errorMsg = null;
     try {
       await createLendOffer(
         principalToken,
         principalAmount,
-        collateralToken,
-        minCollateral,
+        collateralRatioBps,
+        trustedRatioBps,
+        scoreThresholdNum,
         maxLtvBps,
         rateBps,
         durationSeconds,
@@ -116,10 +121,10 @@
     </Card.Description>
   </Card.Header>
   <Card.Content class="space-y-4">
-    <!-- Principal + Collateral -->
-    <div class="grid grid-cols-2 gap-3">
-      <div class={sectionClass}>
-        <p class="text-sm font-semibold text-foreground">Principal</p>
+    <!-- Principal -->
+    <div class={sectionClass}>
+      <p class="text-sm font-semibold text-foreground">Principal</p>
+      <div class="grid grid-cols-2 gap-3">
         <div class="flex flex-col gap-1.5">
           <span class="text-xs text-muted-foreground font-medium">Token</span>
           <TokenAutocomplete {tokens} bind:value={principalSymbol} />
@@ -132,102 +137,184 @@
           </span>
         </div>
       </div>
+    </div>
 
-      <div class={sectionClass}>
-        <p class="text-sm font-semibold text-foreground">Required Collateral</p>
-        <div class="flex flex-col gap-1.5">
-          <span class="text-xs text-muted-foreground font-medium">Token</span>
-          <TokenAutocomplete {tokens} bind:value={collateralSymbol} />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <span class="text-xs text-muted-foreground font-medium">Min Amount</span>
-          <input class={inputClass} inputmode="decimal" placeholder="0.0" type="text" bind:value={minCollateral} />
-          <span class="text-xs text-muted-foreground min-h-4">
-            {collateralUsd > 0 ? `≈ $${collateralUsd.toLocaleString(undefined, { maximumFractionDigits: 4 })}` : ''}
-          </span>
-        </div>
+    <!-- Risk level -->
+    <div class={sectionClass}>
+      <p class="text-sm font-semibold text-foreground">Risk &amp; Terms</p>
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-muted-foreground font-medium shrink-0">Risk level:</span>
+        {#each Object.entries(RISK_LEVELS) as [key, level] (key)}
+          <button
+            class="rounded-full border px-3 py-1 text-xs font-semibold transition-colors {activeRisk === key
+              ? 'border-primary/40 bg-primary/15 text-primary'
+              : 'border-border bg-muted/40 text-muted-foreground hover:border-primary/40 hover:bg-primary/10 hover:text-primary'}"
+            onclick={() => {
+              selectedRisk = key as RiskLevel;
+              collateralRatioPct = level.collateralRatio;
+              trustedRatioPct = level.trustedRatio;
+              scoreThreshold = level.threshold;
+              ratePct = level.apr;
+            }}
+            type="button"
+          >
+            {level.label}
+          </button>
+        {/each}
       </div>
-    </div>
 
-    <!-- Risk level selector -->
-    <div class="flex items-center gap-2">
-      <span class="text-xs text-muted-foreground font-medium shrink-0">Risk level:</span>
-      {#each Object.entries(RISK_LEVELS) as [key, level] (key)}
-        <button
-          class="flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold transition-colors {activeRisk === key
-            ? 'border-primary/40 bg-primary/15 text-primary'
-            : 'border-border bg-muted/40 text-muted-foreground hover:border-primary/40 hover:bg-primary/10 hover:text-primary'}"
-          onclick={() => (selectedRisk = selectedRisk === key ? null : (key as RiskLevel))}
-          type="button"
-        >
-          {level.label}
-        </button>
-      {/each}
-      {#if impliedLtv !== null}
-        <span class="text-xs text-muted-foreground ml-1">
-          (implied LTV: {impliedLtv.toFixed(1)}%)
-        </span>
-      {/if}
-    </div>
-
-    <!-- Terms -->
-    <div class="grid grid-cols-2 gap-3">
-      <div class={sectionClass}>
-        <p class="text-sm font-semibold text-foreground">Loan Terms</p>
+      <!-- Collateral ratios + score + APR in a 2x2 grid -->
+      <div class="grid grid-cols-2 gap-3">
         <div class="flex flex-col gap-1.5">
           <div class="flex items-baseline justify-between">
-            <span class="text-xs text-muted-foreground font-medium">Max LTV (%)</span>
+            <span class="text-xs text-muted-foreground font-medium">Base ratio (%)</span>
             <button
-              class="group flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors {maxLtvPct === suggestedLtv
+              class="flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors {collateralRatioPct ===
+              suggestedCollateralRatio
                 ? 'border-primary/40 bg-primary/15 text-primary'
                 : 'border-border bg-muted/40 text-muted-foreground hover:border-primary/40 hover:bg-primary/10 hover:text-primary'}"
-              onclick={() => (maxLtvPct = suggestedLtv)}
+              onclick={() => (collateralRatioPct = suggestedCollateralRatio)}
               type="button"
             >
-              <Sparkles class="h-3 w-3" />
-              {suggestedLtv}%
+              <Sparkles class="h-3 w-3" />{suggestedCollateralRatio}%
             </button>
           </div>
           <div class="relative">
-            <input class="{inputClass} pr-6" inputmode="decimal" max="100" min="1" placeholder="65" type="text" bind:value={maxLtvPct} />
-            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">%</span>
+            <input
+              class="{inputClass} pr-6"
+              inputmode="decimal"
+              min="100"
+              placeholder="154"
+              type="text"
+              bind:value={collateralRatioPct}
+            />
+            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+              %
+            </span>
           </div>
+          {#if minCollateralEth !== null}
+            <span class="text-xs text-muted-foreground">≈ {minCollateralEth.toFixed(4)} ETH</span>
+          {/if}
         </div>
+
         <div class="flex flex-col gap-1.5">
           <div class="flex items-baseline justify-between">
-            <span class="text-xs text-muted-foreground font-medium">Interest Rate APR (%)</span>
+            <span class="text-xs text-muted-foreground font-medium">Trusted ratio (%)</span>
             <button
-              class="group flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors {ratePct === suggestedApr
+              class="flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors {trustedRatioPct ===
+              suggestedTrustedRatio
+                ? 'border-primary/40 bg-primary/15 text-primary'
+                : 'border-border bg-muted/40 text-muted-foreground hover:border-primary/40 hover:bg-primary/10 hover:text-primary'}"
+              onclick={() => (trustedRatioPct = suggestedTrustedRatio)}
+              type="button"
+            >
+              <Sparkles class="h-3 w-3" />{suggestedTrustedRatio}%
+            </button>
+          </div>
+          <div class="relative">
+            <input
+              class="{inputClass} pr-6"
+              inputmode="decimal"
+              min="100"
+              placeholder="125"
+              type="text"
+              bind:value={trustedRatioPct}
+            />
+            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+              %
+            </span>
+          </div>
+          {#if trustedCollateralEth !== null}
+            <span class="text-xs text-muted-foreground">≈ {trustedCollateralEth.toFixed(4)} ETH</span>
+          {/if}
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <div class="flex items-baseline justify-between">
+            <span class="text-xs text-muted-foreground font-medium">Min credit score</span>
+            <button
+              class="flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors {scoreThreshold ===
+              suggestedThreshold
+                ? 'border-primary/40 bg-primary/15 text-primary'
+                : 'border-border bg-muted/40 text-muted-foreground hover:border-primary/40 hover:bg-primary/10 hover:text-primary'}"
+              onclick={() => (scoreThreshold = suggestedThreshold)}
+              type="button"
+            >
+              <Sparkles class="h-3 w-3" />{suggestedThreshold}
+            </button>
+          </div>
+          <input
+            class={inputClass}
+            inputmode="numeric"
+            max="1000"
+            min="0"
+            placeholder="750"
+            type="text"
+            bind:value={scoreThreshold}
+          />
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <div class="flex items-baseline justify-between">
+            <span class="text-xs text-muted-foreground font-medium">APR (%)</span>
+            <button
+              class="flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors {ratePct ===
+              suggestedApr
                 ? 'border-primary/40 bg-primary/15 text-primary'
                 : 'border-border bg-muted/40 text-muted-foreground hover:border-primary/40 hover:bg-primary/10 hover:text-primary'}"
               onclick={() => (ratePct = suggestedApr)}
               type="button"
             >
-              <Sparkles class="h-3 w-3" />
-              {suggestedApr}%
+              <Sparkles class="h-3 w-3" />{suggestedApr}%
             </button>
           </div>
           <div class="relative">
-            <input class="{inputClass} pr-6" inputmode="decimal" max="100" min="0" placeholder="8" type="text" bind:value={ratePct} />
-            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">%</span>
+            <input
+              class="{inputClass} pr-6"
+              inputmode="decimal"
+              max="100"
+              min="0"
+              placeholder="8"
+              type="text"
+              bind:value={ratePct}
+            />
+            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+              %
+            </span>
           </div>
         </div>
-      </div>
 
-      <div class={sectionClass}>
-        <p class="text-sm font-semibold text-foreground">Timeline</p>
         <div class="flex flex-col gap-1.5">
-          <span class="text-xs text-muted-foreground font-medium">Loan Duration (days)</span>
+          <span class="text-xs text-muted-foreground font-medium">Loan Duration</span>
           <div class="relative">
-            <input class="{inputClass} pr-10" inputmode="decimal" min="1" placeholder="30" type="text" bind:value={durationDays} />
-            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">days</span>
+            <input
+              class="{inputClass} pr-10"
+              inputmode="decimal"
+              min="1"
+              placeholder="30"
+              type="text"
+              bind:value={durationDays}
+            />
+            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+              days
+            </span>
           </div>
         </div>
+
         <div class="flex flex-col gap-1.5">
-          <span class="text-xs text-muted-foreground font-medium">Accept Window (days)</span>
+          <span class="text-xs text-muted-foreground font-medium">Accept Window</span>
           <div class="relative">
-            <input class="{inputClass} pr-10" inputmode="decimal" min="1" placeholder="7" type="text" bind:value={acceptWindowDays} />
-            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">days</span>
+            <input
+              class="{inputClass} pr-10"
+              inputmode="decimal"
+              min="1"
+              placeholder="7"
+              type="text"
+              bind:value={acceptWindowDays}
+            />
+            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+              days
+            </span>
           </div>
         </div>
       </div>
@@ -236,8 +323,6 @@
     {#if errorMsg}
       <p class="text-sm text-destructive">{errorMsg}</p>
     {/if}
-
-
   </Card.Content>
   <Card.Footer>
     {#if !wallet.address}

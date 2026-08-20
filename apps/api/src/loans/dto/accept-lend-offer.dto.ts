@@ -12,6 +12,9 @@ export class AcceptLendOfferDto {
   @IsString()
   borrowerAddress!: string;
 
+  @IsString()
+  collateralTokenAddress!: string;
+
   @IsBigInt()
   collateralAmount!: bigint;
 

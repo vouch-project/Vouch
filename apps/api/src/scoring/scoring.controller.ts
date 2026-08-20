@@ -12,4 +12,11 @@ export class ScoringController {
   ): Promise<CreditScoreResponseDto> {
     return this.scoringService.getCreditScore(address);
   }
+
+  @Get(':address/attestation')
+  getAttestation(
+    @Param('address') address: string,
+  ): Promise<{ score: number; expiry: number; sig: string }> {
+    return this.scoringService.getAttestation(address);
+  }
 }
