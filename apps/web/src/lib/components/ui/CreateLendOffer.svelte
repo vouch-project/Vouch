@@ -73,8 +73,7 @@
       !!principalToken &&
       parseFloat(principalAmount) > 0 &&
       collateralRatioBps >= 10000 &&
-      trustedRatioBps >= 10000 &&
-      trustedRatioBps <= collateralRatioBps &&
+      (trustedRatioBps === 0 || (trustedRatioBps >= 10000 && trustedRatioBps <= collateralRatioBps)) &&
       maxLtvBps > 0 &&
       rateBps >= 0 &&
       durationSeconds > 0 &&

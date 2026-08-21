@@ -39,7 +39,8 @@ services:
       - redis
     env_file:
       - .env
-      - /etc/vouch/secrets.env
+      - path: /etc/vouch/secrets.env
+        required: false
     environment:
       NODE_ENV: production
       RPC_URL: http://hardhat-node:8545
@@ -79,7 +80,8 @@ services:
       - '8001'
     env_file:
       - .env
-      - /etc/vouch/secrets.env
+      - path: /etc/vouch/secrets.env
+        required: false
     volumes:
       # Run `vouch-ml-training train` first. ml-engine starts without a model (returns 503) if empty.
       - type: bind
@@ -107,8 +109,9 @@ services:
     volumes:
       - redis_data:/data
     env_file:
-      - /etc/vouch/secrets.env
-    command: sh -c "redis-server --requirepass $$REDIS_PASSWORD --appendonly yes"
+      - path: /etc/vouch/secrets.env
+        required: false
+    command: sh -c 'test -n "$$REDIS_PASSWORD" || { echo "REDIS_PASSWORD is required" >&2; exit 1; }; exec redis-server --requirepass "$$REDIS_PASSWORD" --appendonly yes'
 
 volumes:
   redis_data:

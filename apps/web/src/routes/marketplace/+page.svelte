@@ -64,8 +64,7 @@
   const fetchLendOffers = async () => {
     try {
       lendOffersError = null;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('lend_offers')
         .select(`*, principalToken:tokens!lend_offers_principalTokenId_fkey(*)`)
         .eq('status', 'pending')

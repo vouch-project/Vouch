@@ -17,6 +17,8 @@ const config: HardhatUserConfig = {
     settings: {
       optimizer: { enabled: true, runs: 200 },
       viaIR: true,
+      // Requires a Cancun-compatible network (Sepolia post-EIP-4844, Hardhat ≥2.22).
+      // Update this before deploying to any chain that hasn't activated Cancun.
       evmVersion: 'cancun',
     },
   },
