@@ -119,11 +119,12 @@ def _load_dataframe(settings: Settings) -> pl.DataFrame:
 
 def _build_pipeline(scale_pos_weight: float) -> Pipeline:
     base = XGBClassifier(
-        n_estimators=400,
-        max_depth=5,
+        n_estimators=150,
+        max_depth=3,
         learning_rate=0.05,
         subsample=0.8,
         colsample_bytree=0.8,
+        min_child_weight=5,
         reg_lambda=1.0,
         scale_pos_weight=scale_pos_weight,
         objective="binary:logistic",
