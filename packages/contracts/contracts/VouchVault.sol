@@ -766,6 +766,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     function fillLoanRequest(SignedLoanRequest calldata req, bytes calldata sig) external payable nonReentrant {
         require(req.collateralToken != address(0), "Collateral must be ERC20");
         require(req.collateralAmount > 0, "Collateral must be > 0");
+        require(req.principalAmount > 0, "Principal must be > 0");
         require(req.maxLtvBps > 0 && req.maxLtvBps <= 10000, "Invalid maxLtvBps");
         require(req.interestRateBps <= 10000, "Interest rate cannot exceed 100%");
         require(block.timestamp <= req.deadline, "Request expired");
@@ -783,9 +784,12 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         uint256 received = IERC20(req.collateralToken).balanceOf(address(this)) - balBefore;
         require(received == req.collateralAmount, "Fee-on-transfer collateral not supported");
 
-        // Verify collateral USD value meets the LTV-implied ratio:
-        // collateralUsd >= principalUsd * 10000 / maxLtvBps
-        _checkCollateralValueRaw(req.principalToken, req.principalAmount, req.collateralToken, req.collateralAmount, req.maxLtvBps);
+        // Convert the LTV (<=10000) into an implied collateral ratio (>=10000):
+        // impliedRatioBps = 10000 * 10000 / maxLtvBps
+        // e.g. maxLtvBps=6500 -> 10000^2/6500 ~= 15384 bps ~= 153.84% collateralization.
+        // The require above ensures maxLtvBps > 0, so division is safe.
+        uint256 impliedRatioBps = Math.mulDiv(10000, 10000, req.maxLtvBps);
+        _checkCollateralValueRaw(req.principalToken, req.principalAmount, req.collateralToken, req.collateralAmount, impliedRatioBps);
 
         uint256 loanId = _createLoanFromSignedRequest(req, msg.sender);
 
@@ -859,14 +863,17 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         require(collateralUsd >= _minCollateralUsd(offer, ratioBps), "Collateral value below required ratio");
     }
 
-    /// @dev Ratio-agnostic collateral check: requires collateralUsd >= principalUsd * 10000 / ratioBps.
-    ///      Used by fillLoanRequest where no LendOffer storage exists.
+    /// @dev Ratio-agnostic collateral check: requires collateralUsd >= principalUsd * ratioBps / 10000.
+    ///      `ratioBps` is a collateral RATIO in basis points (>= 10000, e.g. 15384 = 153.84%),
+    ///      matching the convention of `_minCollateralUsd`/`_checkCollateralValue`.
+    ///      Used by fillLoanRequest (which converts maxLtvBps to an implied ratio first) and
+    ///      will be reused by fillLendOffer (Task 3) which passes collateralRatioBps directly.
     function _checkCollateralValueRaw(
         address principalToken,
         uint256 principalAmount,
         address collateralToken,
         uint256 collateralAmount,
-        uint16 ratioBps
+        uint256 ratioBps
     ) internal view {
         uint256 principalPrice = _getPrice(principalToken);
         uint256 normalizedPrincipal = _normalizeAmount(principalToken, principalAmount);

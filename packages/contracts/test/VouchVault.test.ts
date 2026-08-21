@@ -2830,5 +2830,49 @@ describe('VouchVault', function () {
       await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n }))
         .to.be.revertedWith('Collateral must be ERC20');
     });
+
+    it('fillLoanRequest: reverts when collateral is above broken LTV threshold but below correct ratio', async function () {
+      // This test catches the inverted-formula bug. Setup:
+      //   principal = 1 ETH @ $3200 -> principalUsd = $3200
+      //   maxLtvBps = 6500 (65% LTV)
+      //   Correct min collateral: $3200 * (10000/6500) = $3200 * 1.53846 ~= $4923
+      //   Broken min collateral:  $3200 * (6500/10000) = $3200 * 0.65   = $2080
+      //   Test collateral: 0.055 WBTC @ $64000 = $3520
+      //   $3520 > $2080 (would pass broken check) but $3520 < $4923 (must revert with correct check)
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const wbtc = await Mock.deploy('WBTC', 'WBTC', 8, 0);
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const wbtcFeed = await MockAgg.deploy(8, 64000n * 10n ** 8n);
+      await vault.connect(owner).setPriceFeed(await wbtc.getAddress(), await wbtcFeed.getAddress(), 8);
+
+      const principal = ethers.parseEther('1'); // $3200
+      // 0.055 WBTC = 5_500_000 satoshis (8 decimals); worth $3520 — above broken floor ($2080) but below correct floor (~$4923)
+      const collateral = 55n * 10n ** 5n; // 0.055 WBTC
+      await wbtc.mint(borrower.address, collateral);
+      await wbtc.connect(borrower).approve(await vault.getAddress(), collateral);
+
+      const req = {
+        borrower: borrower.address, collateralToken: await wbtc.getAddress(),
+        collateralAmount: collateral, principalToken: ethers.ZeroAddress,
+        principalAmount: principal, interestRateBps: RATE, durationSeconds: DURATION,
+        maxLtvBps: LTV, nonce: 2n, deadline: 9999999999n,
+      };
+      const sig = await signLoanRequest(vault, borrower, req);
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: principal }))
+        .to.be.revertedWith('Collateral value below required ratio');
+    });
+
+    it('fillLoanRequest: reverts when principalAmount is zero', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const req = {
+        borrower: borrower.address, collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: 1n, principalToken: ethers.ZeroAddress, principalAmount: 0n,
+        interestRateBps: RATE, durationSeconds: DURATION, maxLtvBps: LTV, nonce: 1n, deadline: 9999999999n,
+      };
+      const sig = await signLoanRequest(vault, borrower, req);
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 0n }))
+        .to.be.revertedWith('Principal must be > 0');
+    });
   });
 });
