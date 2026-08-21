@@ -2874,5 +2874,108 @@ describe('VouchVault', function () {
       await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 0n }))
         .to.be.revertedWith('Principal must be > 0');
     });
+
+    // --- signLendOffer helper ---
+    async function signLendOffer(vault: any, signer: any, offer: any) {
+      const net = await ethers.provider.getNetwork();
+      const domain = { name: 'Vouch', version: '1', chainId: net.chainId, verifyingContract: await vault.getAddress() };
+      const types = { LendOffer: [
+        { name: 'lender', type: 'address' }, { name: 'principalToken', type: 'address' },
+        { name: 'principalAmount', type: 'uint256' }, { name: 'collateralToken', type: 'address' },
+        { name: 'collateralRatioBps', type: 'uint16' }, { name: 'trustedRatioBps', type: 'uint16' },
+        { name: 'scoreThreshold', type: 'uint16' }, { name: 'maxLtvBps', type: 'uint16' },
+        { name: 'interestRateBps', type: 'uint16' }, { name: 'durationSeconds', type: 'uint256' },
+        { name: 'nonce', type: 'uint256' }, { name: 'deadline', type: 'uint256' },
+      ]};
+      return signer.signTypedData(domain, types, offer);
+    }
+
+    it('fillLendOffer: borrower fills ERC20-principal / ETH-collateral offer', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const usdcFeed = await MockAgg.deploy(8, 1n * 10n ** 8n); // $1
+      await vault.connect(owner).setPriceFeed(await usdc.getAddress(), await usdcFeed.getAddress(), 6);
+
+      const principal = 3200n * 10n ** 6n; // 3200 USDC = $3200
+      await usdc.mint(lender.address, principal);
+      await usdc.connect(lender).approve(await vault.getAddress(), principal);
+
+      // ETH collateral supplied by borrower; ratio 160% -> need $5120 -> 1.6 ETH at $3200
+      const collateral = ethers.parseEther('1.6');
+      const offer = {
+        lender: lender.address, principalToken: await usdc.getAddress(), principalAmount: principal,
+        collateralToken: ethers.ZeroAddress, collateralRatioBps: RATIO, trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH, maxLtvBps: LTV, interestRateBps: RATE, durationSeconds: DURATION,
+        nonce: 1n, deadline: 9999999999n,
+      };
+      const sig = await signLendOffer(vault, lender, offer);
+      const digest = await vault.hashLendOffer(offer);
+
+      await expect(vault.connect(borrower).fillLendOffer(offer, 0, sig, { value: collateral }))
+        .to.emit(vault, 'LendOfferFilled')
+        .withArgs(0, digest, lender.address, borrower.address, await usdc.getAddress(), principal, ethers.ZeroAddress, collateral, anyValue);
+
+      const loan = await vault.loans(0);
+      expect(loan.lender).to.equal(lender.address);
+      expect(loan.borrower).to.equal(borrower.address);
+      expect(await vault.consumedSignatures(digest)).to.equal(true);
+    });
+
+    it('fillLendOffer: borrower fills ERC20-principal / ERC20-collateral offer', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const weth = await Mock.deploy('WETH', 'WETH', 18, 0);
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const usdcFeed = await MockAgg.deploy(8, 1n * 10n ** 8n); // USDC = $1
+      const wethFeed = await MockAgg.deploy(8, 2000n * 10n ** 8n); // WETH = $2000
+      await vault.connect(owner).setPriceFeed(await usdc.getAddress(), await usdcFeed.getAddress(), 6);
+      await vault.connect(owner).setPriceFeed(await weth.getAddress(), await wethFeed.getAddress(), 18);
+
+      // principal = 1000 USDC = $1000
+      // ratio 160% -> need collateral USD >= $1600 -> 0.8 WETH at $2000
+      const principal = 1000n * 10n ** 6n;
+      const collateralAmount = ethers.parseEther('0.8'); // 0.8 WETH = $1600
+
+      await usdc.mint(lender.address, principal);
+      await usdc.connect(lender).approve(await vault.getAddress(), principal);
+      await weth.mint(borrower.address, collateralAmount);
+      await weth.connect(borrower).approve(await vault.getAddress(), collateralAmount);
+
+      const offer = {
+        lender: lender.address, principalToken: await usdc.getAddress(), principalAmount: principal,
+        collateralToken: await weth.getAddress(), collateralRatioBps: RATIO, trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH, maxLtvBps: LTV, interestRateBps: RATE, durationSeconds: DURATION,
+        nonce: 2n, deadline: 9999999999n,
+      };
+      const sig = await signLendOffer(vault, lender, offer);
+      const digest = await vault.hashLendOffer(offer);
+
+      await expect(vault.connect(borrower).fillLendOffer(offer, collateralAmount, sig))
+        .to.emit(vault, 'LendOfferFilled')
+        .withArgs(0, digest, lender.address, borrower.address, await usdc.getAddress(), principal, await weth.getAddress(), collateralAmount, anyValue);
+
+      const loan = await vault.loans(0);
+      expect(loan.lender).to.equal(lender.address);
+      expect(loan.borrower).to.equal(borrower.address);
+      expect(loan.collateralToken).to.equal(await weth.getAddress());
+      expect(loan.collateralAmount).to.equal(collateralAmount);
+      expect(await vault.consumedSignatures(digest)).to.equal(true);
+    });
+
+    it('fillLendOffer: reverts on ETH principal (address(0))', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const offer = {
+        lender: lender.address, principalToken: ethers.ZeroAddress, principalAmount: 1n,
+        collateralToken: ethers.ZeroAddress, collateralRatioBps: RATIO, trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH, maxLtvBps: LTV, interestRateBps: RATE, durationSeconds: DURATION,
+        nonce: 1n, deadline: 9999999999n,
+      };
+      const sig = await signLendOffer(vault, lender, offer);
+      await expect(vault.connect(borrower).fillLendOffer(offer, 0, sig, { value: 1n }))
+        .to.be.revertedWith('Principal must be ERC20');
+    });
   });
 });
