@@ -10,10 +10,11 @@ import "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.so
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 
 /// @title VouchVault (Upgradeable)
 /// @notice Lending vault contract for the Vouch protocol supporting collateralized loans
-contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
+contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP712Upgradeable {
     using SafeERC20 for IERC20;
     using Math for uint256;
     using ECDSA for bytes32;
@@ -66,6 +67,36 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 acceptedLoanId;
     }
 
+    // --- EIP-712 Signed Order Structs ---
+
+    struct SignedLoanRequest {
+        address borrower;
+        address collateralToken;
+        uint256 collateralAmount;
+        address principalToken;
+        uint256 principalAmount;
+        uint16  interestRateBps;
+        uint256 durationSeconds;
+        uint16  maxLtvBps;
+        uint256 nonce;
+        uint256 deadline;
+    }
+
+    struct SignedLendOffer {
+        address lender;
+        address principalToken;
+        uint256 principalAmount;
+        address collateralToken;
+        uint16  collateralRatioBps;
+        uint16  trustedRatioBps;
+        uint16  scoreThreshold;
+        uint16  maxLtvBps;
+        uint16  interestRateBps;
+        uint256 durationSeconds;
+        uint256 nonce;
+        uint256 deadline;
+    }
+
     // --- State Variables ---
 
     mapping(address => uint256) public deposits;
@@ -102,6 +133,14 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     uint256 private constant _ENTERED = 2;
     uint256 private _reentrancyStatus;
 
+    // --- EIP-712 typehashes ---
+    bytes32 private constant LOAN_REQUEST_TYPEHASH = keccak256(
+        "LoanRequest(address borrower,address collateralToken,uint256 collateralAmount,address principalToken,uint256 principalAmount,uint16 interestRateBps,uint256 durationSeconds,uint16 maxLtvBps,uint256 nonce,uint256 deadline)"
+    );
+    bytes32 private constant LEND_OFFER_TYPEHASH = keccak256(
+        "LendOffer(address lender,address principalToken,uint256 principalAmount,address collateralToken,uint16 collateralRatioBps,uint16 trustedRatioBps,uint16 scoreThreshold,uint16 maxLtvBps,uint16 interestRateBps,uint256 durationSeconds,uint256 nonce,uint256 deadline)"
+    );
+
     // --- Minimum interest floor ---
     // Interest accrues on the OUTSTANDING principal (principal - principalRepaid), so a
     // borrower who repays early pays proportionally less interest. To stop an instant repayment
@@ -129,6 +168,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     // --- Lend offers ---
     mapping(uint256 => LendOffer) public lendOffers;
     uint256 public nextLendOfferId;
+
+    // --- Signed orders ---
+    mapping(bytes32 => bool) public consumedSignatures;
 
     // --- Score attestation ---
     // The protocol backend signs (borrower, score, expiry) with this key.
@@ -234,6 +276,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     function initialize(address initialOwner) public initializer {
         __Ownable_init(initialOwner);
         // __UUPSUpgradeable_init() removed: not required in latest OpenZeppelin
+        // __EIP712_init is called here to satisfy the OZ upgrades validator; the stored
+        // name/version are never read because _EIP712Name()/_EIP712Version() are pure overrides.
+        __EIP712_init("Vouch", "1");
         _reentrancyStatus = _NOT_ENTERED;
         nextLendOfferId = 1; // reserve 0 as the sentinel for "no lend offer" on Loan.lendOfferId
         protocolTreasury = initialOwner; // default treasury; owner can change later
@@ -1574,5 +1619,28 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     ) {
         Loan memory loan = loans[loanId];
         return (loan.lender, loan.principalAmount, loan.funded, loan.fundedAt);
+    }
+
+    // --- EIP-712 domain ---
+
+    function _EIP712Name() internal pure override returns (string memory) { return "Vouch"; }
+    function _EIP712Version() internal pure override returns (string memory) { return "1"; }
+
+    // --- Signed order hash functions ---
+
+    function hashLoanRequest(SignedLoanRequest calldata req) public view returns (bytes32) {
+        return _hashTypedDataV4(keccak256(abi.encode(
+            LOAN_REQUEST_TYPEHASH, req.borrower, req.collateralToken, req.collateralAmount,
+            req.principalToken, req.principalAmount, req.interestRateBps, req.durationSeconds,
+            req.maxLtvBps, req.nonce, req.deadline
+        )));
+    }
+
+    function hashLendOffer(SignedLendOffer calldata offer) public view returns (bytes32) {
+        return _hashTypedDataV4(keccak256(abi.encode(
+            LEND_OFFER_TYPEHASH, offer.lender, offer.principalToken, offer.principalAmount,
+            offer.collateralToken, offer.collateralRatioBps, offer.trustedRatioBps, offer.scoreThreshold,
+            offer.maxLtvBps, offer.interestRateBps, offer.durationSeconds, offer.nonce, offer.deadline
+        )));
     }
 }

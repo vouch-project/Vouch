@@ -2701,4 +2701,40 @@ describe('VouchVault', function () {
       );
     });
   });
+
+  describe('signedOrders', function () {
+    const RATIO = 16000, TRUSTED = 0, SCORE_THRESH = 0, LTV = 6500, RATE = 800;
+    const DURATION = 30n * 86400n;
+
+    async function deployFixture() {
+      const [owner, lender, borrower] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const ethFeed = await MockAgg.deploy(8, 3200n * 10n ** 8n);
+      await vault.connect(owner).setPriceFeed(ethers.ZeroAddress, await ethFeed.getAddress(), 18);
+      return { vault, owner, lender, borrower };
+    }
+
+    it('hashLoanRequest matches ethers TypedDataEncoder', async function () {
+      const { vault, borrower } = await deployFixture();
+      const net = await ethers.provider.getNetwork();
+      const domain = { name: 'Vouch', version: '1', chainId: net.chainId, verifyingContract: await vault.getAddress() };
+      const types = { LoanRequest: [
+        { name: 'borrower', type: 'address' }, { name: 'collateralToken', type: 'address' },
+        { name: 'collateralAmount', type: 'uint256' }, { name: 'principalToken', type: 'address' },
+        { name: 'principalAmount', type: 'uint256' }, { name: 'interestRateBps', type: 'uint16' },
+        { name: 'durationSeconds', type: 'uint256' }, { name: 'maxLtvBps', type: 'uint16' },
+        { name: 'nonce', type: 'uint256' }, { name: 'deadline', type: 'uint256' },
+      ]};
+      const req = {
+        borrower: borrower.address, collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: ethers.parseEther('2'), principalToken: ethers.ZeroAddress,
+        principalAmount: ethers.parseEther('1'), interestRateBps: RATE, durationSeconds: DURATION,
+        maxLtvBps: LTV, nonce: 7n, deadline: 9999999999n,
+      };
+      const expected = ethers.TypedDataEncoder.hash(domain, types, req);
+      expect(await vault.hashLoanRequest(req)).to.equal(expected);
+    });
+  });
 });
