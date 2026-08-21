@@ -634,7 +634,7 @@
                   Expires
                 </Table.Head>
                 <Table.Head
-                  class="pr-4 sm:pr-10 py-3 text-right text-[10px] sm:text-xs uppercase tracking-wider font-bold"
+                  class="pr-4 sm:pr-10 py-3 text-center text-[10px] sm:text-xs uppercase tracking-wider font-bold"
                 >
                   Action
                 </Table.Head>
@@ -762,7 +762,7 @@
                     >
                       {new Date(offer.acceptDeadline).toLocaleDateString()}
                     </Table.Cell>
-                    <Table.Cell class="pr-4 sm:pr-6 pt-4 pb-5 text-right min-w-[180px] relative">
+                    <Table.Cell class="pr-4 sm:pr-6 pt-4 pb-5 text-center min-w-[180px] relative">
                       {#if isOwnOffer}
                         <span class="text-[10px] sm:text-xs font-semibold text-muted-foreground italic">
                           Your offer
@@ -770,7 +770,7 @@
                       {:else}
                         {@const colSymbol = acceptCollateralSymbol[offer.id] ?? 'ETH'}
                         {@const reqAmount = getRequiredCollateralAmount(offer, colSymbol)}
-                        <div class="flex items-center justify-end gap-2">
+                        <div class="flex items-center justify-center gap-2">
                           <select
                             class="rounded-md border border-border bg-background px-2 py-1 text-[10px] sm:text-xs font-medium focus:outline-none focus:ring-1 focus:ring-ring"
                             onchange={(e) =>

@@ -6,6 +6,7 @@
   import LoansTable from '$lib/components/dashboard/LoansTable.svelte';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
+  import * as Card from '$lib/components/ui/card';
   import * as Table from '$lib/components/ui/table';
   import * as Tabs from '$lib/components/ui/tabs';
   import { formatUint256 } from '$lib/formatUint256';
@@ -13,7 +14,8 @@
   import { supabase } from '$lib/supabase';
   import { cancelLendOffer } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
-  import { WalletMinimal } from '@lucide/svelte';
+  import { WalletMinimal, Zap } from '@lucide/svelte';
+  import { ethers } from 'ethers';
   import { onDestroy } from 'svelte';
   import { DashboardData, type DashboardFilter } from './dashboard.svelte';
 
@@ -45,13 +47,14 @@
   const fetchMyOffers = async (address: string) => {
     offersLoading = true;
     try {
+      const checksumAddress = ethers.getAddress(address);
       const { data, error } = await supabase
         .from('lend_offers')
         .select(
           `*,
            principalToken:tokens!lend_offers_principalTokenId_fkey(*)`,
         )
-        .eq('lenderAddress', address)
+        .eq('lenderAddress', checksumAddress)
         .order('createdAt', { ascending: false });
       if (error) throw error;
       myOffers = (data as unknown as LendOfferRow[]) ?? [];
@@ -230,62 +233,106 @@
           <LoansTable {filter} {loading} loans={filteredLoans} onRepaid={handleRepaid} role={data.role} />
         </Tabs.Content>
       </Tabs.Root>
-    {:else if offersLoading}
-      <div class="space-y-3">
-        {#each Array(2) as _, i (i)}
-          <div class="h-14 rounded-lg bg-muted animate-pulse"></div>
-        {/each}
-      </div>
-    {:else if myOffers.length === 0}
-      <p class="text-center py-10 text-muted-foreground font-medium">No lend offers yet.</p>
     {:else}
-      <Table.Root>
-        <Table.Header>
-          <Table.Row class="border-border/50">
-            <Table.Head>Principal</Table.Head>
-            <Table.Head>Collateral Ratio</Table.Head>
-            <Table.Head>Max LTV</Table.Head>
-            <Table.Head>Rate</Table.Head>
-            <Table.Head>Expires</Table.Head>
-            <Table.Head>Status</Table.Head>
-            <Table.Head class="text-right">Action</Table.Head>
-          </Table.Row>
-        </Table.Header>
-        <Table.Body>
-          {#each myOffers as offer (offer.id)}
-            <Table.Row class="border-border/30 hover:bg-muted/10 transition-colors">
-              <Table.Cell class="font-medium">
-                {formatUint256(offer.principalAmount, offer.principalToken?.decimals ?? 18)}
-                {offer.principalToken?.symbol ?? ''}
-              </Table.Cell>
-              <Table.Cell>{(offer.collateralRatioBps / 100).toFixed(0)}%</Table.Cell>
-              <Table.Cell>{(offer.maxLtvBps / 100).toFixed(2)}%</Table.Cell>
-              <Table.Cell>{(offer.interestRateBps / 100).toFixed(2)}% APR</Table.Cell>
-              <Table.Cell class="text-muted-foreground text-sm">
-                {new Date(offer.acceptDeadline).toLocaleDateString()}
-              </Table.Cell>
-              <Table.Cell>
-                <Badge class="capitalize" variant={statusVariant(offer.status)}>{offer.status}</Badge>
-              </Table.Cell>
-              <Table.Cell class="text-right">
-                {#if offer.status === 'pending'}
-                  <Button
-                    class="font-semibold"
-                    disabled={cancellingOfferId === offer.id}
-                    onclick={() => handleCancelOffer(offer)}
-                    size="sm"
-                    variant="outline"
-                  >
-                    {cancellingOfferId === offer.id ? 'Cancelling…' : 'Cancel'}
-                  </Button>
-                {:else}
-                  <span class="text-muted-foreground text-sm">—</span>
-                {/if}
-              </Table.Cell>
-            </Table.Row>
-          {/each}
-        </Table.Body>
-      </Table.Root>
+      <Card.Root class="border-border/50 overflow-hidden bg-card/60 backdrop-blur-sm">
+        <div class="overflow-x-auto">
+          <Table.Root class="table-fixed">
+            <Table.Header class="bg-muted/30">
+              <Table.Row>
+                <Table.Head class="w-[8%] pl-4 sm:pl-6 py-3 text-xs uppercase tracking-wider font-bold text-left">
+                  Principal
+                </Table.Head>
+                <Table.Head class="w-[14%] px-2 sm:px-4 py-3 text-xs uppercase tracking-wider font-bold text-center">
+                  Col. Ratio
+                </Table.Head>
+                <Table.Head class="w-[12%] px-2 sm:px-4 py-3 text-xs uppercase tracking-wider font-bold text-center">
+                  Max LTV
+                </Table.Head>
+                <Table.Head class="w-[14%] px-2 sm:px-4 py-3 text-xs uppercase tracking-wider font-bold text-center">
+                  APR
+                </Table.Head>
+                <Table.Head class="w-[14%] px-2 sm:px-4 py-3 text-xs uppercase tracking-wider font-bold text-center">
+                  Expires
+                </Table.Head>
+                <Table.Head class="w-[14%] px-2 sm:px-4 py-3 text-xs uppercase tracking-wider font-bold text-center">
+                  Status
+                </Table.Head>
+                <Table.Head class="w-[14%] px-2 sm:px-4 py-3 text-xs uppercase tracking-wider font-bold text-center">
+                  Action
+                </Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {#if offersLoading}
+                {#each [1, 2, 3] as key (key)}
+                  <Table.Row>
+                    {#each Array(7) as _, j (j)}
+                      <Table.Cell class="px-2 sm:px-4 py-4 text-center">
+                        <div class="h-4 w-16 bg-muted animate-pulse rounded mx-auto"></div>
+                      </Table.Cell>
+                    {/each}
+                  </Table.Row>
+                {/each}
+              {:else if myOffers.length === 0}
+                <Table.Row>
+                  <Table.Cell class="h-56 text-center" colspan={7}>
+                    <div class="flex flex-col items-center justify-center space-y-3">
+                      <div class="h-14 w-14 bg-muted rounded-2xl flex items-center justify-center">
+                        <Zap class="h-7 w-7 text-muted-foreground" />
+                      </div>
+                      <p class="font-semibold">No lend offers yet</p>
+                      <p class="text-sm text-muted-foreground max-w-xs">
+                        Create an offer from the Lend page to start lending.
+                      </p>
+                    </div>
+                  </Table.Cell>
+                </Table.Row>
+              {:else}
+                {#each myOffers as offer (offer.id)}
+                  <Table.Row class="hover:bg-muted/10 transition-colors">
+                    <Table.Cell class="pl-4 sm:pl-6 py-4 font-medium text-sm text-left">
+                      {formatUint256(offer.principalAmount, offer.principalToken?.decimals ?? 18)}
+                      <span class="text-muted-foreground text-xs ml-1">{offer.principalToken?.symbol ?? ''}</span>
+                    </Table.Cell>
+                    <Table.Cell class="px-2 sm:px-4 py-4 text-sm text-center">
+                      {(offer.collateralRatioBps / 100).toFixed(0)}%
+                    </Table.Cell>
+                    <Table.Cell class="px-2 sm:px-4 py-4 text-sm text-center">
+                      {(offer.maxLtvBps / 100).toFixed(2)}%
+                    </Table.Cell>
+                    <Table.Cell class="px-2 sm:px-4 py-4 text-sm text-center">
+                      {(offer.interestRateBps / 100).toFixed(2)}% APR
+                    </Table.Cell>
+                    <Table.Cell class="px-2 sm:px-4 py-4 text-sm text-muted-foreground text-center">
+                      {new Date(offer.acceptDeadline).toLocaleDateString()}
+                    </Table.Cell>
+                    <Table.Cell class="px-2 sm:px-4 py-4 text-center">
+                      <Badge class="capitalize" variant={statusVariant(offer.status)}>{offer.status}</Badge>
+                    </Table.Cell>
+                    <Table.Cell class="px-2 sm:px-4 py-4 text-center">
+                      <div class="flex justify-center">
+                        {#if offer.status === 'pending'}
+                          <Button
+                            class="font-semibold h-7 sm:h-9 py-0 px-2 sm:px-3 text-xs sm:text-sm"
+                            disabled={cancellingOfferId === offer.id}
+                            onclick={() => handleCancelOffer(offer)}
+                            size="sm"
+                            variant="outline"
+                          >
+                            {cancellingOfferId === offer.id ? 'Cancelling…' : 'Cancel'}
+                          </Button>
+                        {:else}
+                          <span class="text-muted-foreground text-sm">—</span>
+                        {/if}
+                      </div>
+                    </Table.Cell>
+                  </Table.Row>
+                {/each}
+              {/if}
+            </Table.Body>
+          </Table.Root>
+        </div>
+      </Card.Root>
     {/if}
   {/if}
 </div>
