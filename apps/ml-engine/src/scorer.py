@@ -50,7 +50,6 @@ _FEATURE_COLUMNS = [
     "ethBalance",
     "stablecoinBalanceUsd",
     "uniqueProtocolsInteracted",
-    "aaveDaysSinceLastBorrow",
     "aaveRepayRatio",
 ]
 
@@ -86,7 +85,6 @@ def _generate_signals(
     total_transactions: int | None,
     unique_protocols_interacted: int | None,
     aave_repay_ratio: float | None,
-    aave_days_since_last_borrow: int | None,
     aave_borrows_count: int | None,
     eth_balance: float | None,
     stablecoin_balance_usd: float | None,
@@ -149,13 +147,6 @@ def _generate_signals(
         improvements.append(
             "Increasing your Aave repayment rate above 80% will improve your score"
         )
-    if aave_days_since_last_borrow is not None and aave_days_since_last_borrow > 180:
-        risk_factors.append("No recent DeFi borrowing activity (6+ months)")
-        improvements.append("Recent borrowing activity signals active protocol engagement")
-    elif aave_days_since_last_borrow is not None and aave_days_since_last_borrow > 60:
-        risk_factors.append("No recent DeFi borrowing activity (60+ days)")
-        improvements.append("Recent borrowing activity signals active protocol engagement")
-
     # Balance
     if eth_balance is not None and eth_balance < 0.05:
         risk_factors.append("Low ETH balance")
@@ -250,7 +241,6 @@ class CreditScorer:
             total_transactions=int(total_tx) if total_tx is not None else None,
             unique_protocols_interacted=features.get("uniqueProtocolsInteracted"),
             aave_repay_ratio=features.get("aaveRepayRatio"),
-            aave_days_since_last_borrow=features.get("aaveDaysSinceLastBorrow"),
             aave_borrows_count=features.get("aaveBorrowsCount"),
             eth_balance=features.get("ethBalance"),
             stablecoin_balance_usd=features.get("stablecoinBalanceUsd"),

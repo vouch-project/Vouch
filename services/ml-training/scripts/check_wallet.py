@@ -16,7 +16,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import time
 from pathlib import Path
 from typing import Any
 
@@ -85,13 +84,12 @@ def _find_latest_artifact() -> Path:
 
 async def _fetch_user_aave_stats(
     address: str,
-) -> tuple[int, float, float | None, int | None]:
-    """Return (borrows_count, total_borrowed_usd, repay_ratio, last_borrow_timestamp)."""
+) -> tuple[int, float, float | None]:
+    """Return (borrows_count, total_borrowed_usd, repay_ratio)."""
     settings = get_settings()
     addr = address.lower()
     total_count = 0
     total_usd = 0.0
-    last_borrow_ts: int | None = None
     page_size = 1000
 
     async with httpx.AsyncClient() as client:
@@ -113,9 +111,6 @@ async def _fetch_user_aave_stats(
                     int(r["reserve"]["decimals"]),
                     r["assetPriceUSD"],
                 )
-                ts = int(r["timestamp"])
-                if last_borrow_ts is None or ts > last_borrow_ts:
-                    last_borrow_ts = ts
             if len(rows) < page_size:
                 break
             skip += page_size
@@ -151,7 +146,7 @@ async def _fetch_user_aave_stats(
 
     repay_ratio = min(repay_count / total_count, 1.0) if total_count > 0 else None
 
-    return total_count, total_usd, repay_ratio, last_borrow_ts
+    return total_count, total_usd, repay_ratio
 
 
 async def _build_features(address: str) -> tuple[list[str], list[float | None]]:
@@ -159,11 +154,7 @@ async def _build_features(address: str) -> tuple[list[str], list[float | None]]:
     enrichments = await enrich_wallets(settings, [address])
     enr = enrichments[0]
 
-    aave_count, aave_usd, repay_ratio, last_borrow_ts = await _fetch_user_aave_stats(address)
-
-    days_since_last_borrow: int | None = None
-    if last_borrow_ts is not None:
-        days_since_last_borrow = max(0, (int(time.time()) - last_borrow_ts) // 86400)
+    aave_count, aave_usd, repay_ratio = await _fetch_user_aave_stats(address)
 
     # Order MUST match metadata.json["feature_columns"] from the artifact.
     features: dict[str, float | None] = {
@@ -174,7 +165,6 @@ async def _build_features(address: str) -> tuple[list[str], list[float | None]]:
         "ethBalance": enr.eth_balance,
         "stablecoinBalanceUsd": enr.stablecoin_balance_usd,
         "uniqueProtocolsInteracted": enr.unique_protocols_interacted,
-        "aaveDaysSinceLastBorrow": days_since_last_borrow,
         "aaveRepayRatio": repay_ratio,
     }
     return list(features.keys()), list(features.values())
@@ -196,8 +186,7 @@ def _score(artifact_dir: Path, address: str) -> dict[str, Any]:
     proba_risky = float(model.predict_proba(x)[0, 1])
 
     # Also expose the *uncalibrated* XGB probability for diagnostics.
-    # With tiny training sets the isotonic calibrator clips everything to
-    # 0.0/1.0; comparing raw vs calibrated tells you which layer is to blame.
+    # Comparing raw vs Platt-calibrated tells you which layer drives the score.
     raw_proba_risky: float | None = None
     inner_pipeline = getattr(model, "_pipeline", None)
     if inner_pipeline is not None:

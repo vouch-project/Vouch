@@ -1,5 +1,5 @@
 # apps/ml-engine/src/features.py
-"""Fetch the 9-feature vector for a wallet address (subgraph + RPC + Etherscan).
+"""Fetch the 8-feature vector for a wallet address (subgraph + RPC + Etherscan).
 
 Adapted from services/ml-training/scripts/check_wallet.py. Self-contained —
 does not import from the ml-training package.
@@ -52,12 +52,6 @@ query UserRepays($user: String!, $first: Int!, $skip: Int!) {
          orderBy: timestamp orderDirection: asc) { id }
 }
 """
-
-
-def _compute_days_since(unix_ts: int | None) -> int | None:
-    if unix_ts is None:
-        return None
-    return max(0, (int(time.time()) - unix_ts) // 86400)
 
 
 def _compute_repay_ratio(repay_count: int, borrow_count: int) -> float | None:
@@ -190,12 +184,11 @@ async def _post_graphql(
 
 async def _fetch_aave_stats(
     client: httpx.AsyncClient, settings: Settings, address: str
-) -> tuple[int, float, float | None, int | None]:
-    """Return (borrows_count, total_usd, repay_ratio, last_borrow_ts)."""
+) -> tuple[int, float, float | None]:
+    """Return (borrows_count, total_usd, repay_ratio)."""
     addr = address.lower()
     total_count = 0
     total_usd = 0.0
-    last_borrow_ts: int | None = None
     page_size = 1000
 
     skip = 0
@@ -212,9 +205,6 @@ async def _fetch_aave_stats(
         total_count += len(rows)
         for r in rows:
             total_usd += _to_usd(r["amount"], int(r["reserve"]["decimals"]), r["assetPriceUSD"])
-            ts = int(r["timestamp"])
-            if last_borrow_ts is None or ts > last_borrow_ts:
-                last_borrow_ts = ts
         if len(rows) < page_size:
             break
         skip += page_size
@@ -240,7 +230,7 @@ async def _fetch_aave_stats(
         if skip >= 5000:
             break
 
-    return total_count, total_usd, _compute_repay_ratio(repay_count, total_count), last_borrow_ts
+    return total_count, total_usd, _compute_repay_ratio(repay_count, total_count)
 
 
 _etherscan_limiter: _RateLimiter | None = None
@@ -254,7 +244,7 @@ def _get_limiter() -> _RateLimiter:
 
 
 async def fetch_features(address: str) -> dict[str, float | int | None]:
-    """Return the 9-feature dict in FEATURE_COLUMNS order."""
+    """Return the 8-feature dict in FEATURE_COLUMNS order."""
     settings = get_settings()
     limiter = _get_limiter()
 
@@ -301,7 +291,7 @@ async def fetch_features(address: str) -> dict[str, float | int | None]:
 
         stablecoin_usd = await _fetch_stablecoin_balance(client, settings, address)
 
-        aave_count, aave_usd, repay_ratio, last_borrow_ts = await _fetch_aave_stats(
+        aave_count, aave_usd, repay_ratio = await _fetch_aave_stats(
             client, settings, address
         )
 
@@ -313,6 +303,5 @@ async def fetch_features(address: str) -> dict[str, float | int | None]:
         "ethBalance": eth_balance,
         "stablecoinBalanceUsd": stablecoin_usd,
         "uniqueProtocolsInteracted": unique_contracts,
-        "aaveDaysSinceLastBorrow": _compute_days_since(last_borrow_ts),
         "aaveRepayRatio": repay_ratio,
     }
