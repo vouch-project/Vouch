@@ -623,7 +623,7 @@ export class BlockchainListenerService implements OnModuleInit {
     lender: string,
     principalToken: string,
     principalAmount: bigint,
-    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
+    { blockNumber }: ethers.Log,
     network: ethers.Network,
     contractAddress: string,
     contract: VouchVault,
