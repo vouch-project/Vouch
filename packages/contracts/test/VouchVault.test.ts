@@ -2568,7 +2568,8 @@ describe('VouchVault', function () {
         .createLendOffer(RATIO, TRUSTED, SCORE_THRESH, LTV, RATE, DURATION, WINDOW, { value: principal });
       const balBefore = await ethers.provider.getBalance(lender.address);
       const tx = await vault.connect(lender).cancelLendOffer(1);
-      await expect(tx).to.emit(vault, 'LendOfferCancelled').withArgs(1, lender.address);
+      // Disambiguate: use full event signature (offerId version, not digest version)
+      await expect(tx).to.emit(vault, 'LendOfferCancelled(uint256,address)').withArgs(1n, lender.address);
       const offer = await vault.lendOffers(1);
       expect(offer.active).to.equal(false);
       const balAfter = await ethers.provider.getBalance(lender.address);
@@ -2976,6 +2977,31 @@ describe('VouchVault', function () {
       const sig = await signLendOffer(vault, lender, offer);
       await expect(vault.connect(borrower).fillLendOffer(offer, 0, sig, { value: 1n }))
         .to.be.revertedWith('Principal must be ERC20');
+    });
+
+    it('cancelSignedLoanRequest: borrower cancels, then fill reverts', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const req = {
+        borrower: borrower.address, collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: 1n, principalToken: ethers.ZeroAddress, principalAmount: 1n,
+        interestRateBps: RATE, durationSeconds: DURATION, maxLtvBps: LTV, nonce: 1n, deadline: 9999999999n,
+      };
+      const digest = await vault.hashLoanRequest(req);
+      await expect(vault.connect(borrower).cancelSignedLoanRequest(req))
+        .to.emit(vault, 'LoanRequestCancelled').withArgs(digest, borrower.address);
+      const sig = await signLoanRequest(vault, borrower, req);
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n }))
+        .to.be.revertedWith('Signature already used');
+    });
+
+    it('cancelSignedLoanRequest: reverts if caller is not borrower', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const req = {
+        borrower: borrower.address, collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: 1n, principalToken: ethers.ZeroAddress, principalAmount: 1n,
+        interestRateBps: RATE, durationSeconds: DURATION, maxLtvBps: LTV, nonce: 1n, deadline: 9999999999n,
+      };
+      await expect(vault.connect(lender).cancelSignedLoanRequest(req)).to.be.revertedWith('Not signer');
     });
   });
 });

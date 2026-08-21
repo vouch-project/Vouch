@@ -273,6 +273,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         address principalToken, uint256 principalAmount, address collateralToken, uint256 collateralAmount, uint256 timestamp
     );
 
+    event LoanRequestCancelled(bytes32 indexed digest, address indexed borrower);
+    event LendOfferCancelled(bytes32 indexed digest, address indexed lender);
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         // Prevents the implementation contract from being initialized directly
@@ -909,6 +912,28 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         _payoutToken(offer.principalToken, msg.sender, offer.principalAmount);
 
         emit LendOfferFilled(loanId, digest, offer.lender, msg.sender, offer.principalToken, offer.principalAmount, _collateralToken, _collateralAmount, block.timestamp);
+    }
+
+    /// @notice Cancel a signed loan request to prevent it from being filled.
+    /// @dev    Only the borrower may cancel. Marks the digest as consumed to prevent any future fill.
+    /// @param req The loan request to cancel.
+    function cancelSignedLoanRequest(SignedLoanRequest calldata req) external {
+        require(msg.sender == req.borrower, "Not signer");
+        bytes32 digest = hashLoanRequest(req);
+        require(!consumedSignatures[digest], "Signature already used");
+        consumedSignatures[digest] = true;
+        emit LoanRequestCancelled(digest, req.borrower);
+    }
+
+    /// @notice Cancel a signed lend offer to prevent it from being filled.
+    /// @dev    Only the lender may cancel. Marks the digest as consumed to prevent any future fill.
+    /// @param offer The lend offer to cancel.
+    function cancelSignedLendOffer(SignedLendOffer calldata offer) external {
+        require(msg.sender == offer.lender, "Not signer");
+        bytes32 digest = hashLendOffer(offer);
+        require(!consumedSignatures[digest], "Signature already used");
+        consumedSignatures[digest] = true;
+        emit LendOfferCancelled(digest, offer.lender);
     }
 
     /// @dev Recover the signer of a score attestation.
