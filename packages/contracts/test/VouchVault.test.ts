@@ -2592,5 +2592,107 @@ describe('VouchVault', function () {
       const offer = await vault.lendOffers(1);
       expect(offer.active).to.equal(false);
     });
+
+    it('createLendOfferWithERC20: locks ERC20 principal, emits LendOfferCreated', async function () {
+      const { vault, lender, owner } = await deployFixture();
+      const MockERC20 = await ethers.getContractFactory('MockERC20');
+      const usdc = await MockERC20.deploy('USD Coin', 'USDC', 6, ethers.parseUnits('10000', 6));
+      const usdcAddress = await usdc.getAddress();
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const usdcFeed = await MockAgg.deploy(8, 1n * 10n ** 8n); // USDC = $1
+      await vault.connect(owner).setPriceFeed(usdcAddress, await usdcFeed.getAddress(), 6);
+
+      const principal = ethers.parseUnits('100', 6); // 100 USDC
+      await usdc.transfer(lender.address, principal);
+      await usdc.connect(lender).approve(await vault.getAddress(), principal);
+
+      const tx = await vault.connect(lender).createLendOfferWithERC20(
+        usdcAddress, principal, RATIO, TRUSTED, SCORE_THRESH, LTV, RATE, DURATION, WINDOW,
+      );
+      await expect(tx).to.emit(vault, 'LendOfferCreated').withArgs(1, lender.address, usdcAddress, principal);
+
+      const offer = await vault.lendOffers(1);
+      expect(offer.lender).to.equal(lender.address);
+      expect(offer.principalToken).to.equal(usdcAddress);
+      expect(offer.principalAmount).to.equal(principal);
+      expect(offer.active).to.equal(true);
+    });
+
+    it('acceptLendOfferWithERC20: borrower posts ERC20 collateral, creates loan', async function () {
+      const { vault, lender, borrower, owner } = await deployFixture();
+      const MockERC20 = await ethers.getContractFactory('MockERC20');
+      const usdc = await MockERC20.deploy('USD Coin', 'USDC', 6, ethers.parseUnits('10000', 6));
+      const wbtc = await MockERC20.deploy('Wrapped BTC', 'WBTC', 8, ethers.parseUnits('10', 8));
+      const usdcAddress = await usdc.getAddress();
+      const wbtcAddress = await wbtc.getAddress();
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const usdcFeed = await MockAgg.deploy(8, 1n * 10n ** 8n);       // USDC = $1
+      const wbtcFeed = await MockAgg.deploy(8, 30000n * 10n ** 8n);   // WBTC = $30,000
+      await vault.connect(owner).setPriceFeed(usdcAddress, await usdcFeed.getAddress(), 6);
+      await vault.connect(owner).setPriceFeed(wbtcAddress, await wbtcFeed.getAddress(), 8);
+
+      // principal = 100 USDC; at 160% ratio: need $160 collateral = 160/30000 WBTC ≈ 0.00533…
+      const principal = ethers.parseUnits('100', 6);
+      await usdc.transfer(lender.address, principal);
+      await usdc.connect(lender).approve(await vault.getAddress(), principal);
+      await vault.connect(lender).createLendOfferWithERC20(
+        usdcAddress, principal, RATIO, TRUSTED, SCORE_THRESH, LTV, RATE, DURATION, WINDOW,
+      );
+
+      // collateral: ceil(100e6 * 16000 * 1e9 * 1e8 / (10000 * 30000e9 * 1e6)) = ceil(160e8/30000) = 534
+      const collateral = ethers.parseUnits('0.01', 8); // 0.01 WBTC = $300, well above $160
+      await wbtc.transfer(borrower.address, collateral);
+      await wbtc.connect(borrower).approve(await vault.getAddress(), collateral);
+
+      const tx = await vault.connect(borrower).acceptLendOfferWithERC20(1, wbtcAddress, collateral, 0, 0, '0x');
+      await expect(tx).to.emit(vault, 'LendOfferAccepted').withArgs(1, 0, borrower.address);
+
+      const offer = await vault.lendOffers(1);
+      expect(offer.accepted).to.equal(true);
+
+      const loan = await vault.loans(0);
+      expect(loan.collateralToken).to.equal(wbtcAddress);
+      expect(loan.lendOfferId).to.equal(1);
+    });
+
+    it('acceptLendOffer: trusted ratio applied when valid attestation provided', async function () {
+      const { vault, lender, borrower, owner } = await deployFixture();
+      // 200% base, 120% trusted for score >= 700; maxLtvBps must cover trusted ratio: ceil(10000²/12000) = 8334
+      const [signerWallet] = await ethers.getSigners();
+      await vault.connect(owner).setScoreSigner(signerWallet.address);
+
+      const TRUSTED_RATIO = 12000; // 120%
+      const SCORE_MIN = 700;
+      const MAX_LTV = 8334; // ceil(10000*10000/12000)
+      await vault.connect(lender).createLendOffer(
+        20000, TRUSTED_RATIO, SCORE_MIN, MAX_LTV, RATE, DURATION, WINDOW,
+        { value: ethers.parseEther('1.0') },
+      );
+
+      // Sign attestation: keccak256(borrower, score, expiry, vaultAddress, chainId)
+      const score = 800;
+      const expiry = Math.floor(Date.now() / 1000) + 3600;
+      const vaultAddress = await vault.getAddress();
+      const network = await ethers.provider.getNetwork();
+      const msgHash = ethers.solidityPackedKeccak256(
+        ['address', 'uint16', 'uint256', 'address', 'uint256'],
+        [borrower.address, score, expiry, vaultAddress, network.chainId],
+      );
+      const sig = await signerWallet.signMessage(ethers.getBytes(msgHash));
+
+      // At 120% trusted ratio, need 1 ETH * 1.2 = 1.2 ETH collateral (< 2 ETH base)
+      const collateral = ethers.parseEther('1.2');
+      const tx = await vault.connect(borrower).acceptLendOffer(1, score, expiry, sig, { value: collateral });
+      await expect(tx).to.emit(vault, 'LendOfferAccepted').withArgs(1, 0, borrower.address);
+
+      // Confirm 1.2 ETH would have been rejected at base 200% ratio
+      await vault.connect(lender).createLendOffer(
+        20000, TRUSTED_RATIO, SCORE_MIN, MAX_LTV, RATE, DURATION, WINDOW,
+        { value: ethers.parseEther('1.0') },
+      );
+      await expect(
+        vault.connect(borrower).acceptLendOffer(2, 0, 0, '0x', { value: collateral }),
+      ).to.be.revertedWith('Collateral value below required ratio');
+    });
   });
 });
