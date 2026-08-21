@@ -1,5 +1,6 @@
 import { HttpService } from '@nestjs/axios';
 import { BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { of } from 'rxjs';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -51,6 +52,7 @@ describe('ScoringService', () => {
         ScoringService,
         { provide: HttpService, useValue: { get: httpGetSpy } },
         { provide: SupabaseService, useValue: supabaseService },
+        { provide: ConfigService, useValue: { get: jest.fn() } },
       ],
     }).compile();
 
