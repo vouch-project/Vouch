@@ -16,6 +16,33 @@
     "type": "error"
   },
   {
+    "inputs": [],
+    "name": "ECDSAInvalidSignature",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      }
+    ],
+    "name": "ECDSAInvalidSignatureLength",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "s",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ECDSAInvalidSignatureS",
+    "type": "error"
+  },
+  {
     "inputs": [
       {
         "internalType": "address",
@@ -125,6 +152,94 @@
       }
     ],
     "name": "Initialized",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      }
+    ],
+    "name": "LendOfferAccepted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "lender",
+        "type": "address"
+      }
+    ],
+    "name": "LendOfferCancelled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "lender",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "principalToken",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "principalAmount",
+        "type": "uint256"
+      }
+    ],
+    "name": "LendOfferCreated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      }
+    ],
+    "name": "LendOfferExpired",
     "type": "event"
   },
   {
@@ -556,6 +671,19 @@
       {
         "indexed": true,
         "internalType": "address",
+        "name": "signer",
+        "type": "address"
+      }
+    ],
+    "name": "ScoreSignerUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
         "name": "implementation",
         "type": "address"
       }
@@ -650,6 +778,72 @@
   {
     "inputs": [
       {
+        "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint16",
+        "name": "score",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "expiry",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "sig",
+        "type": "bytes"
+      }
+    ],
+    "name": "acceptLendOffer",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "collateralToken",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "collateralAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint16",
+        "name": "score",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "expiry",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "sig",
+        "type": "bytes"
+      }
+    ],
+    "name": "acceptLendOfferWithERC20",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "address",
         "name": "user",
         "type": "address"
@@ -670,11 +864,120 @@
     "inputs": [
       {
         "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      }
+    ],
+    "name": "cancelLendOffer",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
         "name": "loanId",
         "type": "uint256"
       }
     ],
     "name": "cancelLoan",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint16",
+        "name": "collateralRatioBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "trustedRatioBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "scoreThreshold",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "maxLtvBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "interestRateBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "durationSeconds",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "acceptWindowSeconds",
+        "type": "uint256"
+      }
+    ],
+    "name": "createLendOffer",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "principalToken",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "principalAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint16",
+        "name": "collateralRatioBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "trustedRatioBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "scoreThreshold",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "maxLtvBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "interestRateBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "durationSeconds",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "acceptWindowSeconds",
+        "type": "uint256"
+      }
+    ],
+    "name": "createLendOfferWithERC20",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -789,6 +1092,19 @@
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "offerId",
+        "type": "uint256"
+      }
+    ],
+    "name": "expireLendOffer",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -1027,6 +1343,85 @@
     "inputs": [
       {
         "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "lendOffers",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "lender",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "principalToken",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "principalAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint16",
+        "name": "collateralRatioBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "trustedRatioBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "scoreThreshold",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "maxLtvBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "interestRateBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "durationSeconds",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "acceptDeadline",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "active",
+        "type": "bool"
+      },
+      {
+        "internalType": "bool",
+        "name": "accepted",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint256",
+        "name": "acceptedLoanId",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
         "name": "loanId",
         "type": "uint256"
       },
@@ -1215,6 +1610,11 @@
         "internalType": "uint16",
         "name": "liquidationThresholdBps",
         "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "lendOfferId",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -1261,6 +1661,19 @@
   {
     "inputs": [],
     "name": "minInterestBps",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "nextLendOfferId",
     "outputs": [
       {
         "internalType": "uint256",
@@ -1418,6 +1831,19 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "scoreSigner",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "uint256",
@@ -1488,6 +1914,19 @@
       }
     ],
     "name": "setProtocolTreasury",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newSigner",
+        "type": "address"
+      }
+    ],
+    "name": "setScoreSigner",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

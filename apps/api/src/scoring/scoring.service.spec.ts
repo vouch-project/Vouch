@@ -1,6 +1,11 @@
 import { HttpService } from '@nestjs/axios';
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ethers } from 'ethers';
 import { of } from 'rxjs';
 import { SupabaseService } from '../supabase/supabase.service';
 import { ScoringService } from './scoring.service';
@@ -51,6 +56,7 @@ describe('ScoringService', () => {
         ScoringService,
         { provide: HttpService, useValue: { get: httpGetSpy } },
         { provide: SupabaseService, useValue: supabaseService },
+        { provide: ConfigService, useValue: { get: jest.fn() } },
       ],
     }).compile();
 
@@ -160,5 +166,44 @@ describe('ScoringService', () => {
     await expect(service.getCreditScore(MOCK_ADDRESS)).rejects.toThrow(
       'Credit scoring service unavailable',
     );
+  });
+
+  describe('getAttestation', () => {
+    const CONTRACT_ADDRESS = '0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF';
+    const CHAIN_ID = 31337n;
+    const PRIVATE_KEY =
+      '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
+
+    it('throws ServiceUnavailableException when SCORE_SIGNER_PRIVATE_KEY is not set', async () => {
+      await expect(
+        service.getAttestation(MOCK_ADDRESS, CONTRACT_ADDRESS, CHAIN_ID),
+      ).rejects.toThrow(ServiceUnavailableException);
+    });
+
+    it('throws BadRequestException for an invalid contractAddress', async () => {
+      jest.spyOn(service['configService'], 'get').mockReturnValue(PRIVATE_KEY);
+      await expect(
+        service.getAttestation(MOCK_ADDRESS, 'not-an-address', CHAIN_ID),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('returns a signature that recovers to the expected signer address', async () => {
+      jest.spyOn(service['configService'], 'get').mockReturnValue(PRIVATE_KEY);
+      const { score, expiry, sig } = await service.getAttestation(
+        MOCK_ADDRESS,
+        CONTRACT_ADDRESS,
+        CHAIN_ID,
+      );
+
+      const normalizedAddress = ethers.getAddress(MOCK_ADDRESS);
+      const normalizedContract = ethers.getAddress(CONTRACT_ADDRESS);
+      const msgHash = ethers.solidityPackedKeccak256(
+        ['address', 'uint16', 'uint256', 'address', 'uint256'],
+        [normalizedAddress, score, expiry, normalizedContract, CHAIN_ID],
+      );
+      const recovered = ethers.verifyMessage(ethers.getBytes(msgHash), sig);
+      const expectedSigner = new ethers.Wallet(PRIVATE_KEY).address;
+      expect(recovered).toBe(expectedSigner);
+    });
   });
 });

@@ -8,12 +8,15 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 /// @title VouchVault (Upgradeable)
 /// @notice Lending vault contract for the Vouch protocol supporting collateralized loans
 contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     using SafeERC20 for IERC20;
     using Math for uint256;
+    using ECDSA for bytes32;
     
     struct Loan {
         // Borrower & collateral
@@ -43,6 +46,24 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 lastAccrualAt;       // timestamp up to which interest has been crystallized
         // Liquidation
         uint16 liquidationThresholdBps;  // e.g. 6452 = 64.52%; set at creation, never changes
+        // Lend offer link
+        uint256 lendOfferId;   // on-chain LendOffer id; 0 means borrow-initiated (no offer) — safe because nextLendOfferId starts at 1
+    }
+
+    struct LendOffer {
+        address lender;
+        address principalToken;              // address(0) = native ETH
+        uint256 principalAmount;
+        uint16  collateralRatioBps;          // base ratio for unknown borrowers, e.g. 20000 = 200%
+        uint16  trustedRatioBps;             // discounted ratio for high-score borrowers, e.g. 13000 = 130%
+        uint16  scoreThreshold;             // minimum score to qualify for trustedRatioBps (e.g. 750)
+        uint16  maxLtvBps;
+        uint16  interestRateBps;
+        uint256 durationSeconds;
+        uint256 acceptDeadline;
+        bool    active;
+        bool    accepted;
+        uint256 acceptedLoanId;
     }
 
     // --- State Variables ---
@@ -104,6 +125,15 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     uint256 public liquidationBonusBps;                          // default 500 = 5%
     uint256 public constant MAX_LIQUIDATION_BONUS_BPS = 2000;    // hard cap: 20%
+
+    // --- Lend offers ---
+    mapping(uint256 => LendOffer) public lendOffers;
+    uint256 public nextLendOfferId;
+
+    // --- Score attestation ---
+    // The protocol backend signs (borrower, score, expiry) with this key.
+    // The contract verifies the signature to grant the trusted collateral ratio.
+    address public scoreSigner;
 
     // --- Events ---
     event Deposited(address indexed user, uint256 amount);
@@ -175,6 +205,21 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 timestamp
     );
     event LiquidationBonusUpdated(uint256 bonusBps);
+    event ScoreSignerUpdated(address indexed signer);
+
+    event LendOfferCreated(
+        uint256 indexed offerId,
+        address indexed lender,
+        address principalToken,
+        uint256 principalAmount
+    );
+    event LendOfferAccepted(
+        uint256 indexed offerId,
+        uint256 indexed loanId,
+        address indexed borrower
+    );
+    event LendOfferCancelled(uint256 indexed offerId, address indexed lender);
+    event LendOfferExpired(uint256 indexed offerId);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -190,6 +235,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         __Ownable_init(initialOwner);
         // __UUPSUpgradeable_init() removed: not required in latest OpenZeppelin
         _reentrancyStatus = _NOT_ENTERED;
+        nextLendOfferId = 1; // reserve 0 as the sentinel for "no lend offer" on Loan.lendOfferId
         protocolTreasury = initialOwner; // default treasury; owner can change later
         protocolFeeBps = 1000;           // default 10% of interest
         liquidationBonusBps = 500;       // default 5% liquidation bonus
@@ -241,6 +287,12 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(newBonusBps <= MAX_LIQUIDATION_BONUS_BPS, "Bonus exceeds max");
         liquidationBonusBps = newBonusBps;
         emit LiquidationBonusUpdated(newBonusBps);
+    }
+
+    function setScoreSigner(address newSigner) external onlyOwner {
+        require(newSigner != address(0), "Signer cannot be zero address");
+        scoreSigner = newSigner;
+        emit ScoreSignerUpdated(newSigner);
     }
 
     /**
@@ -359,7 +411,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             principalRepaid: 0,
             interestAccrued: 0,
             lastAccrualAt: 0,
-            liquidationThresholdBps: liquidationThresholdBps
+            liquidationThresholdBps: liquidationThresholdBps,
+            lendOfferId: 0
         });
 
         emit LoanCreated(nextLoanId, msg.sender, address(0), msg.value, principalToken, principalAmount, block.timestamp);
@@ -422,7 +475,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             principalRepaid: 0,
             interestAccrued: 0,
             lastAccrualAt: 0,
-            liquidationThresholdBps: liquidationThresholdBps
+            liquidationThresholdBps: liquidationThresholdBps,
+            lendOfferId: 0
         });
 
         emit LoanCreated(nextLoanId, msg.sender, token, amount, principalToken, principalAmount, block.timestamp);
@@ -487,6 +541,316 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         }
 
         emit LoanExpired(loanId, loan.borrower, block.timestamp);
+    }
+
+    /// @notice Create a lend offer by depositing ETH as principal.
+    /// @param collateralRatioBps  Base collateral ratio for unknown borrowers (e.g. 20000 = 200%).
+    /// @param trustedRatioBps     Discounted ratio for borrowers whose score >= scoreThreshold (e.g. 13000 = 130%).
+    ///                            Set to 0 to disable score-based discounts.
+    /// @param scoreThreshold      Minimum credit score to qualify for trustedRatioBps (e.g. 750).
+    /// @param maxLtvBps           Maximum LTV accepted (e.g. 6500 = 65%), in basis points
+    /// @param interestRateBps     Annual interest rate in basis points the lender demands
+    /// @param durationSeconds     Loan term in seconds
+    /// @param acceptWindowSeconds Seconds from now within which the offer may be accepted (must be > 0)
+    function createLendOffer(
+        uint16  collateralRatioBps,
+        uint16  trustedRatioBps,
+        uint16  scoreThreshold,
+        uint16  maxLtvBps,
+        uint16  interestRateBps,
+        uint256 durationSeconds,
+        uint256 acceptWindowSeconds
+    ) external payable {
+        require(msg.value > 0, "Principal must be > 0");
+        require(collateralRatioBps >= 10000, "Collateral ratio must be >= 100%");
+        require(trustedRatioBps == 0 || (trustedRatioBps >= 10000 && trustedRatioBps <= collateralRatioBps), "Invalid trustedRatioBps");
+        require(maxLtvBps > 0 && maxLtvBps <= 10000, "Invalid maxLtvBps");
+        { uint16 _minRatio = trustedRatioBps > 0 ? trustedRatioBps : collateralRatioBps;
+          require(uint256(maxLtvBps) * _minRatio >= 10000 * 10000, "maxLtvBps below ratio-implied LTV"); }
+        require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
+        require(acceptWindowSeconds > 0, "Accept window must be > 0");
+
+        lendOffers[nextLendOfferId] = LendOffer({
+            lender: msg.sender,
+            principalToken: address(0),
+            principalAmount: msg.value,
+            collateralRatioBps: collateralRatioBps,
+            trustedRatioBps: trustedRatioBps,
+            scoreThreshold: scoreThreshold,
+            maxLtvBps: maxLtvBps,
+            interestRateBps: interestRateBps,
+            durationSeconds: durationSeconds,
+            acceptDeadline: block.timestamp + acceptWindowSeconds,
+            active: true,
+            accepted: false,
+            acceptedLoanId: 0
+        });
+
+        emit LendOfferCreated(nextLendOfferId, msg.sender, address(0), msg.value);
+        nextLendOfferId++;
+    }
+
+    /// @notice Create a lend offer by depositing an ERC20 token as principal.
+    function createLendOfferWithERC20(
+        address principalToken,
+        uint256 principalAmount,
+        uint16  collateralRatioBps,
+        uint16  trustedRatioBps,
+        uint16  scoreThreshold,
+        uint16  maxLtvBps,
+        uint16  interestRateBps,
+        uint256 durationSeconds,
+        uint256 acceptWindowSeconds
+    ) external nonReentrant {
+        require(principalToken != address(0), "Invalid principal token");
+        require(principalAmount > 0, "Principal must be > 0");
+        require(collateralRatioBps >= 10000, "Collateral ratio must be >= 100%");
+        require(trustedRatioBps == 0 || (trustedRatioBps >= 10000 && trustedRatioBps <= collateralRatioBps), "Invalid trustedRatioBps");
+        require(maxLtvBps > 0 && maxLtvBps <= 10000, "Invalid maxLtvBps");
+        { uint16 _minRatio = trustedRatioBps > 0 ? trustedRatioBps : collateralRatioBps;
+          require(uint256(maxLtvBps) * _minRatio >= 10000 * 10000, "maxLtvBps below ratio-implied LTV"); }
+        require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
+        require(acceptWindowSeconds > 0, "Accept window must be > 0");
+
+        uint256 balanceBefore = IERC20(principalToken).balanceOf(address(this));
+        IERC20(principalToken).safeTransferFrom(msg.sender, address(this), principalAmount);
+        uint256 received = IERC20(principalToken).balanceOf(address(this)) - balanceBefore;
+        require(received == principalAmount, "Fee-on-transfer principal not supported");
+
+        lendOffers[nextLendOfferId] = LendOffer({
+            lender: msg.sender,
+            principalToken: principalToken,
+            principalAmount: principalAmount,
+            collateralRatioBps: collateralRatioBps,
+            trustedRatioBps: trustedRatioBps,
+            scoreThreshold: scoreThreshold,
+            maxLtvBps: maxLtvBps,
+            interestRateBps: interestRateBps,
+            durationSeconds: durationSeconds,
+            acceptDeadline: block.timestamp + acceptWindowSeconds,
+            active: true,
+            accepted: false,
+            acceptedLoanId: 0
+        });
+
+        emit LendOfferCreated(nextLendOfferId, msg.sender, principalToken, principalAmount);
+        nextLendOfferId++;
+    }
+
+    /// @dev Internal helper: create a Loan record from an accepted LendOffer.
+    ///      The loan starts funded (lender + principal already set).
+    function _createLoanFromOffer(
+        uint256 offerId,
+        LendOffer storage offer,
+        address collateralToken,
+        uint256 collateralAmount
+    ) internal returns (uint256 loanId) {
+        loanId = nextLoanId;
+        loans[loanId] = Loan({
+            borrower: msg.sender,
+            collateralToken: collateralToken,
+            collateralAmount: collateralAmount,
+            collateralLocked: true,
+            collateralReleased: 0,
+            createdAt: block.timestamp,
+            active: true,
+            funded: true,
+            repaid: false,
+            fundDeadline: block.timestamp,         // already funded; deadline irrelevant
+            lender: offer.lender,
+            requestedPrincipalToken: offer.principalToken,
+            requestedPrincipalAmount: offer.principalAmount,
+            principalAmount: offer.principalAmount,
+            fundedAt: block.timestamp,
+            interestRateBps: offer.interestRateBps,
+            durationSeconds: offer.durationSeconds,
+            amountRepaid: 0,
+            principalRepaid: 0,
+            interestAccrued: 0,
+            lastAccrualAt: block.timestamp,
+            liquidationThresholdBps: offer.maxLtvBps,
+            lendOfferId: offerId
+        });
+        nextLoanId++;
+    }
+
+    /// @dev Recover the signer of a score attestation.
+    ///      Message: keccak256(abi.encodePacked(borrower, score, expiry, address(this), block.chainid))
+    function _recoverScoreSigner(
+        address borrower,
+        uint16 score,
+        uint256 expiry,
+        bytes calldata sig
+    ) internal view returns (address) {
+        bytes32 msgHash = keccak256(abi.encodePacked(borrower, score, expiry, address(this), block.chainid));
+        bytes32 ethHash = MessageHashUtils.toEthSignedMessageHash(msgHash);
+        return ethHash.recover(sig);
+    }
+
+    /// @dev Resolve the effective collateral ratio for a borrower given an optional attestation.
+    ///      Returns trustedRatioBps if the attestation is valid and score >= threshold, else collateralRatioBps.
+    function _effectiveRatio(
+        LendOffer storage offer,
+        uint16 score,
+        uint256 expiry,
+        bytes calldata sig
+    ) internal view returns (uint16) {
+        if (
+            offer.trustedRatioBps > 0 &&
+            sig.length > 0 &&
+            scoreSigner != address(0) &&
+            block.timestamp <= expiry &&
+            score >= offer.scoreThreshold &&
+            _recoverScoreSigner(msg.sender, score, expiry, sig) == scoreSigner
+        ) {
+            return offer.trustedRatioBps;
+        }
+        return offer.collateralRatioBps;
+    }
+
+    /// @dev Compute the minimum collateral USD value required given a specific ratio.
+    function _minCollateralUsd(LendOffer storage offer, uint16 ratioBps) internal view returns (uint256) {
+        uint256 principalPrice = _getPrice(offer.principalToken);
+        uint256 normalizedPrincipal = _normalizeAmount(offer.principalToken, offer.principalAmount);
+        uint256 principalUsd = normalizedPrincipal.mulDiv(principalPrice, 1e18);
+        return principalUsd.mulDiv(ratioBps, 10000);
+    }
+
+    /// @dev Verify that `collateralAmount` of `collateralToken` meets the required ratio.
+    function _checkCollateralValue(
+        LendOffer storage offer,
+        address collateralToken,
+        uint256 collateralAmount,
+        uint16 ratioBps
+    ) internal view {
+        uint256 collateralPrice = _getPrice(collateralToken);
+        uint256 normalizedCollateral = _normalizeAmount(collateralToken, collateralAmount);
+        uint256 collateralUsd = normalizedCollateral.mulDiv(collateralPrice, 1e18);
+        require(collateralUsd >= _minCollateralUsd(offer, ratioBps), "Collateral value below required ratio");
+    }
+
+    /// @notice Accept a lend offer by posting ETH as collateral.
+    /// @param score  Borrower's credit score from the signed attestation (0 if not using score).
+    /// @param expiry Attestation expiry timestamp.
+    /// @param sig    Backend signature over (borrowerAddress, score, expiry). Empty bytes if no attestation.
+    function acceptLendOffer(
+        uint256 offerId,
+        uint16 score,
+        uint256 expiry,
+        bytes calldata sig
+    ) external payable nonReentrant {
+        LendOffer storage offer = lendOffers[offerId];
+        require(offer.active, "Offer not active");
+        require(!offer.accepted, "Offer already accepted");
+        require(block.timestamp <= offer.acceptDeadline, "Offer expired");
+        require(msg.value > 0, "Collateral must be > 0");
+
+        uint16 ratio = _effectiveRatio(offer, score, expiry, sig);
+        _checkCollateralValue(offer, address(0), msg.value, ratio);
+
+        offer.active = false;
+        offer.accepted = true;
+
+        lockedEthCollateral[msg.sender] += msg.value;
+
+        uint256 loanId = _createLoanFromOffer(offerId, offer, address(0), msg.value);
+        offer.acceptedLoanId = loanId;
+
+        if (minInterestBps > 0) {
+            loans[loanId].interestAccrued = (offer.principalAmount * minInterestBps) / 10000;
+        }
+
+        if (offer.principalToken == address(0)) {
+            _payoutEth(msg.sender, offer.principalAmount);
+        } else {
+            _payoutToken(offer.principalToken, msg.sender, offer.principalAmount);
+        }
+
+        emit LendOfferAccepted(offerId, loanId, msg.sender);
+    }
+
+    /// @notice Accept a lend offer by posting any ERC20 token as collateral.
+    /// @param collateralToken  ERC20 token the borrower wants to post (must have a price feed).
+    /// @param collateralAmount Amount of that token to lock.
+    /// @param score   Borrower's credit score (0 if not using attestation).
+    /// @param expiry  Attestation expiry timestamp.
+    /// @param sig     Backend signature. Empty bytes if no attestation.
+    function acceptLendOfferWithERC20(
+        uint256 offerId,
+        address collateralToken,
+        uint256 collateralAmount,
+        uint16 score,
+        uint256 expiry,
+        bytes calldata sig
+    ) external nonReentrant {
+        LendOffer storage offer = lendOffers[offerId];
+        require(offer.active, "Offer not active");
+        require(!offer.accepted, "Offer already accepted");
+        require(block.timestamp <= offer.acceptDeadline, "Offer expired");
+        require(collateralToken != address(0), "Use acceptLendOffer for ETH collateral");
+        require(collateralAmount > 0, "Collateral must be > 0");
+
+        uint16 ratio = _effectiveRatio(offer, score, expiry, sig);
+        _checkCollateralValue(offer, collateralToken, collateralAmount, ratio);
+
+        uint256 balanceBefore = IERC20(collateralToken).balanceOf(address(this));
+        IERC20(collateralToken).safeTransferFrom(msg.sender, address(this), collateralAmount);
+        uint256 received = IERC20(collateralToken).balanceOf(address(this)) - balanceBefore;
+        require(received == collateralAmount, "Fee-on-transfer collateral not supported");
+
+        offer.active = false;
+        offer.accepted = true;
+
+        uint256 loanId = _createLoanFromOffer(offerId, offer, collateralToken, collateralAmount);
+        offer.acceptedLoanId = loanId;
+
+        if (minInterestBps > 0) {
+            loans[loanId].interestAccrued = (offer.principalAmount * minInterestBps) / 10000;
+        }
+
+        if (offer.principalToken == address(0)) {
+            _payoutEth(msg.sender, offer.principalAmount);
+        } else {
+            _payoutToken(offer.principalToken, msg.sender, offer.principalAmount);
+        }
+
+        emit LendOfferAccepted(offerId, loanId, msg.sender);
+    }
+
+    /// @notice Cancel a lend offer and return the locked principal. Only the lender may call this.
+    function cancelLendOffer(uint256 offerId) external nonReentrant {
+        LendOffer storage offer = lendOffers[offerId];
+        require(offer.active, "Offer not active");
+        require(!offer.accepted, "Cannot cancel accepted offer");
+        require(msg.sender == offer.lender, "Only lender can cancel");
+
+        offer.active = false;
+
+        if (offer.principalToken == address(0)) {
+            _payoutEth(offer.lender, offer.principalAmount);
+        } else {
+            IERC20(offer.principalToken).safeTransfer(offer.lender, offer.principalAmount);
+        }
+
+        emit LendOfferCancelled(offerId, offer.lender);
+    }
+
+    /// @notice Expire a lend offer after its accept deadline. Permissionless. Returns principal to lender.
+    function expireLendOffer(uint256 offerId) external nonReentrant {
+        LendOffer storage offer = lendOffers[offerId];
+        require(offer.active, "Offer not active");
+        require(!offer.accepted, "Cannot expire accepted offer");
+        require(block.timestamp > offer.acceptDeadline, "Offer still active");
+
+        offer.active = false;
+
+        if (offer.principalToken == address(0)) {
+            _payoutEth(offer.lender, offer.principalAmount);
+        } else {
+            IERC20(offer.principalToken).safeTransfer(offer.lender, offer.principalAmount);
+        }
+
+        emit LendOfferExpired(offerId);
     }
 
     function withdraw(uint256 amount) external nonReentrant {

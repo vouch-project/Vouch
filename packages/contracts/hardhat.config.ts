@@ -17,6 +17,9 @@ const config: HardhatUserConfig = {
     settings: {
       optimizer: { enabled: true, runs: 200 },
       viaIR: true,
+      // Requires a Cancun-compatible network (Sepolia post-EIP-4844, Hardhat ≥2.22).
+      // Update this before deploying to any chain that hasn't activated Cancun.
+      evmVersion: 'cancun',
     },
   },
   networks: {
@@ -30,6 +33,11 @@ const config: HardhatUserConfig = {
         auto: true,
         interval: 10000,
       },
+      // Allow contract deployments that exceed the Spurious Dragon 24 KiB limit
+      // so that tests pass locally. This limit is not enforced by the Hardhat
+      // in-process network by default; we opt in here while the contract is
+      // large but still deployable on networks with custom limits (e.g. L2s).
+      allowUnlimitedContractSize: true,
     },
     localhost: {
       url: 'http://127.0.0.1:8545',

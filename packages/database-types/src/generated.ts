@@ -97,6 +97,88 @@ export type Database = {
         };
         Relationships: [];
       };
+      lend_offers: {
+        Row: {
+          acceptDeadline: string;
+          acceptedLoanId: string | null;
+          chainId: string;
+          collateralRatioBps: number;
+          createdAt: string;
+          duration: string;
+          id: string;
+          interestRateBps: number;
+          lenderAddress: string;
+          maxLtvBps: number;
+          onChainOfferId: number;
+          principalAmount: string;
+          principalTokenId: string;
+          scoreThreshold: number;
+          status: Database['public']['Enums']['lendOfferStatus'];
+          trustedRatioBps: number;
+          updatedAt: string;
+        };
+        Insert: {
+          acceptDeadline: string;
+          acceptedLoanId?: string | null;
+          chainId: string;
+          collateralRatioBps?: number;
+          createdAt?: string;
+          duration: string;
+          id?: string;
+          interestRateBps: number;
+          lenderAddress: string;
+          maxLtvBps: number;
+          onChainOfferId: number;
+          principalAmount: string;
+          principalTokenId: string;
+          scoreThreshold?: number;
+          status?: Database['public']['Enums']['lendOfferStatus'];
+          trustedRatioBps?: number;
+          updatedAt?: string;
+        };
+        Update: {
+          acceptDeadline?: string;
+          acceptedLoanId?: string | null;
+          chainId?: string;
+          collateralRatioBps?: number;
+          createdAt?: string;
+          duration?: string;
+          id?: string;
+          interestRateBps?: number;
+          lenderAddress?: string;
+          maxLtvBps?: number;
+          onChainOfferId?: number;
+          principalAmount?: string;
+          principalTokenId?: string;
+          scoreThreshold?: number;
+          status?: Database['public']['Enums']['lendOfferStatus'];
+          trustedRatioBps?: number;
+          updatedAt?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'lend_offers_acceptedLoanId_fkey';
+            columns: ['acceptedLoanId'];
+            isOneToOne: false;
+            referencedRelation: 'loans';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'lend_offers_chainId_fkey';
+            columns: ['chainId'];
+            isOneToOne: false;
+            referencedRelation: 'chains';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'lend_offers_principalTokenId_fkey';
+            columns: ['principalTokenId'];
+            isOneToOne: false;
+            referencedRelation: 'tokens';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       loans: {
         Row: {
           borrowerAddress: string;
@@ -115,6 +197,7 @@ export type Database = {
           id: string;
           interestRate: number | null;
           lenderAddress: string | null;
+          lendOfferId: string | null;
           liquidatedAt: string | null;
           metadata: Json;
           onChainLoanId: number | null;
@@ -144,6 +227,7 @@ export type Database = {
           id?: string;
           interestRate?: number | null;
           lenderAddress?: string | null;
+          lendOfferId?: string | null;
           liquidatedAt?: string | null;
           metadata?: Json;
           onChainLoanId?: number | null;
@@ -173,6 +257,7 @@ export type Database = {
           id?: string;
           interestRate?: number | null;
           lenderAddress?: string | null;
+          lendOfferId?: string | null;
           liquidatedAt?: string | null;
           metadata?: Json;
           onChainLoanId?: number | null;
@@ -198,6 +283,13 @@ export type Database = {
             columns: ['collateralTokenId'];
             isOneToOne: false;
             referencedRelation: 'tokens';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'loans_lendOfferId_fkey';
+            columns: ['lendOfferId'];
+            isOneToOne: false;
+            referencedRelation: 'lend_offers';
             referencedColumns: ['id'];
           },
           {
@@ -524,6 +616,38 @@ export type Database = {
       };
     };
     Functions: {
+      accept_lend_offer_with_transaction: {
+        Args: {
+          p_accepted_at: string;
+          p_block_hash: string;
+          p_block_number: unknown;
+          p_borrower_address: unknown;
+          p_collateral_amount: string;
+          p_collateral_log_index: unknown;
+          p_collateral_token_address: unknown;
+          p_contract_address: unknown;
+          p_disbursement_log_index: unknown;
+          p_network_id: string;
+          p_on_chain_loan_id: unknown;
+          p_on_chain_offer_id: unknown;
+          p_tx_hash: string;
+        };
+        Returns: undefined;
+      };
+      cancel_lend_offer_with_transaction: {
+        Args: {
+          p_block_hash: string;
+          p_block_number: unknown;
+          p_cancelled_at: string;
+          p_contract_address: unknown;
+          p_lender_address: unknown;
+          p_log_index: unknown;
+          p_network_id: string;
+          p_on_chain_offer_id: unknown;
+          p_tx_hash: string;
+        };
+        Returns: undefined;
+      };
       cancel_loan_with_transaction: {
         Args: {
           p_block_hash: string;
@@ -535,6 +659,25 @@ export type Database = {
           p_network_id: string;
           p_on_chain_loan_id: unknown;
           p_tx_hash: string;
+        };
+        Returns: undefined;
+      };
+      create_lend_offer_with_transaction: {
+        Args: {
+          p_accept_deadline: string;
+          p_collateral_ratio_bps: number;
+          p_contract_address: unknown;
+          p_created_at: string;
+          p_duration_seconds: number;
+          p_interest_rate_bps: number;
+          p_lender_address: unknown;
+          p_max_ltv_bps: number;
+          p_network_id: string;
+          p_on_chain_offer_id: unknown;
+          p_principal_amount: string;
+          p_principal_token_address: unknown;
+          p_score_threshold: number;
+          p_trusted_ratio_bps: number;
         };
         Returns: undefined;
       };
@@ -560,6 +703,19 @@ export type Database = {
         Returns: string;
       };
       current_wallet_address: { Args: never; Returns: string };
+      expire_lend_offer_with_transaction: {
+        Args: {
+          p_block_hash: string;
+          p_block_number: unknown;
+          p_contract_address: unknown;
+          p_expired_at: string;
+          p_log_index: unknown;
+          p_network_id: string;
+          p_on_chain_offer_id: unknown;
+          p_tx_hash: string;
+        };
+        Returns: undefined;
+      };
       expire_loan_with_transaction: {
         Args: {
           p_block_hash: string;
@@ -645,6 +801,7 @@ export type Database = {
     };
     Enums: {
       addressType: 'evm' | 'solana' | 'bitcoin';
+      lendOfferStatus: 'pending' | 'accepted' | 'cancelled' | 'expired';
       loanStatus: 'pending' | 'active' | 'repaid' | 'defaulted' | 'liquidated' | 'cancelled' | 'expired';
       notificationType:
         | 'loan_funded'
@@ -692,12 +849,12 @@ export type Tables<
     ? R
     : never
   : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema['Tables'] & DefaultSchema['Views'])
-  ? (DefaultSchema['Tables'] & DefaultSchema['Views'])[DefaultSchemaTableNameOrOptions] extends {
-      Row: infer R;
-    }
-    ? R
-    : never
-  : never;
+    ? (DefaultSchema['Tables'] & DefaultSchema['Views'])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R;
+      }
+      ? R
+      : never
+    : never;
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables'] | { schema: keyof DatabaseWithoutInternals },
@@ -715,12 +872,12 @@ export type TablesInsert<
     ? I
     : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables']
-  ? DefaultSchema['Tables'][DefaultSchemaTableNameOrOptions] extends {
-      Insert: infer I;
-    }
-    ? I
-    : never
-  : never;
+    ? DefaultSchema['Tables'][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I;
+      }
+      ? I
+      : never
+    : never;
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables'] | { schema: keyof DatabaseWithoutInternals },
@@ -738,12 +895,12 @@ export type TablesUpdate<
     ? U
     : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables']
-  ? DefaultSchema['Tables'][DefaultSchemaTableNameOrOptions] extends {
-      Update: infer U;
-    }
-    ? U
-    : never
-  : never;
+    ? DefaultSchema['Tables'][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U;
+      }
+      ? U
+      : never
+    : never;
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema['Enums'] | { schema: keyof DatabaseWithoutInternals },
@@ -757,8 +914,8 @@ export type Enums<
 }
   ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions['schema']]['Enums'][EnumName]
   : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema['Enums']
-  ? DefaultSchema['Enums'][DefaultSchemaEnumNameOrOptions]
-  : never;
+    ? DefaultSchema['Enums'][DefaultSchemaEnumNameOrOptions]
+    : never;
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
@@ -774,8 +931,8 @@ export type CompositeTypes<
 }
   ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes'][CompositeTypeName]
   : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema['CompositeTypes']
-  ? DefaultSchema['CompositeTypes'][PublicCompositeTypeNameOrOptions]
-  : never;
+    ? DefaultSchema['CompositeTypes'][PublicCompositeTypeNameOrOptions]
+    : never;
 
 export const Constants = {
   graphql_public: {
@@ -784,6 +941,7 @@ export const Constants = {
   public: {
     Enums: {
       addressType: ['evm', 'solana', 'bitcoin'],
+      lendOfferStatus: ['pending', 'accepted', 'cancelled', 'expired'],
       loanStatus: ['pending', 'active', 'repaid', 'defaulted', 'liquidated', 'cancelled', 'expired'],
       notificationType: [
         'loan_funded',
