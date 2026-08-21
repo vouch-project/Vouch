@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import { ethers, upgrades } from 'hardhat';
+import { anyValue } from '@nomicfoundation/hardhat-chai-matchers/withArgs';
 
 describe('VouchVault', function () {
   it('Should accept deposits', async function () {
@@ -2735,6 +2736,99 @@ describe('VouchVault', function () {
       };
       const expected = ethers.TypedDataEncoder.hash(domain, types, req);
       expect(await vault.hashLoanRequest(req)).to.equal(expected);
+    });
+
+    async function signLoanRequest(vault: any, signer: any, req: any) {
+      const net = await ethers.provider.getNetwork();
+      const domain = { name: 'Vouch', version: '1', chainId: net.chainId, verifyingContract: await vault.getAddress() };
+      const types = { LoanRequest: [
+        { name: 'borrower', type: 'address' }, { name: 'collateralToken', type: 'address' },
+        { name: 'collateralAmount', type: 'uint256' }, { name: 'principalToken', type: 'address' },
+        { name: 'principalAmount', type: 'uint256' }, { name: 'interestRateBps', type: 'uint16' },
+        { name: 'durationSeconds', type: 'uint256' }, { name: 'maxLtvBps', type: 'uint16' },
+        { name: 'nonce', type: 'uint256' }, { name: 'deadline', type: 'uint256' },
+      ]};
+      return signer.signTypedData(domain, types, req);
+    }
+
+    it('fillLoanRequest: lender fills ERC20-collateral / ETH-principal request', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      // Collateral token = mock WBTC at $64000, 8 decimals
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const wbtc = await Mock.deploy('WBTC', 'WBTC', 8, 0);
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const wbtcFeed = await MockAgg.deploy(8, 64000n * 10n ** 8n);
+      await vault.connect(owner).setPriceFeed(await wbtc.getAddress(), await wbtcFeed.getAddress(), 8);
+
+      const principal = ethers.parseEther('1'); // $3200
+      // need collateral USD >= principal * 1.6 = $5120 -> in WBTC: 5120/64000 = 0.08 WBTC
+      const collateral = 8n * 10n ** 6n; // 0.08 WBTC (8 decimals)
+      await wbtc.mint(borrower.address, collateral);
+      await wbtc.connect(borrower).approve(await vault.getAddress(), collateral);
+
+      const req = {
+        borrower: borrower.address, collateralToken: await wbtc.getAddress(),
+        collateralAmount: collateral, principalToken: ethers.ZeroAddress,
+        principalAmount: principal, interestRateBps: RATE, durationSeconds: DURATION,
+        maxLtvBps: LTV, nonce: 1n, deadline: 9999999999n,
+      };
+      const sig = await signLoanRequest(vault, borrower, req);
+      const digest = await vault.hashLoanRequest(req);
+
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: principal }))
+        .to.emit(vault, 'LoanRequestFilled')
+        .withArgs(0, digest, borrower.address, lender.address, await wbtc.getAddress(), collateral, ethers.ZeroAddress, principal, anyValue);
+
+      const loan = await vault.loans(0);
+      expect(loan.borrower).to.equal(borrower.address);
+      expect(loan.lender).to.equal(lender.address);
+      expect(await vault.consumedSignatures(digest)).to.equal(true);
+    });
+
+    it('fillLoanRequest: reverts on wrong signer', async function () {
+      const { vault, lender, borrower, owner } = await deployFixture();
+      const req = {
+        borrower: borrower.address, collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: 1n, principalToken: ethers.ZeroAddress, principalAmount: 1n,
+        interestRateBps: RATE, durationSeconds: DURATION, maxLtvBps: LTV, nonce: 1n, deadline: 9999999999n,
+      };
+      const sig = await signLoanRequest(vault, owner, req); // wrong signer
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n }))
+        .to.be.revertedWith('Invalid signature');
+    });
+
+    it('fillLoanRequest: reverts when already consumed', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const wbtc = await Mock.deploy('WBTC', 'WBTC', 8, 0);
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const wbtcFeed = await MockAgg.deploy(8, 64000n * 10n ** 8n);
+      await vault.connect(owner).setPriceFeed(await wbtc.getAddress(), await wbtcFeed.getAddress(), 8);
+      const principal = ethers.parseEther('1');
+      const collateral = 8n * 10n ** 6n;
+      await wbtc.mint(borrower.address, collateral * 2n);
+      await wbtc.connect(borrower).approve(await vault.getAddress(), collateral * 2n);
+      const req = {
+        borrower: borrower.address, collateralToken: await wbtc.getAddress(), collateralAmount: collateral,
+        principalToken: ethers.ZeroAddress, principalAmount: principal, interestRateBps: RATE,
+        durationSeconds: DURATION, maxLtvBps: LTV, nonce: 1n, deadline: 9999999999n,
+      };
+      const sig = await signLoanRequest(vault, borrower, req);
+      await vault.connect(lender).fillLoanRequest(req, sig, { value: principal });
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: principal }))
+        .to.be.revertedWith('Signature already used');
+    });
+
+    it('fillLoanRequest: reverts on ETH collateral (address(0))', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const req = {
+        borrower: borrower.address, collateralToken: ethers.ZeroAddress, collateralAmount: 1n,
+        principalToken: ethers.ZeroAddress, principalAmount: 1n, interestRateBps: RATE,
+        durationSeconds: DURATION, maxLtvBps: LTV, nonce: 1n, deadline: 9999999999n,
+      };
+      const sig = await signLoanRequest(vault, borrower, req);
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n }))
+        .to.be.revertedWith('Collateral must be ERC20');
     });
   });
 });
