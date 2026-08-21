@@ -2510,9 +2510,9 @@ describe('VouchVault', function () {
       );
       await expect(tx)
         .to.emit(vault, 'LendOfferCreated')
-        .withArgs(0, lender.address, ethers.ZeroAddress, principal);
+        .withArgs(1, lender.address, ethers.ZeroAddress, principal);
 
-      const offer = await vault.lendOffers(0);
+      const offer = await vault.lendOffers(1);
       expect(offer.lender).to.equal(lender.address);
       expect(offer.principalAmount).to.equal(principal);
       expect(offer.active).to.equal(true);
@@ -2536,10 +2536,10 @@ describe('VouchVault', function () {
       await vault.connect(lender).createLendOffer(
         RATIO, TRUSTED, SCORE_THRESH, LTV, RATE, DURATION, WINDOW, { value: principal },
       );
-      const tx = await vault.connect(borrower).acceptLendOffer(0, 0, 0, '0x', { value: collateral });
-      await expect(tx).to.emit(vault, 'LendOfferAccepted').withArgs(0, 0, borrower.address);
+      const tx = await vault.connect(borrower).acceptLendOffer(1, 0, 0, '0x', { value: collateral });
+      await expect(tx).to.emit(vault, 'LendOfferAccepted').withArgs(1, 0, borrower.address);
 
-      const offer = await vault.lendOffers(0);
+      const offer = await vault.lendOffers(1);
       expect(offer.accepted).to.equal(true);
       expect(offer.acceptedLoanId).to.equal(0);
 
@@ -2547,7 +2547,7 @@ describe('VouchVault', function () {
       expect(loan.borrower).to.equal(borrower.address);
       expect(loan.lender).to.equal(lender.address);
       expect(loan.funded).to.equal(true);
-      expect(loan.lendOfferId).to.equal(0);
+      expect(loan.lendOfferId).to.equal(1);
     });
 
     it('acceptLendOffer: reverts if collateral value below required ratio', async function () {
@@ -2558,7 +2558,7 @@ describe('VouchVault', function () {
       );
       // 1.0 ETH collateral < 1.6 ETH required at 160% ratio
       await expect(
-        vault.connect(borrower).acceptLendOffer(0, 0, 0, '0x', { value: ethers.parseEther('1.0') }),
+        vault.connect(borrower).acceptLendOffer(1, 0, 0, '0x', { value: ethers.parseEther('1.0') }),
       ).to.be.revertedWith('Collateral value below required ratio');
     });
 
@@ -2569,9 +2569,9 @@ describe('VouchVault', function () {
         RATIO, TRUSTED, SCORE_THRESH, LTV, RATE, DURATION, WINDOW, { value: principal },
       );
       const balBefore = await ethers.provider.getBalance(lender.address);
-      const tx = await vault.connect(lender).cancelLendOffer(0);
-      await expect(tx).to.emit(vault, 'LendOfferCancelled').withArgs(0, lender.address);
-      const offer = await vault.lendOffers(0);
+      const tx = await vault.connect(lender).cancelLendOffer(1);
+      await expect(tx).to.emit(vault, 'LendOfferCancelled').withArgs(1, lender.address);
+      const offer = await vault.lendOffers(1);
       expect(offer.active).to.equal(false);
       const balAfter = await ethers.provider.getBalance(lender.address);
       expect(balAfter).to.be.gt(balBefore); // got refund (minus gas)
@@ -2587,9 +2587,9 @@ describe('VouchVault', function () {
       // advance time past acceptDeadline
       await ethers.provider.send('evm_increaseTime', [10]);
       await ethers.provider.send('evm_mine', []);
-      const tx = await vault.connect(borrower).expireLendOffer(0);
-      await expect(tx).to.emit(vault, 'LendOfferExpired').withArgs(0);
-      const offer = await vault.lendOffers(0);
+      const tx = await vault.connect(borrower).expireLendOffer(1);
+      await expect(tx).to.emit(vault, 'LendOfferExpired').withArgs(1);
+      const offer = await vault.lendOffers(1);
       expect(offer.active).to.equal(false);
     });
   });

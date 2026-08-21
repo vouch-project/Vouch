@@ -47,7 +47,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // Liquidation
         uint16 liquidationThresholdBps;  // e.g. 6452 = 64.52%; set at creation, never changes
         // Lend offer link
-        uint256 lendOfferId;   // on-chain LendOffer id (0-indexed); 0 means borrow-initiated (no offer), but 0 is also a valid offer id so use lender != address(0) to distinguish — only valid before the loan is funded
+        uint256 lendOfferId;   // on-chain LendOffer id; 0 means borrow-initiated (no offer) — safe because nextLendOfferId starts at 1
     }
 
     struct LendOffer {
@@ -235,6 +235,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         __Ownable_init(initialOwner);
         // __UUPSUpgradeable_init() removed: not required in latest OpenZeppelin
         _reentrancyStatus = _NOT_ENTERED;
+        nextLendOfferId = 1; // reserve 0 as the sentinel for "no lend offer" on Loan.lendOfferId
         protocolTreasury = initialOwner; // default treasury; owner can change later
         protocolFeeBps = 1000;           // default 10% of interest
         liquidationBonusBps = 500;       // default 5% liquidation bonus
@@ -600,7 +601,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint16  interestRateBps,
         uint256 durationSeconds,
         uint256 acceptWindowSeconds
-    ) external {
+    ) external nonReentrant {
         require(principalToken != address(0), "Invalid principal token");
         require(principalAmount > 0, "Principal must be > 0");
         require(collateralRatioBps >= 10000, "Collateral ratio must be >= 100%");
