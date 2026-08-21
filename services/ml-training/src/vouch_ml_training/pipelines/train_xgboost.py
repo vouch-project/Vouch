@@ -210,8 +210,8 @@ def train(settings: Settings | None = None) -> TrainingResult:
     metrics["positive_rate"] = float(np.mean(y))
     log.info("cv metrics (mean) | %s", {k: v for k, v in metrics.items() if not k.endswith("_std")})
 
-    # Train on an 80% split; hold out 20% for isotonic calibration.
-    # sklearn >=1.8 removed cv="prefit"; use IsotonicRegression directly.
+    # Train on an 80% split; hold out 20% for Platt scaling calibration.
+    # sklearn >=1.8 removed cv="prefit"; fit LogisticRegression on raw proba directly.
     n_pos = int(y.sum())
     n_neg = len(y) - n_pos
     scale_pos_weight = (n_neg / n_pos) if n_pos > 0 else 1.0
