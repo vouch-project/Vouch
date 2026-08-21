@@ -4,10 +4,12 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { AcceptLendOfferDto } from './dto/accept-lend-offer.dto';
 import { CancelLendOfferDto } from './dto/cancel-lend-offer.dto';
 import { CancelLoanDto } from './dto/cancel-loan.dto';
+import { CancelSignedOrderDto } from './dto/cancel-signed-order.dto';
 import { CreateLendOfferDto } from './dto/create-lend-offer.dto';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { ExpireLendOfferDto } from './dto/expire-lend-offer.dto';
 import { ExpireLoanDto } from './dto/expire-loan.dto';
+import { FillSignedOrderDto } from './dto/fill-signed-order.dto';
 import { FundLoanDto } from './dto/fund-loan.dto';
 import { PartialRepayLoanDto } from './dto/partial-repay-loan.dto';
 import { RecordProtocolFeeDto } from './dto/record-protocol-fee.dto';
@@ -383,6 +385,60 @@ export class LoansService {
         p_block_hash: blockHash,
         p_log_index: logIndex.toString(),
         p_expired_at: expiredAt.toISOString(),
+      },
+    );
+    if (error) throw error;
+  }
+
+  async fillSignedOrder({
+    orderKind,
+    digest,
+    loanId,
+    fillerAddress,
+    collateralTokenAddress,
+    collateralAmount,
+    networkId,
+    contractAddress,
+    txHash,
+    blockNumber,
+    blockHash,
+    collateralLogIndex,
+    disbursementLogIndex,
+    filledAt,
+  }: FillSignedOrderDto) {
+    const { error } = await this.supabaseService.client.rpc(
+      'fill_signed_order_with_transaction',
+      {
+        p_network_id: networkId,
+        p_contract_address: asAddress(contractAddress),
+        p_order_kind: orderKind,
+        p_digest: digest,
+        p_on_chain_loan_id: loanId.toString(),
+        p_filler_address: asAddress(fillerAddress),
+        p_collateral_token_address: asAddress(collateralTokenAddress),
+        p_collateral_amount: collateralAmount.toString(),
+        p_tx_hash: txHash,
+        p_block_number: blockNumber.toString(),
+        p_block_hash: blockHash,
+        p_collateral_log_index: collateralLogIndex.toString(),
+        p_disbursement_log_index: disbursementLogIndex.toString(),
+        p_filled_at: filledAt.toISOString(),
+      },
+    );
+    if (error) throw error;
+  }
+
+  async cancelSignedOrder({
+    digest,
+    networkId,
+    contractAddress,
+  }: CancelSignedOrderDto) {
+    const { error } = await this.supabaseService.client.rpc(
+      'cancel_signed_order',
+      {
+        p_network_id: networkId,
+        p_contract_address: asAddress(contractAddress),
+        p_digest: digest,
       },
     );
     if (error) throw error;

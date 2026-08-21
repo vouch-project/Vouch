@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { SupabaseService } from '../supabase/supabase.service';
 import { LoansService } from './loans.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
+import { FillSignedOrderDto } from './dto/fill-signed-order.dto';
+import { CancelSignedOrderDto } from './dto/cancel-signed-order.dto';
 
 describe('LoansService', () => {
   let service: LoansService;
@@ -85,5 +87,66 @@ describe('LoansService', () => {
       p_log_index: '0',
       p_cancelled_at: cancelledAt.toISOString(),
     });
+  });
+
+  it('fillSignedOrder calls fill_signed_order_with_transaction with mapped params', async () => {
+    const filledAt = new Date('2026-08-21T00:00:00Z');
+    const dto: FillSignedOrderDto = {
+      orderKind: 'request',
+      digest: '0xabc',
+      loanId: 5n,
+      fillerAddress: '0x00000000000000000000000000000000000000A0',
+      collateralTokenAddress: '0x0000000000000000000000000000000000000002',
+      collateralAmount: 1000n,
+      networkId: '31337',
+      contractAddress: '0x1111111111111111111111111111111111111111',
+      txHash: '0xtx',
+      blockNumber: 1n,
+      blockHash: '0xbh',
+      collateralLogIndex: 0n,
+      disbursementLogIndex: 1n,
+      filledAt,
+    };
+
+    await service.fillSignedOrder(dto);
+
+    expect(rpc).toHaveBeenCalledWith(
+      'fill_signed_order_with_transaction',
+      expect.objectContaining({
+        p_order_kind: 'request',
+        p_digest: '0xabc',
+        p_on_chain_loan_id: '5',
+        p_filler_address: expect.any(String),
+        p_collateral_token_address: expect.any(String),
+        p_collateral_amount: '1000',
+        p_network_id: '31337',
+        p_contract_address: expect.any(String),
+        p_tx_hash: '0xtx',
+        p_block_number: '1',
+        p_block_hash: '0xbh',
+        p_collateral_log_index: '0',
+        p_disbursement_log_index: '1',
+        p_filled_at: filledAt.toISOString(),
+      }),
+    );
+  });
+
+  it('cancelSignedOrder calls cancel_signed_order with mapped params', async () => {
+    const dto: CancelSignedOrderDto = {
+      digest: '0xdeadbeef',
+      networkId: '31337',
+      contractAddress: '0x1111111111111111111111111111111111111111',
+    };
+
+    await service.cancelSignedOrder(dto);
+
+    expect(rpc).toHaveBeenCalledWith(
+      'cancel_signed_order',
+      expect.objectContaining({
+        p_digest: '0xdeadbeef',
+        p_network_id: '31337',
+        p_contract_address: expect.any(String),
+      }),
+    );
   });
 });
