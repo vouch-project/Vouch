@@ -131,6 +131,19 @@
     "anonymous": false,
     "inputs": [
       {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "bonusBps",
+        "type": "uint256"
+      }
+    ],
+    "name": "LiquidationBonusUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
         "indexed": true,
         "internalType": "uint256",
         "name": "loanId",
@@ -277,6 +290,24 @@
         "internalType": "address",
         "name": "liquidator",
         "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amountPaid",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "collateralSeized",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "collateralReturned",
+        "type": "uint256"
       },
       {
         "indexed": false,
@@ -550,6 +581,19 @@
     ],
     "name": "Withdrawn",
     "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_LIQUIDATION_BONUS_BPS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
   },
   {
     "inputs": [],
@@ -985,11 +1029,52 @@
         "internalType": "uint256",
         "name": "loanId",
         "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "collateralRecipient",
+        "type": "address"
       }
     ],
     "name": "liquidate",
     "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "loanId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "maxAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "collateralRecipient",
+        "type": "address"
+      }
+    ],
+    "name": "liquidateWithERC20",
+    "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "liquidationBonusBps",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -1328,6 +1413,19 @@
       }
     ],
     "name": "repayLoanWithERC20",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "newBonusBps",
+        "type": "uint256"
+      }
+    ],
+    "name": "setLiquidationBonusBps",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

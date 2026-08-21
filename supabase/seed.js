@@ -26,16 +26,19 @@ async function seed() {
     }
 
     // Insert Sepolia testnet when a Sepolia RPC endpoint is configured.
-    const sepoliaRpcUrl = process.env.SEPOLIA_RPC_URL;
+    const sepoliaRpcUrl = process.env.SEPOLIA_RPC_URL?.trim();
     if (sepoliaRpcUrl) {
+      const sepoliaContractAddress = process.env.SEPOLIA_VOUCH_VAULT_ADDRESS?.trim();
+      if (!sepoliaContractAddress) throw new Error('SEPOLIA_VOUCH_VAULT_ADDRESS environment variable is not set');
+      const sepoliaWsRpcUrl = process.env.SEPOLIA_WS_RPC_URL?.trim() || null;
       await client.query(
         `
-        INSERT INTO chains ("networkId", "contractAddress", "rpcUrl", "networkType", name)
-        VALUES ('11155111', $1, $2, 'evm', 'Sepolia')
+        INSERT INTO chains ("networkId", "contractAddress", "rpcUrl", "wsRpcUrl", "networkType", name)
+        VALUES ('11155111', $1, $2, $3, 'evm', 'Sepolia')
         ON CONFLICT ("networkId")
-        DO UPDATE SET "contractAddress" = EXCLUDED."contractAddress", "rpcUrl" = EXCLUDED."rpcUrl", "networkType" = EXCLUDED."networkType", name = EXCLUDED.name;
+        DO UPDATE SET "contractAddress" = EXCLUDED."contractAddress", "rpcUrl" = EXCLUDED."rpcUrl", "wsRpcUrl" = EXCLUDED."wsRpcUrl", "networkType" = EXCLUDED."networkType", name = EXCLUDED.name;
         `,
-        [contractAddress, sepoliaRpcUrl],
+        [sepoliaContractAddress, sepoliaRpcUrl, sepoliaWsRpcUrl],
       );
     }
 

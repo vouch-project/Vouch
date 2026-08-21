@@ -15,9 +15,9 @@ const AGGREGATOR_ABI = [
   'function decimals() external view returns (uint8)',
 ];
 
-const STALE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
+const DEFAULT_STALE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour — matches VouchVault.STALE_PRICE_THRESHOLD
 const REDIS_KEY = 'prices:cache';
-const REDIS_TTL = 30; // seconds
+const REDIS_TTL_BUFFER_S = 10; // extra seconds beyond the poll interval to avoid query-triggered refreshes
 const DEFAULT_INTERVAL_MS = 60000;
 
 // Keyed by "chainId:address" — tokens are only unique per chain (see the
@@ -31,6 +31,8 @@ export const priceKey = (chainId: string, address: string): string =>
 export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PriceFeedService.name);
   private readonly intervalMs: number;
+  private readonly redisTtlS: number;
+  private readonly staleThresholdMs: number;
   private intervalHandle: NodeJS.Timeout | undefined;
 
   constructor(
@@ -48,6 +50,16 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
       Number.isFinite(configured) && configured > 0
         ? configured
         : DEFAULT_INTERVAL_MS;
+
+    this.redisTtlS = Math.ceil(this.intervalMs / 1000) + REDIS_TTL_BUFFER_S;
+
+    const configuredStale = Number(
+      this.configService.get<string>('PRICE_FEED_STALE_THRESHOLD_MS'),
+    );
+    this.staleThresholdMs =
+      Number.isFinite(configuredStale) && configuredStale > 0
+        ? configuredStale
+        : DEFAULT_STALE_THRESHOLD_MS;
   }
 
   async onModuleInit() {
@@ -75,6 +87,62 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
     return this.parsePriceMap(fresh, 'refreshed') ?? {};
   }
 
+  /**
+   * Fetches and caches the price for a single token. Used by TokensService to
+   * fill in prices for tokens that were not present during the last bulk poll
+   * (e.g. newly registered tokens between poll intervals).
+   *
+   * Warms the Redis cache so subsequent calls and the next bulk poll both see it.
+   */
+  async getPriceForToken(
+    chainId: string,
+    address: string,
+    feedAddress: string,
+    rpcUrl: string,
+  ): Promise<number | null> {
+    let price: number | null = null;
+    try {
+      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      // Infinity: this is called precisely when no cached price exists for this
+      // token, so accept any non-zero answer regardless of feed age.
+      price = await this.fetchPriceFromFeed(
+        chainId,
+        address,
+        feedAddress,
+        provider,
+        Infinity,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `getPriceForToken failed for chain ${chainId} ${address}: ${err}`,
+      );
+      return null;
+    }
+
+    if (price === null) return null;
+
+    // Warm the shared Redis cache — failure here is non-fatal; the price is still returned.
+    try {
+      const cached = await this.redis.get(REDIS_KEY);
+      const map: PriceMap = cached
+        ? (this.parsePriceMap(cached, 'cached') ?? {})
+        : {};
+      map[priceKey(chainId, address)] = price;
+      await this.redis.set(
+        REDIS_KEY,
+        JSON.stringify(map),
+        'EX',
+        this.redisTtlS,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Failed to warm cache for chain ${chainId} ${address}: ${err}`,
+      );
+    }
+
+    return price;
+  }
+
   // A corrupted or partially-written Redis value would otherwise throw and
   // bubble up to getTokens()'s callers, breaking the /tokens endpoint entirely.
   // Applies the same defensive parsing to both the cached and refreshed paths.
@@ -90,12 +158,75 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Calls latestRoundData() on a Chainlink aggregator and returns the USD price,
+   * or null if the feed is invalid or errors. Staleness is checked against
+   * `staleThresholdOverride` when provided, otherwise `this.staleThresholdMs`.
+   * Pass `Infinity` to skip the staleness check (used when seeding a token for
+   * the first time — no prior price exists so any non-zero answer is acceptable).
+   */
+  private async fetchPriceFromFeed(
+    chainId: string,
+    symbol: string,
+    feedAddress: string,
+    provider: ethers.JsonRpcProvider,
+    staleThresholdOverride?: number,
+  ): Promise<number | null> {
+    if (feedAddress.toLowerCase() === ethers.ZeroAddress.toLowerCase()) {
+      return null;
+    }
+    try {
+      const feed = new ethers.Contract(feedAddress, AGGREGATOR_ABI, provider);
+      const [roundId, answer, , updatedAt, answeredInRound] =
+        (await feed.latestRoundData()) as [
+          bigint,
+          bigint,
+          unknown,
+          bigint,
+          bigint,
+        ];
+      const decimals = Number(await feed.decimals());
+
+      if (answer <= 0n) return null;
+      if (answeredInRound < roundId) {
+        this.logger.warn(`Stale round for chain ${chainId} ${symbol}`);
+        return null;
+      }
+      if (updatedAt === 0n) {
+        this.logger.warn(`Round not complete for chain ${chainId} ${symbol}`);
+        return null;
+      }
+      const updatedAtMs = Number(updatedAt) * 1000;
+      if (updatedAtMs > Date.now()) {
+        this.logger.warn(`Future timestamp for chain ${chainId} ${symbol}`);
+        return null;
+      }
+      const threshold = staleThresholdOverride ?? this.staleThresholdMs;
+      if (Date.now() - updatedAtMs > threshold) {
+        this.logger.warn(`Stale price for chain ${chainId} ${symbol}`);
+        return null;
+      }
+      if (decimals > 18) {
+        this.logger.warn(
+          `Feed decimals too large for chain ${chainId} ${symbol}`,
+        );
+        return null;
+      }
+
+      return Number(ethers.formatUnits(answer, decimals));
+    } catch (err) {
+      this.logger.warn(
+        `Failed to fetch price for chain ${chainId} ${symbol}: ${err}`,
+      );
+      return null;
+    }
+  }
+
   private async refreshPrices(): Promise<void> {
     try {
       const { data: tokens, error } = await this.supabaseService.client
         .from('tokens')
-        .select('chainId, address, symbol, price_feed_address, chains(rpcUrl)')
-        .not('price_feed_address', 'is', null);
+        .select('chainId, address, symbol, price_feed_address, chains(rpcUrl)');
 
       if (error || !tokens?.length) return;
 
@@ -114,6 +245,11 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
 
       const priceMap: PriceMap = {};
 
+      const cached = await this.redis.get(REDIS_KEY);
+      const existingPrices: PriceMap = cached
+        ? (this.parsePriceMap(cached, 'cached') ?? {})
+        : {};
+
       await Promise.all(
         tokens.map(async (token) => {
           const rpcUrl = token.chains?.rpcUrl;
@@ -124,89 +260,22 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
             return;
           }
 
-          try {
-            const feed = new ethers.Contract(
-              token.price_feed_address!,
-              AGGREGATOR_ABI,
-              getProvider(token.chainId, rpcUrl),
-            );
-            const [roundId, answer, , updatedAt, answeredInRound] =
-              (await feed.latestRoundData()) as [
-                bigint,
-                bigint,
-                unknown,
-                bigint,
-                bigint,
-              ];
-            const decimals = Number(await feed.decimals());
+          const key = priceKey(token.chainId, token.address);
+          // No existing price: accept any non-zero answer regardless of age so
+          // the cache is seeded on first boot or after a token is newly added.
+          const threshold = key in existingPrices ? undefined : Infinity;
 
-            if (answer <= 0n) return;
-            // Mirror VouchVault._getPrice's on-chain checks so this poller never
-            // shows the frontend a "fresh" price that the contract would reject —
-            // answeredInRound < roundId means the round carried over a stale
-            // answer (e.g. during an aggregator outage).
-            if (answeredInRound < roundId) {
-              this.logger.warn(
-                `Stale round for chain ${token.chainId} ${token.symbol}`,
-              );
-              return;
-            }
-            const updatedAtMs = Number(updatedAt) * 1000;
-            // Without this check, a feed reporting a future timestamp would make
-            // Date.now() - updatedAtMs negative — which is always <= the staleness
-            // threshold, so the price would be wrongly treated as fresh.
-            if (updatedAtMs > Date.now()) {
-              this.logger.warn(
-                `Future timestamp for chain ${token.chainId} ${token.symbol}`,
-              );
-              return;
-            }
-            if (Date.now() - updatedAtMs > STALE_THRESHOLD_MS) {
-              this.logger.warn(
-                `Stale price for chain ${token.chainId} ${token.symbol}`,
-              );
-              return;
-            }
-            // decimals is untrusted external input (the feed contract's own
-            // decimals() call); VouchVault._getPrice caps at 18 for the same
-            // reason — without this, the API could cache a price the contract
-            // would itself reject.
-            if (decimals > 18) {
-              this.logger.warn(
-                `Feed decimals too large for chain ${token.chainId} ${token.symbol}`,
-              );
-              return;
-            }
+          const price = await this.fetchPriceFromFeed(
+            token.chainId,
+            token.symbol,
+            token.price_feed_address!,
+            getProvider(token.chainId, rpcUrl),
+            threshold,
+          );
 
-            // Divide in exact decimal arithmetic via formatUnits before the unavoidable
-            // final cast to a JS number — answer is a raw Chainlink integer that can
-            // exceed Number.MAX_SAFE_INTEGER for 18-decimal feeds, so converting it to
-            // a float first (Number(answer) / 10 ** decimals) risks losing precision
-            // before the division ever happens.
-            const price = Number(ethers.formatUnits(answer, decimals));
-            priceMap[priceKey(token.chainId, token.address)] = price;
+          if (price === null) return;
 
-            const { error: updateError } = await this.supabaseService.client
-              .from('tokens')
-              .update({ price_usd: price })
-              .eq('chainId', token.chainId)
-              .eq('address', token.address);
-
-            // Log rather than throw: the Redis cache (and thus getPrices()) still
-            // gets this refresh's price either way, so a DB write failure here
-            // shouldn't drop a price the poller successfully fetched — but without
-            // logging, tokens.price_usd staying stale (RLS, network hiccup, etc.)
-            // would otherwise be silent and hard to diagnose.
-            if (updateError) {
-              this.logger.warn(
-                `Failed to persist price_usd for chain ${token.chainId} ${token.symbol}: ${updateError.message}`,
-              );
-            }
-          } catch (err) {
-            this.logger.warn(
-              `Failed to fetch price for chain ${token.chainId} ${token.symbol}: ${err}`,
-            );
-          }
+          priceMap[priceKey(token.chainId, token.address)] = price;
         }),
       );
 
@@ -215,7 +284,7 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
           REDIS_KEY,
           JSON.stringify(priceMap),
           'EX',
-          REDIS_TTL,
+          this.redisTtlS,
         );
         this.logger.log(
           `Prices refreshed: ${Object.keys(priceMap).length} tokens`,

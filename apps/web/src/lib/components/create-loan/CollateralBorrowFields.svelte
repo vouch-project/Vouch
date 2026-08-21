@@ -22,9 +22,7 @@
   const collateralUsd = $derived(
     (parseFloat(collateralAmount) || 0) * tokenPrices.getTokenMeta(selectedCollateralToken).priceUsd,
   );
-  const borrowUsd = $derived(
-    (parseFloat(borrowAmount) || 0) * tokenPrices.getTokenMeta(selectedBorrowToken).priceUsd,
-  );
+  const borrowUsd = $derived((parseFloat(borrowAmount) || 0) * tokenPrices.getTokenMeta(selectedBorrowToken).priceUsd);
 </script>
 
 <div class="grid grid-cols-2 gap-4">
@@ -38,7 +36,7 @@
       <span class="text-xs text-muted-foreground font-medium">Amount</span>
       <input class={inputClass} inputmode="decimal" placeholder="0.0" type="text" bind:value={collateralAmount} />
       <span class="text-xs text-muted-foreground min-h-4">
-        {collateralUsd > 0 ? `≈ $${collateralUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''}
+        {collateralUsd > 0 ? `≈ $${collateralUsd.toLocaleString(undefined, { maximumFractionDigits: 4 })}` : ''}
       </span>
     </div>
   </div>
@@ -53,7 +51,7 @@
       <span class="text-xs text-muted-foreground font-medium">Amount</span>
       <input class={inputClass} inputmode="decimal" placeholder="0.0" type="text" bind:value={borrowAmount} />
       <span class="text-xs text-muted-foreground min-h-4">
-        {borrowUsd > 0 ? `≈ $${borrowUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''}
+        {borrowUsd > 0 ? `≈ $${borrowUsd.toLocaleString(undefined, { maximumFractionDigits: 4 })}` : ''}
       </span>
     </div>
   </div>
