@@ -391,7 +391,7 @@
         size="sm"
         variant="destructive"
       >
-        {cancelling ? 'Cancelling…' : 'Cancel request'}
+        {cancelling ? 'Cancelling…' : 'Cancel'}
       </Button>
       {#if cancelError}
         <p class="text-[10px] text-destructive">{cancelError}</p>
