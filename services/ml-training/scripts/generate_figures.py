@@ -29,7 +29,7 @@ from vouch_ml_training.config import get_settings
 from vouch_ml_training.data.parquet_io import load_latest_snapshot
 from vouch_ml_training.pipelines.train_xgboost import FEATURE_COLUMNS, LABEL_COLUMN
 
-OUTPUT_DIR = Path.home() / "Desktop"
+OUTPUT_DIR = Path.cwd()
 
 # Colour palette (dark terminal aesthetic matching the project screenshots)
 C_SAFE = "#4fc3f7"
