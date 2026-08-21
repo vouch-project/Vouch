@@ -670,14 +670,14 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     /// @dev Recover the signer of a score attestation.
-    ///      Message: keccak256(abi.encodePacked(borrower, score, expiry))
+    ///      Message: keccak256(abi.encodePacked(borrower, score, expiry, address(this), block.chainid))
     function _recoverScoreSigner(
         address borrower,
         uint16 score,
         uint256 expiry,
         bytes calldata sig
-    ) internal pure returns (address) {
-        bytes32 msgHash = keccak256(abi.encodePacked(borrower, score, expiry));
+    ) internal view returns (address) {
+        bytes32 msgHash = keccak256(abi.encodePacked(borrower, score, expiry, address(this), block.chainid));
         bytes32 ethHash = MessageHashUtils.toEthSignedMessageHash(msgHash);
         return ethHash.recover(sig);
     }

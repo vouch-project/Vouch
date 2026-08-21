@@ -1,4 +1,10 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Param,
+  Query,
+} from '@nestjs/common';
 import { CreditScoreResponseDto } from './dto/credit-score-response.dto';
 import { ScoringService } from './scoring.service';
 
@@ -16,7 +22,18 @@ export class ScoringController {
   @Get(':address/attestation')
   getAttestation(
     @Param('address') address: string,
+    @Query('contractAddress') contractAddress: string,
+    @Query('chainId') chainId: string,
   ): Promise<{ score: number; expiry: number; sig: string }> {
-    return this.scoringService.getAttestation(address);
+    if (!contractAddress || !chainId) {
+      throw new BadRequestException(
+        'contractAddress and chainId query params are required',
+      );
+    }
+    return this.scoringService.getAttestation(
+      address,
+      contractAddress,
+      BigInt(chainId),
+    );
   }
 }

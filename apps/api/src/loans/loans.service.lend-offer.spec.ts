@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
-import { LoansService } from './loans.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { LoansService } from './loans.service';
 
 describe('LoansService lend offer methods', () => {
   let service: LoansService;
@@ -26,8 +26,9 @@ describe('LoansService lend offer methods', () => {
       lenderAddress: '0x' + '1'.repeat(40),
       principalTokenAddress: '0x' + '2'.repeat(40),
       principalAmount: 1000000000000000000n,
-      collateralTokenAddress: '0x' + '3'.repeat(40),
-      minCollateralAmount: 1500000000000000000n,
+      collateralRatioBps: 15400,
+      trustedRatioBps: 0,
+      scoreThreshold: 0,
       maxLtvBps: 6500,
       interestRateBps: 800,
       durationSeconds: 2592000,

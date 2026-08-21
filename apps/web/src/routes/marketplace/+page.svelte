@@ -85,8 +85,16 @@
     return chainInfo.tokens?.find((t) => t.symbol === symbol) ?? null;
   };
 
-  // Per-offer cached attestation (fetched once per offer when wallet is connected)
+  // Per-offer cached attestation, keyed by wallet+offer so switching wallets never reuses a stale sig.
   let attestations: Record<string, ScoreAttestation | null> = $state({});
+  let attestationWallet = $state<string | undefined>(undefined);
+
+  $effect(() => {
+    if (wallet.address !== attestationWallet) {
+      attestations = {};
+      attestationWallet = wallet.address;
+    }
+  });
 
   const getEffectiveRatioBps = (offer: LendOfferRow): number => {
     const att = attestations[offer.id];
@@ -124,10 +132,12 @@
   };
 
   const fetchAttestation = async (offerId: string) => {
-    if (!wallet.address || attestations[offerId] !== undefined) return;
+    if (!wallet.address || !chainInfo.contractAddress || !wallet.networkId || attestations[offerId] !== undefined)
+      return;
     try {
       const { data } = await axiosApi.get<ScoreAttestation>(
         `/scoring/${encodeURIComponent(wallet.address)}/attestation`,
+        { params: { contractAddress: chainInfo.contractAddress, chainId: wallet.networkId } },
       );
       attestations = { ...attestations, [offerId]: data };
     } catch {
