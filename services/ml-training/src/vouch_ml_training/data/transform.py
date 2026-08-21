@@ -64,7 +64,9 @@ def build_training_rows(
                 eth_balance=enr.eth_balance,
                 stablecoin_balance_usd=enr.stablecoin_balance_usd,
                 unique_protocols_interacted=enr.unique_protocols_interacted,
-                aave_days_since_last_borrow=(snap - liq.last_liquidation_at).days,
+                aave_days_since_last_borrow=(
+                    (snap - liq.last_borrow_at).days if liq.last_borrow_at else None
+                ),
                 aave_repay_ratio=liq.aave_repay_ratio,
                 raw_features={
                     "first_liquidation_at": liq.first_liquidation_at.isoformat(),
