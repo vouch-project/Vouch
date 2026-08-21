@@ -59,7 +59,7 @@ def build_training_rows(
                 wallet_age_days=enr.wallet_age_days,
                 total_transactions=enr.total_transactions,
                 historical_liquidation_count=liq.liquidation_count,
-                aave_borrows_count=None,
+                aave_borrows_count=liq.borrows_count,
                 aave_total_borrowed_usd=liq.total_principal_usd,
                 eth_balance=enr.eth_balance,
                 stablecoin_balance_usd=enr.stablecoin_balance_usd,

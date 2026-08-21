@@ -228,6 +228,7 @@ async def fetch_liquidated_wallets(
         )
     for agg in aggregates:
         repay_n, borrow_n = rb_counts.get(agg.address, (0, 0))
+        agg.borrows_count = borrow_n
         agg.aave_repay_ratio = _compute_repay_ratio(
             repay_count=repay_n,
             borrow_count=borrow_n,
