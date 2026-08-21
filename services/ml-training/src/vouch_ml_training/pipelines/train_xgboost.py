@@ -3,7 +3,7 @@
 Reads from the latest parquet snapshot (preferred) or, if missing, falls
 back to a live Supabase read. Runs 5-fold stratified cross-validation for
 evaluation metrics, then trains the final model on an 80/20 calibration
-split and applies isotonic calibration. Writes the model artifact to
+split and applies Platt scaling (logistic regression calibration). Writes the model artifact to
 `services/ml-training/src/vouch_ml_training/models/artifacts/<version>/`.
 """
 
@@ -19,7 +19,7 @@ import joblib
 import numpy as np
 import polars as pl
 from sklearn.impute import SimpleImputer
-from sklearn.isotonic import IsotonicRegression
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
@@ -53,20 +53,20 @@ _ARTIFACT_ROOT = Path(__file__).resolve().parents[1] / "models" / "artifacts"
 
 
 class CalibratedPipeline:
-    """sklearn Pipeline + IsotonicRegression wrapper with a predict_proba interface.
+    """sklearn Pipeline + Platt-scaling wrapper with a predict_proba interface.
 
     sklearn >=1.8 removed cv="prefit" from CalibratedClassifierCV. This thin
     wrapper provides the same predict_proba contract so downstream loading code
     can call model.predict_proba(X) as expected.
     """
 
-    def __init__(self, pipeline: Pipeline, calibrator: IsotonicRegression) -> None:
+    def __init__(self, pipeline: Pipeline, calibrator: LogisticRegression) -> None:
         self._pipeline = pipeline
         self._calibrator = calibrator
 
     def predict_proba(self, x: np.ndarray) -> np.ndarray:
         raw = self._pipeline.predict_proba(x)[:, 1]
-        cal = self._calibrator.predict(raw)
+        cal = self._calibrator.predict_proba(raw.reshape(-1, 1))[:, 1]
         return np.column_stack([1 - cal, cal])
 
     def predict(self, x: np.ndarray) -> np.ndarray:
@@ -221,14 +221,14 @@ def train(settings: Settings | None = None) -> TrainingResult:
     cal_pipe = _build_pipeline(scale_pos_weight)
     cal_pipe.fit(x_cal_train, y_cal_train)
     raw_proba_val = cal_pipe.predict_proba(x_cal_val)[:, 1]
-    isotonic = IsotonicRegression(out_of_bounds="clip")
-    isotonic.fit(raw_proba_val, y_cal_val)
+    calibrator = LogisticRegression()
+    calibrator.fit(raw_proba_val.reshape(-1, 1), y_cal_val)
 
     # Persist artifact
     model_version = f"{settings.feature_set_version}-{datetime.now(tz=UTC):%Y%m%dT%H%M%SZ}"
     artifact_dir = _ARTIFACT_ROOT / model_version
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    joblib.dump(CalibratedPipeline(cal_pipe, isotonic), artifact_dir / "model.joblib")
+    joblib.dump(CalibratedPipeline(cal_pipe, calibrator), artifact_dir / "model.joblib")
 
     metadata: dict[str, Any] = {
         "model_version": model_version,
