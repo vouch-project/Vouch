@@ -65,21 +65,6 @@ query Borrows($first: Int!, $cursor: Int!) {
 }
 """
 
-_REPAYS_QUERY = """
-query Repays($first: Int!, $cursor: Int!) {
-  repays(
-    first: $first
-    where: { timestamp_lte: $cursor }
-    orderBy: timestamp
-    orderDirection: desc
-  ) {
-    id
-    timestamp
-    user { id }
-  }
-}
-"""
-
 
 @retry(
     stop=stop_after_attempt(5),
@@ -315,33 +300,23 @@ async def fetch_safe_borrowers(
         if ts is not None:
             b.first_borrow_at = datetime.fromtimestamp(ts, tz=UTC)
 
-    # Count repays per wallet from a descending paginated pass, restricted to
-    # the safe-borrower address set. Same pattern as the borrows pass above.
-    safe_addrs = {b.address for b in out}
-    repay_counts: dict[str, int] = defaultdict(int)
-    max_repays_to_scan = max(len(safe_addrs) * 10, 5_000)
-    repays_scanned = 0
+    # Replace stream-derived borrow/repay counts with accurate per-wallet totals
+    # using the same aliased batch query as risky wallets (no PIT constraint).
+    # The descending walk above only captures borrows that fell in the collection
+    # window, so `borrows_count` is systematically undercounted for active wallets
+    # and `aaveRepayRatio` gets inflated (repay_count can exceed borrow_count).
+    # This mismatch causes a training/inference distribution shift: check_wallet.py
+    # fetches full borrow histories at inference, producing very different counts.
     async with httpx.AsyncClient() as client:
-        async for row in _paginate_by_timestamp(
-            client, settings.subgraph_url, _REPAYS_QUERY, "repays"
-        ):
-            addr = row["user"]["id"].lower()
-            if addr in safe_addrs:
-                repay_counts[addr] += 1
-            repays_scanned += 1
-            if repays_scanned >= max_repays_to_scan:
-                log.info(
-                    "repays scan hit limit of %d; %d/%d safe wallets have at least one repay",
-                    max_repays_to_scan,
-                    len(repay_counts),
-                    len(safe_addrs),
-                )
-                break
-
+        rb_counts = await _fetch_wallet_repay_and_borrow_counts(
+            client, settings.subgraph_url, [b.address for b in out],
+        )
     for b in out:
+        repay_n, borrow_n, _ = rb_counts.get(b.address, (0, 0, None))
+        b.borrows_count = borrow_n
         b.aave_repay_ratio = _compute_repay_ratio(
-            repay_count=repay_counts.get(b.address, 0),
-            borrow_count=b.borrows_count,
+            repay_count=repay_n,
+            borrow_count=borrow_n,
         )
 
     out.sort(key=lambda b: (b.last_borrow_at or datetime.min.replace(tzinfo=UTC)), reverse=True)
