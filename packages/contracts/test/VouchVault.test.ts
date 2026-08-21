@@ -2481,10 +2481,23 @@ describe('VouchVault', function () {
   });
 
   describe('lendOffer', function () {
+    // collateralRatioBps=16000 (160%), trustedRatioBps=0, scoreThreshold=0, maxLtvBps=6500, interestRateBps=800
+    const RATIO = 16000;
+    const TRUSTED = 0;
+    const SCORE_THRESH = 0;
+    const LTV = 6500;
+    const RATE = 800;
+    const DURATION = 30n * 86400n;
+    const WINDOW = 7n * 86400n;
+
     async function deployFixture() {
       const [owner, lender, borrower] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      // ETH price feed required by acceptLendOffer → _checkCollateralValue → _getPrice
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const ethFeed = await MockAgg.deploy(8, 3200n * 10n ** 8n); // ETH = $3200
+      await vault.connect(owner).setPriceFeed(ethers.ZeroAddress, await ethFeed.getAddress(), 18);
       return { vault, owner, lender, borrower };
     }
 
@@ -2492,12 +2505,7 @@ describe('VouchVault', function () {
       const { vault, lender } = await deployFixture();
       const principal = ethers.parseEther('1.0');
       const tx = await vault.connect(lender).createLendOffer(
-        ethers.ZeroAddress,   // requiredCollateralToken (ETH)
-        ethers.parseEther('1.5'), // minCollateral
-        6500,                 // maxLtvBps
-        800,                  // rateBps
-        30n * 86400n,         // durationSeconds
-        7n * 86400n,          // acceptWindowSeconds
+        RATIO, TRUSTED, SCORE_THRESH, LTV, RATE, DURATION, WINDOW,
         { value: principal },
       );
       await expect(tx)
@@ -2514,18 +2522,21 @@ describe('VouchVault', function () {
     it('createLendOffer: reverts if msg.value is 0', async function () {
       const { vault, lender } = await deployFixture();
       await expect(
-        vault.connect(lender).createLendOffer(ethers.ZeroAddress, ethers.parseEther('1.5'), 6500, 800, 30n * 86400n, 7n * 86400n, { value: 0 }),
+        vault.connect(lender).createLendOffer(RATIO, TRUSTED, SCORE_THRESH, LTV, RATE, DURATION, WINDOW, { value: 0 }),
       ).to.be.revertedWith('Principal must be > 0');
     });
 
     it('acceptLendOffer: borrower posts ETH collateral, creates loan, emits LendOfferAccepted', async function () {
       const { vault, lender, borrower } = await deployFixture();
       const principal = ethers.parseEther('1.0');
+      // At ETH=$3200 and collateralRatioBps=16000 (160%), need collateral ≥ principal * 1.6
+      // principal USD = 1 ETH * $3200 = $3200; minimum collateral USD = $3200 * 1.6 = $5120
+      // collateral ETH needed = $5120 / $3200 = 1.6 ETH
       const collateral = ethers.parseEther('1.6');
       await vault.connect(lender).createLendOffer(
-        ethers.ZeroAddress, ethers.parseEther('1.5'), 6500, 800, 30n * 86400n, 7n * 86400n, { value: principal },
+        RATIO, TRUSTED, SCORE_THRESH, LTV, RATE, DURATION, WINDOW, { value: principal },
       );
-      const tx = await vault.connect(borrower).acceptLendOffer(0, { value: collateral });
+      const tx = await vault.connect(borrower).acceptLendOffer(0, 0, 0, '0x', { value: collateral });
       await expect(tx).to.emit(vault, 'LendOfferAccepted').withArgs(0, 0, borrower.address);
 
       const offer = await vault.lendOffers(0);
@@ -2539,22 +2550,23 @@ describe('VouchVault', function () {
       expect(loan.lendOfferId).to.equal(0);
     });
 
-    it('acceptLendOffer: reverts if collateral below minCollateralAmount', async function () {
+    it('acceptLendOffer: reverts if collateral value below required ratio', async function () {
       const { vault, lender, borrower } = await deployFixture();
       const principal = ethers.parseEther('1.0');
       await vault.connect(lender).createLendOffer(
-        ethers.ZeroAddress, ethers.parseEther('1.5'), 6500, 800, 30n * 86400n, 7n * 86400n, { value: principal },
+        RATIO, TRUSTED, SCORE_THRESH, LTV, RATE, DURATION, WINDOW, { value: principal },
       );
+      // 1.0 ETH collateral < 1.6 ETH required at 160% ratio
       await expect(
-        vault.connect(borrower).acceptLendOffer(0, { value: ethers.parseEther('1.0') }),
-      ).to.be.revertedWith('Collateral below minimum');
+        vault.connect(borrower).acceptLendOffer(0, 0, 0, '0x', { value: ethers.parseEther('1.0') }),
+      ).to.be.revertedWith('Collateral value below required ratio');
     });
 
     it('cancelLendOffer: lender reclaims ETH principal, emits LendOfferCancelled', async function () {
       const { vault, lender } = await deployFixture();
       const principal = ethers.parseEther('1.0');
       await vault.connect(lender).createLendOffer(
-        ethers.ZeroAddress, ethers.parseEther('1.5'), 6500, 800, 30n * 86400n, 7n * 86400n, { value: principal },
+        RATIO, TRUSTED, SCORE_THRESH, LTV, RATE, DURATION, WINDOW, { value: principal },
       );
       const balBefore = await ethers.provider.getBalance(lender.address);
       const tx = await vault.connect(lender).cancelLendOffer(0);
@@ -2569,7 +2581,7 @@ describe('VouchVault', function () {
       const { vault, lender, borrower } = await deployFixture();
       const principal = ethers.parseEther('1.0');
       await vault.connect(lender).createLendOffer(
-        ethers.ZeroAddress, ethers.parseEther('1.5'), 6500, 800, 30n * 86400n, 1n, // 1s window
+        RATIO, TRUSTED, SCORE_THRESH, LTV, RATE, DURATION, 1n, // 1s accept window
         { value: principal },
       );
       // advance time past acceptDeadline

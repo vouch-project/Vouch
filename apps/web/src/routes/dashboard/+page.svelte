@@ -27,14 +27,15 @@
     id: string;
     onChainOfferId: string;
     principalAmount: string;
-    minCollateralAmount: string;
+    collateralRatioBps: number;
+    trustedRatioBps: number;
+    scoreThreshold: number;
     maxLtvBps: number;
     interestRateBps: number;
     duration: string;
     acceptDeadline: string;
     status: 'pending' | 'accepted' | 'cancelled' | 'expired';
     principalToken: { symbol: string; decimals: number } | null;
-    collateralToken: { symbol: string; decimals: number } | null;
   };
 
   let myOffers = $state<LendOfferRow[]>([]);
@@ -48,8 +49,7 @@
         .from('lend_offers')
         .select(
           `*,
-           principalToken:tokens!lend_offers_principalTokenId_fkey(*),
-           collateralToken:tokens!lend_offers_collateralTokenId_fkey(*)`,
+           principalToken:tokens!lend_offers_principalTokenId_fkey(*)`,
         )
         .eq('lenderAddress', address)
         .order('createdAt', { ascending: false });
@@ -258,7 +258,7 @@
                 {formatUint256(offer.principalAmount, offer.principalToken?.decimals ?? 18)}
                 {offer.principalToken?.symbol ?? ''}
               </Table.Cell>
-              <Table.Cell>{offer.collateralToken?.symbol ?? '—'}</Table.Cell>
+              <Table.Cell>{(offer.collateralRatioBps / 100).toFixed(0)}%</Table.Cell>
               <Table.Cell>{(offer.maxLtvBps / 100).toFixed(2)}%</Table.Cell>
               <Table.Cell>{(offer.interestRateBps / 100).toFixed(2)}% APR</Table.Cell>
               <Table.Cell class="text-muted-foreground text-sm">
