@@ -47,7 +47,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // Liquidation
         uint16 liquidationThresholdBps;  // e.g. 6452 = 64.52%; set at creation, never changes
         // Lend offer link
-        uint256 lendOfferId;   // on-chain LendOffer id (0-indexed); check lender == address(0) to detect borrow-initiated loans, not this field (0 is a valid offer id)
+        uint256 lendOfferId;   // on-chain LendOffer id (0-indexed); 0 means borrow-initiated (no offer), but 0 is also a valid offer id so use lender != address(0) to distinguish — only valid before the loan is funded
     }
 
     struct LendOffer {

@@ -1,8 +1,13 @@
 -- ─── Enum ────────────────────────────────────────────────────────────────────
-CREATE TYPE "lendOfferStatus" AS ENUM ('pending', 'accepted', 'cancelled', 'expired');
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'lendOfferStatus') THEN
+        CREATE TYPE "lendOfferStatus" AS ENUM ('pending', 'accepted', 'cancelled', 'expired');
+    END IF;
+END$$;
 
 -- ─── Table ───────────────────────────────────────────────────────────────────
-CREATE TABLE lend_offers (
+CREATE TABLE IF NOT EXISTS lend_offers (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     "onChainOfferId" uint256 NOT NULL,
     "chainId" uuid NOT NULL REFERENCES chains (id),
@@ -22,24 +27,29 @@ CREATE TABLE lend_offers (
     "updatedAt" timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX lend_offers_chain_offer_unique ON lend_offers ("chainId", "onChainOfferId");
-CREATE INDEX lend_offers_lender_idx ON lend_offers ("lenderAddress");
-CREATE INDEX lend_offers_status_deadline_idx ON lend_offers (status, "acceptDeadline");
+CREATE UNIQUE INDEX IF NOT EXISTS lend_offers_chain_offer_unique ON lend_offers ("chainId", "onChainOfferId");
+
+CREATE INDEX IF NOT EXISTS lend_offers_lender_idx ON lend_offers ("lenderAddress");
+
+CREATE INDEX IF NOT EXISTS lend_offers_status_deadline_idx ON lend_offers (status, "acceptDeadline");
 
 CREATE TRIGGER update_lend_offers_updated_at
-BEFORE UPDATE ON lend_offers
-FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+BEFORE UPDATE ON lend_offers FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column ();
 
 ALTER TABLE lend_offers ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "lend_offers_public_read" ON public.lend_offers
-    FOR SELECT TO anon, authenticated USING (TRUE);
+CREATE POLICY "lend_offers_public_read" ON public.lend_offers FOR
+SELECT
+    TO anon,
+    authenticated USING (TRUE);
 
 -- ─── FK on loans ─────────────────────────────────────────────────────────────
-ALTER TABLE loans ADD COLUMN "lendOfferId" uuid REFERENCES lend_offers (id);
+ALTER TABLE loans
+ADD COLUMN IF NOT EXISTS "lendOfferId" uuid REFERENCES lend_offers (id);
 
 -- ─── Functions ───────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION create_lend_offer_with_transaction(
+CREATE OR REPLACE FUNCTION create_lend_offer_with_transaction (
     p_network_id text,
     p_contract_address address,
     p_on_chain_offer_id uint256,
@@ -59,7 +69,8 @@ CREATE OR REPLACE FUNCTION create_lend_offer_with_transaction(
     p_log_index uint256,
     p_created_at timestamptz
 ) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = '' AS $$
+SET
+    search_path = '' AS $$
 DECLARE
     v_chain_id uuid;
     v_principal_token_id uuid;
@@ -98,21 +109,53 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION create_lend_offer_with_transaction(
-    text, address, uint256, address, address, text,
-    integer, integer, integer, integer, integer, integer,
-    timestamptz, text, uint256, text, uint256, timestamptz
-) FROM PUBLIC;
+REVOKE ALL ON FUNCTION create_lend_offer_with_transaction (
+    text,
+    address,
+    uint256,
+    address,
+    address,
+    text,
+    integer,
+    integer,
+    integer,
+    integer,
+    integer,
+    integer,
+    timestamptz,
+    text,
+    uint256,
+    text,
+    uint256,
+    timestamptz
+)
+FROM
+    PUBLIC;
 
-GRANT EXECUTE ON FUNCTION create_lend_offer_with_transaction(
-    text, address, uint256, address, address, text,
-    integer, integer, integer, integer, integer, integer,
-    timestamptz, text, uint256, text, uint256, timestamptz
+GRANT
+EXECUTE ON FUNCTION create_lend_offer_with_transaction (
+    text,
+    address,
+    uint256,
+    address,
+    address,
+    text,
+    integer,
+    integer,
+    integer,
+    integer,
+    integer,
+    integer,
+    timestamptz,
+    text,
+    uint256,
+    text,
+    uint256,
+    timestamptz
 ) TO service_role;
 
 -- ─────────────────────────────────────────────────────────────────────────────
-
-CREATE OR REPLACE FUNCTION accept_lend_offer_with_transaction(
+CREATE OR REPLACE FUNCTION accept_lend_offer_with_transaction (
     p_network_id text,
     p_contract_address address,
     p_on_chain_offer_id uint256,
@@ -126,7 +169,8 @@ CREATE OR REPLACE FUNCTION accept_lend_offer_with_transaction(
     p_log_index uint256,
     p_accepted_at timestamptz
 ) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = '' AS $$
+SET
+    search_path = '' AS $$
 DECLARE
     v_chain_id uuid;
     v_offer_id uuid;
@@ -221,17 +265,41 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION accept_lend_offer_with_transaction(
-    text, address, uint256, uint256, address, address, text, text, uint256, text, uint256, timestamptz
-) FROM PUBLIC;
+REVOKE ALL ON FUNCTION accept_lend_offer_with_transaction (
+    text,
+    address,
+    uint256,
+    uint256,
+    address,
+    address,
+    text,
+    text,
+    uint256,
+    text,
+    uint256,
+    timestamptz
+)
+FROM
+    PUBLIC;
 
-GRANT EXECUTE ON FUNCTION accept_lend_offer_with_transaction(
-    text, address, uint256, uint256, address, address, text, text, uint256, text, uint256, timestamptz
+GRANT
+EXECUTE ON FUNCTION accept_lend_offer_with_transaction (
+    text,
+    address,
+    uint256,
+    uint256,
+    address,
+    address,
+    text,
+    text,
+    uint256,
+    text,
+    uint256,
+    timestamptz
 ) TO service_role;
 
 -- ─────────────────────────────────────────────────────────────────────────────
-
-CREATE OR REPLACE FUNCTION cancel_lend_offer_with_transaction(
+CREATE OR REPLACE FUNCTION cancel_lend_offer_with_transaction (
     p_network_id text,
     p_contract_address address,
     p_on_chain_offer_id uint256,
@@ -242,7 +310,8 @@ CREATE OR REPLACE FUNCTION cancel_lend_offer_with_transaction(
     p_log_index uint256,
     p_cancelled_at timestamptz
 ) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = '' AS $$
+SET
+    search_path = '' AS $$
 DECLARE
     v_chain_id uuid;
 BEGIN
@@ -261,17 +330,35 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION cancel_lend_offer_with_transaction(
-    text, address, uint256, address, text, uint256, text, uint256, timestamptz
-) FROM PUBLIC;
+REVOKE ALL ON FUNCTION cancel_lend_offer_with_transaction (
+    text,
+    address,
+    uint256,
+    address,
+    text,
+    uint256,
+    text,
+    uint256,
+    timestamptz
+)
+FROM
+    PUBLIC;
 
-GRANT EXECUTE ON FUNCTION cancel_lend_offer_with_transaction(
-    text, address, uint256, address, text, uint256, text, uint256, timestamptz
+GRANT
+EXECUTE ON FUNCTION cancel_lend_offer_with_transaction (
+    text,
+    address,
+    uint256,
+    address,
+    text,
+    uint256,
+    text,
+    uint256,
+    timestamptz
 ) TO service_role;
 
 -- ─────────────────────────────────────────────────────────────────────────────
-
-CREATE OR REPLACE FUNCTION expire_lend_offer_with_transaction(
+CREATE OR REPLACE FUNCTION expire_lend_offer_with_transaction (
     p_network_id text,
     p_contract_address address,
     p_on_chain_offer_id uint256,
@@ -281,7 +368,8 @@ CREATE OR REPLACE FUNCTION expire_lend_offer_with_transaction(
     p_log_index uint256,
     p_expired_at timestamptz
 ) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = '' AS $$
+SET
+    search_path = '' AS $$
 DECLARE
     v_chain_id uuid;
 BEGIN
@@ -300,10 +388,27 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION expire_lend_offer_with_transaction(
-    text, address, uint256, text, uint256, text, uint256, timestamptz
-) FROM PUBLIC;
+REVOKE ALL ON FUNCTION expire_lend_offer_with_transaction (
+    text,
+    address,
+    uint256,
+    text,
+    uint256,
+    text,
+    uint256,
+    timestamptz
+)
+FROM
+    PUBLIC;
 
-GRANT EXECUTE ON FUNCTION expire_lend_offer_with_transaction(
-    text, address, uint256, text, uint256, text, uint256, timestamptz
+GRANT
+EXECUTE ON FUNCTION expire_lend_offer_with_transaction (
+    text,
+    address,
+    uint256,
+    text,
+    uint256,
+    text,
+    uint256,
+    timestamptz
 ) TO service_role;

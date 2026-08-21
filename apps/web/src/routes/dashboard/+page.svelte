@@ -243,7 +243,7 @@
         <Table.Header>
           <Table.Row class="border-border/50">
             <Table.Head>Principal</Table.Head>
-            <Table.Head>Collateral Req.</Table.Head>
+            <Table.Head>Collateral Ratio</Table.Head>
             <Table.Head>Max LTV</Table.Head>
             <Table.Head>Rate</Table.Head>
             <Table.Head>Expires</Table.Head>

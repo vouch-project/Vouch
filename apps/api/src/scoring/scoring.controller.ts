@@ -30,10 +30,16 @@ export class ScoringController {
         'contractAddress and chainId query params are required',
       );
     }
+    let chainIdBigInt: bigint;
+    try {
+      chainIdBigInt = BigInt(chainId);
+    } catch {
+      throw new BadRequestException('chainId must be an integer');
+    }
     return this.scoringService.getAttestation(
       address,
       contractAddress,
-      BigInt(chainId),
+      chainIdBigInt,
     );
   }
 }

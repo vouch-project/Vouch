@@ -147,13 +147,18 @@ export class ScoringService {
       throw new ServiceUnavailableException('Score attestation not configured');
     }
 
+    if (!ethers.isAddress(contractAddress)) {
+      throw new BadRequestException('Invalid contractAddress');
+    }
+    const normalizedContractAddress = ethers.getAddress(contractAddress);
+
     const { score, address: normalizedAddress } =
       await this.getCreditScore(walletAddress);
     const expiry = Math.floor(Date.now() / 1000) + ATTESTATION_TTL_S;
 
     const msgHash = ethers.solidityPackedKeccak256(
       ['address', 'uint16', 'uint256', 'address', 'uint256'],
-      [normalizedAddress, score, expiry, contractAddress, chainId],
+      [normalizedAddress, score, expiry, normalizedContractAddress, chainId],
     );
     const wallet = new ethers.Wallet(privateKey);
     const sig = await wallet.signMessage(ethers.getBytes(msgHash));
