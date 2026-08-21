@@ -263,18 +263,18 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     event LendOfferCancelled(uint256 indexed offerId, address indexed lender);
     event LendOfferExpired(uint256 indexed offerId);
 
-    event LoanRequestFilled(
+    event SignedLoanRequestFilled(
         uint256 indexed loanId, bytes32 indexed digest, address indexed borrower, address lender,
         address collateralToken, uint256 collateralAmount, address principalToken, uint256 principalAmount, uint256 timestamp
     );
 
-    event LendOfferFilled(
+    event SignedLendOfferFilled(
         uint256 indexed loanId, bytes32 indexed digest, address indexed lender, address borrower,
         address principalToken, uint256 principalAmount, address collateralToken, uint256 collateralAmount, uint256 timestamp
     );
 
-    event LoanRequestCancelled(bytes32 indexed digest, address indexed borrower);
-    event LendOfferCancelled(bytes32 indexed digest, address indexed lender);
+    event SignedLoanRequestCancelled(bytes32 indexed digest, address indexed borrower);
+    event SignedLendOfferCancelled(bytes32 indexed digest, address indexed lender);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -813,7 +813,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
             _payoutToken(req.principalToken, req.borrower, req.principalAmount);
         }
 
-        emit LoanRequestFilled(loanId, digest, req.borrower, msg.sender, req.collateralToken, req.collateralAmount, req.principalToken, req.principalAmount, block.timestamp);
+        emit SignedLoanRequestFilled(loanId, digest, req.borrower, msg.sender, req.collateralToken, req.collateralAmount, req.principalToken, req.principalAmount, block.timestamp);
     }
 
     /// @dev Internal helper: create a Loan record from an EIP-712 signed lend offer.
@@ -911,7 +911,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         uint256 loanId = _createLoanFromSignedOffer(offer, msg.sender, _collateralToken, _collateralAmount);
         _payoutToken(offer.principalToken, msg.sender, offer.principalAmount);
 
-        emit LendOfferFilled(loanId, digest, offer.lender, msg.sender, offer.principalToken, offer.principalAmount, _collateralToken, _collateralAmount, block.timestamp);
+        emit SignedLendOfferFilled(loanId, digest, offer.lender, msg.sender, offer.principalToken, offer.principalAmount, _collateralToken, _collateralAmount, block.timestamp);
     }
 
     /// @notice Cancel a signed loan request to prevent it from being filled.
@@ -922,7 +922,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         bytes32 digest = hashLoanRequest(req);
         require(!consumedSignatures[digest], "Signature already used");
         consumedSignatures[digest] = true;
-        emit LoanRequestCancelled(digest, req.borrower);
+        emit SignedLoanRequestCancelled(digest, req.borrower);
     }
 
     /// @notice Cancel a signed lend offer to prevent it from being filled.
@@ -933,7 +933,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         bytes32 digest = hashLendOffer(offer);
         require(!consumedSignatures[digest], "Signature already used");
         consumedSignatures[digest] = true;
-        emit LendOfferCancelled(digest, offer.lender);
+        emit SignedLendOfferCancelled(digest, offer.lender);
     }
 
     /// @dev Recover the signer of a score attestation.

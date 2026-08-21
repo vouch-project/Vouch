@@ -2568,8 +2568,7 @@ describe('VouchVault', function () {
         .createLendOffer(RATIO, TRUSTED, SCORE_THRESH, LTV, RATE, DURATION, WINDOW, { value: principal });
       const balBefore = await ethers.provider.getBalance(lender.address);
       const tx = await vault.connect(lender).cancelLendOffer(1);
-      // Disambiguate: use full event signature (offerId version, not digest version)
-      await expect(tx).to.emit(vault, 'LendOfferCancelled(uint256,address)').withArgs(1n, lender.address);
+      await expect(tx).to.emit(vault, 'LendOfferCancelled').withArgs(1, lender.address);
       const offer = await vault.lendOffers(1);
       expect(offer.active).to.equal(false);
       const balAfter = await ethers.provider.getBalance(lender.address);
@@ -2777,7 +2776,7 @@ describe('VouchVault', function () {
       const digest = await vault.hashLoanRequest(req);
 
       await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: principal }))
-        .to.emit(vault, 'LoanRequestFilled')
+        .to.emit(vault, 'SignedLoanRequestFilled')
         .withArgs(0, digest, borrower.address, lender.address, await wbtc.getAddress(), collateral, ethers.ZeroAddress, principal, anyValue);
 
       const loan = await vault.loans(0);
@@ -2915,7 +2914,7 @@ describe('VouchVault', function () {
       const digest = await vault.hashLendOffer(offer);
 
       await expect(vault.connect(borrower).fillLendOffer(offer, 0, sig, { value: collateral }))
-        .to.emit(vault, 'LendOfferFilled')
+        .to.emit(vault, 'SignedLendOfferFilled')
         .withArgs(0, digest, lender.address, borrower.address, await usdc.getAddress(), principal, ethers.ZeroAddress, collateral, anyValue);
 
       const loan = await vault.loans(0);
@@ -2955,7 +2954,7 @@ describe('VouchVault', function () {
       const digest = await vault.hashLendOffer(offer);
 
       await expect(vault.connect(borrower).fillLendOffer(offer, collateralAmount, sig))
-        .to.emit(vault, 'LendOfferFilled')
+        .to.emit(vault, 'SignedLendOfferFilled')
         .withArgs(0, digest, lender.address, borrower.address, await usdc.getAddress(), principal, await weth.getAddress(), collateralAmount, anyValue);
 
       const loan = await vault.loans(0);
@@ -2988,7 +2987,7 @@ describe('VouchVault', function () {
       };
       const digest = await vault.hashLoanRequest(req);
       await expect(vault.connect(borrower).cancelSignedLoanRequest(req))
-        .to.emit(vault, 'LoanRequestCancelled').withArgs(digest, borrower.address);
+        .to.emit(vault, 'SignedLoanRequestCancelled').withArgs(digest, borrower.address);
       const sig = await signLoanRequest(vault, borrower, req);
       await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n }))
         .to.be.revertedWith('Signature already used');
