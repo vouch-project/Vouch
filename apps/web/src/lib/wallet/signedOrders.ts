@@ -1,6 +1,6 @@
 import type { VouchVault } from '@vouch/contracts';
 import { ethers } from 'ethers';
-import { getVouchVaultContract } from './vouchVault';
+import { getVouchVaultContract, isNativeTokenAddress, ERC20_ABI } from './vouchVault';
 
 // ---------------------------------------------------------------------------
 // EIP-712 domain meta (chain-id + contract address added at runtime)
@@ -80,14 +80,6 @@ export type SignedLendOffer = {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
-
-const ERC20_ABI = [
-  'function approve(address spender, uint256 amount) returns (bool)',
-  'function allowance(address owner, address spender) view returns (uint256)',
-];
-
-const isNativeToken = (tokenAddress: string): boolean =>
-  !tokenAddress || tokenAddress === ethers.ZeroAddress;
 
 const buildDomain = async (contract: VouchVault) => {
   const network = await contract.runner!.provider!.getNetwork();
@@ -198,7 +190,7 @@ export const fillLoanRequest = async (
 
   let tx: ethers.TransactionResponse;
 
-  if (isNativeToken(request.principalToken)) {
+  if (isNativeTokenAddress(request.principalToken)) {
     tx = await contract.fillLoanRequest(request, signature, { value: request.principalAmount });
   } else {
     await approveERC20IfNeeded(contract, request.principalToken, request.principalAmount);
@@ -226,7 +218,7 @@ export const fillLendOffer = async (
 
   let tx: ethers.TransactionResponse;
 
-  if (isNativeToken(offer.collateralToken)) {
+  if (isNativeTokenAddress(offer.collateralToken)) {
     tx = await contract.fillLendOffer(offer, collateralAmount, signature, { value: collateralAmount });
   } else {
     await approveERC20IfNeeded(contract, offer.collateralToken, collateralAmount);
