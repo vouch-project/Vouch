@@ -198,7 +198,7 @@ BEGIN
         RAISE EXCEPTION 'Collateral token not found: %', p_collateral_token_address;
     END IF;
 
-    UPDATE public.lend_offers SET status = 'accepted' WHERE id = v_offer_id AND status = 'pending';
+    UPDATE public.lend_offers SET status = 'accepted' WHERE id = v_offer_id AND status <> 'accepted';
 
     INSERT INTO public.loans (
         "onChainLoanId", "chainId", "borrowerAddress", "lenderAddress",

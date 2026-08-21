@@ -564,6 +564,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(collateralRatioBps >= 10000, "Collateral ratio must be >= 100%");
         require(trustedRatioBps == 0 || (trustedRatioBps >= 10000 && trustedRatioBps <= collateralRatioBps), "Invalid trustedRatioBps");
         require(maxLtvBps > 0 && maxLtvBps <= 10000, "Invalid maxLtvBps");
+        { uint16 _minRatio = trustedRatioBps > 0 ? trustedRatioBps : collateralRatioBps;
+          require(uint256(maxLtvBps) * _minRatio >= 10000 * 10000, "maxLtvBps below ratio-implied LTV"); }
         require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
         require(acceptWindowSeconds > 0, "Accept window must be > 0");
 
@@ -604,6 +606,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(collateralRatioBps >= 10000, "Collateral ratio must be >= 100%");
         require(trustedRatioBps == 0 || (trustedRatioBps >= 10000 && trustedRatioBps <= collateralRatioBps), "Invalid trustedRatioBps");
         require(maxLtvBps > 0 && maxLtvBps <= 10000, "Invalid maxLtvBps");
+        { uint16 _minRatio = trustedRatioBps > 0 ? trustedRatioBps : collateralRatioBps;
+          require(uint256(maxLtvBps) * _minRatio >= 10000 * 10000, "maxLtvBps below ratio-implied LTV"); }
         require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
         require(acceptWindowSeconds > 0, "Accept window must be > 0");
 

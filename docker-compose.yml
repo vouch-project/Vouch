@@ -1,3 +1,4 @@
+# Requires Docker Compose v2.24+ (object-form env_file with required: false is used below).
 services:
   # ─────────────────────────────────────────────
   # Reverse Proxy
