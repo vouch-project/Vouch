@@ -122,7 +122,9 @@
     //                      / (10000 * colPrice * 10^principalDecimals))
     // Prices are scaled by 1e9 for integer representation; the factors cancel in num/denom.
     const principalPriceInt = BigInt(Math.ceil(principalPriceUsd * 1e9));
-    const colPriceInt = BigInt(Math.floor(colPriceUsd * 1e9));
+    const colPriceIntNum = Math.floor(colPriceUsd * 1e9);
+    if (colPriceIntNum <= 0) return null;
+    const colPriceInt = BigInt(colPriceIntNum);
     const principalDec = 10n ** BigInt(offer.principalToken.decimals ?? 18);
     const colScale = 10n ** BigInt(colDecimals);
     const numer = BigInt(offer.principalAmount) * BigInt(ratioBps) * principalPriceInt * colScale;

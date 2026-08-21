@@ -44,11 +44,12 @@
   const suggestedApr = $derived(RISK_LEVELS[activeRisk].apr);
 
   const maxLtvBps = $derived.by(() => {
-    const baseRatio = parseFloat(collateralRatioPct || '0');
-    const trustedRatio = parseFloat(trustedRatioPct || '0');
-    const minRatio = trustedRatio > 0 ? Math.min(baseRatio, trustedRatio) : baseRatio;
-    if (minRatio <= 0) return 0;
-    return Math.ceil((10000 / minRatio) * 100);
+    const baseRatioPctNum = parseFloat(collateralRatioPct || '0');
+    const trustedRatioPctNum = parseFloat(trustedRatioPct || '0');
+    const minRatioPctNum = trustedRatioPctNum > 0 ? Math.min(baseRatioPctNum, trustedRatioPctNum) : baseRatioPctNum;
+    const minRatioBps = BigInt(Math.round(minRatioPctNum * 100));
+    if (minRatioBps <= 0n) return 0;
+    return Number((10000n * 10000n + minRatioBps - 1n) / minRatioBps);
   });
 
   const minCollateralEth = $derived.by(() => {
