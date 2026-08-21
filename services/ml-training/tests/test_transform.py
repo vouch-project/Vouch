@@ -105,7 +105,7 @@ def test_observation_window_excludes_recent_safe_borrowers() -> None:
     assert len(rows) == 0
 
 
-def test_new_aave_fields_present_on_training_rows() -> None:
+def test_aave_repay_ratio_present_on_training_rows() -> None:
     """TrainingRow carries aave_repay_ratio from source records."""
     settings = _settings()
     snap = datetime(2026, 5, 20, tzinfo=UTC)
