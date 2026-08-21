@@ -13,19 +13,6 @@ services:
       - ./certs:/etc/nginx/ssl:ro
 
   # ─────────────────────────────────────────────
-  # Infrastructure
-  # ─────────────────────────────────────────────
-  hardhat-node:
-    image: node:20-alpine
-    restart: unless-stopped
-    working_dir: /app
-    command: npx hardhat node --hostname 0.0.0.0
-    ports:
-      - '8545:8545'
-    volumes:
-      - ./packages/contracts:/app
-
-  # ─────────────────────────────────────────────
   # Applications
   # ─────────────────────────────────────────────
   api:
@@ -101,14 +88,7 @@ services:
     restart: unless-stopped
     volumes:
       - redis_data:/data
-    command:
-      [
-        'redis-server',
-        '--requirepass',
-        '${REDIS_PASSWORD}',
-        '--appendonly',
-        'yes',
-      ]
+    command: ['redis-server', '--requirepass', '${REDIS_PASSWORD}', '--appendonly', 'yes']
 
 volumes:
   redis_data:
