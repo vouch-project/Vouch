@@ -1,7 +1,7 @@
 <script lang="ts">
   import { axiosApi } from '$api/axiosApi';
-  import { maxLtv } from '$lib/ltv';
   import { calculateHealthFactor } from '$lib/loans/loanMath';
+  import { maxLtv } from '$lib/ltv';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
   import { createLoan } from '$lib/wallet/vouchVault';
@@ -190,13 +190,12 @@
 
   <LtvIndicator {computedMaxLtv} {creditScore} {currentLtv} {ltvExceeded} {projectedHf} />
 
-  {#if totalRepayment !== null}
-    <RepaymentSummary
-      interest={totalRepayment.interest}
-      tokenSymbol={selectedBorrowToken}
-      total={totalRepayment.total}
-    />
-  {/if}
+  <RepaymentSummary
+    interest={totalRepayment?.interest ?? 0}
+    tokenSymbol={selectedBorrowToken}
+    total={totalRepayment?.total ?? 0}
+    empty={totalRepayment === null}
+  />
 
   <button
     class="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-6 py-2.5 rounded-lg shadow transition disabled:opacity-60 disabled:cursor-not-allowed {ltvExceeded

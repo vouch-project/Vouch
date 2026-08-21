@@ -103,7 +103,18 @@
         acceptWindowSeconds,
       );
     } catch (e) {
-      errorMsg = e instanceof Error ? e.message : 'Transaction failed';
+      if (e instanceof Error) {
+        const err = e as { code?: unknown; reason?: unknown };
+        if (err.code === 'ACTION_REJECTED') {
+          errorMsg = null;
+        } else if (typeof err.reason === 'string' && err.reason) {
+          errorMsg = err.reason;
+        } else {
+          errorMsg = e.message.replace(/^[\w-]+:\s*/, '') || 'Transaction failed';
+        }
+      } else {
+        errorMsg = 'Transaction failed';
+      }
     } finally {
       submitting = false;
     }
@@ -192,9 +203,9 @@
               %
             </span>
           </div>
-          {#if minCollateralEth !== null}
-            <span class="text-xs text-muted-foreground">≈ {minCollateralEth.toFixed(4)} ETH</span>
-          {/if}
+          <span class="text-xs text-muted-foreground min-h-4">
+            {minCollateralEth !== null ? `≈ ${minCollateralEth.toFixed(4)} ETH` : ''}
+          </span>
         </div>
 
         <div class="flex flex-col gap-1.5">
@@ -224,9 +235,9 @@
               %
             </span>
           </div>
-          {#if trustedCollateralEth !== null}
-            <span class="text-xs text-muted-foreground">≈ {trustedCollateralEth.toFixed(4)} ETH</span>
-          {/if}
+          <span class="text-xs text-muted-foreground min-h-4">
+            {trustedCollateralEth !== null ? `≈ ${trustedCollateralEth.toFixed(4)} ETH` : ''}
+          </span>
         </div>
 
         <div class="flex flex-col gap-1.5">

@@ -571,9 +571,13 @@
                         <div class="h-4 w-10 bg-muted animate-pulse rounded"></div>
                       {/if}
                     </Table.Cell>
-                    <Table.Cell class="pr-4 sm:pr-10 py-4 text-right min-w-max">
+                    <Table.Cell class="pr-4 sm:pr-10 py-4 text-right min-w-max align-middle">
                       {#if isOwnLoan}
-                        <span class="text-[10px] sm:text-xs font-semibold text-muted-foreground italic">Your loan</span>
+                        <div class="flex items-center justify-end h-full">
+                          <span class="text-[10px] sm:text-xs font-semibold text-muted-foreground italic">
+                            Your loan
+                          </span>
+                        </div>
                       {:else}
                         <Button
                           class="font-bold transition-transform group-hover:scale-105 h-7 sm:h-9 py-0 px-2 sm:px-3 text-[10px] sm:text-xs"
@@ -704,29 +708,29 @@
                         </span>
                       </div>
                     </Table.Cell>
-                    <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
+                    <Table.Cell class="px-1 sm:px-3 lg:px-6 pt-4 pb-5 text-left whitespace-nowrap min-w-max relative">
                       {@const effectiveRatio = getEffectiveRatioBps(offer)}
                       {@const isTrusted = effectiveRatio < offer.collateralRatioBps}
-                      <div class="flex flex-col gap-0.5">
+                      <span
+                        class={cn('font-bold text-foreground text-[10px] sm:text-sm', isTrusted && 'text-green-600')}
+                      >
+                        {(effectiveRatio / 100).toFixed(0)}%
+                      </span>
+                      {#if isTrusted}
                         <span
-                          class="font-bold text-foreground text-[10px] sm:text-sm {isTrusted ? 'text-green-600' : ''}"
+                          class="absolute bottom-1 left-1 sm:left-3 lg:left-6 text-[9px] text-muted-foreground line-through whitespace-nowrap"
                         >
-                          {(effectiveRatio / 100).toFixed(0)}%
+                          {(offer.collateralRatioBps / 100).toFixed(0)}%
                         </span>
-                        {#if isTrusted}
-                          <span class="text-[9px] text-muted-foreground line-through"
-                            >{(offer.collateralRatioBps / 100).toFixed(0)}%</span
-                          >
-                        {:else if offer.trustedRatioBps > 0 && !isOwnOffer}
-                          <button
-                            class="text-[9px] text-primary hover:underline text-left"
-                            onclick={() => fetchAttestation(offer.id)}
-                            type="button"
-                          >
-                            score ≥{offer.scoreThreshold}? unlock {(offer.trustedRatioBps / 100).toFixed(0)}%
-                          </button>
-                        {/if}
-                      </div>
+                      {:else if offer.trustedRatioBps > 0 && !isOwnOffer}
+                        <button
+                          class="absolute bottom-1 left-1 sm:left-3 lg:left-6 text-[9px] text-primary hover:underline text-left whitespace-nowrap"
+                          onclick={() => fetchAttestation(offer.id)}
+                          type="button"
+                        >
+                          score ≥{offer.scoreThreshold}? unlock {(offer.trustedRatioBps / 100).toFixed(0)}%
+                        </button>
+                      {/if}
                     </Table.Cell>
                     <Table.Cell
                       class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap text-[10px] sm:text-sm min-w-max"
@@ -756,50 +760,51 @@
                     >
                       {new Date(offer.acceptDeadline).toLocaleDateString()}
                     </Table.Cell>
-                    <Table.Cell class="pr-4 sm:pr-6 py-4 text-right min-w-[180px]">
+                    <Table.Cell class="pr-4 sm:pr-6 pt-4 pb-5 text-right min-w-[180px] relative">
                       {#if isOwnOffer}
-                        <span class="text-[10px] sm:text-xs font-semibold text-muted-foreground italic">Your offer</span
-                        >
+                        <span class="text-[10px] sm:text-xs font-semibold text-muted-foreground italic">
+                          Your offer
+                        </span>
                       {:else}
                         {@const colSymbol = acceptCollateralSymbol[offer.id] ?? 'ETH'}
                         {@const reqAmount = getRequiredCollateralAmount(offer, colSymbol)}
                         <div class="flex items-center justify-end gap-2">
                           <select
                             class="rounded-md border border-border bg-background px-2 py-1 text-[10px] sm:text-xs font-medium focus:outline-none focus:ring-1 focus:ring-ring"
-                            value={colSymbol}
                             onchange={(e) =>
                               (acceptCollateralSymbol = {
                                 ...acceptCollateralSymbol,
                                 [offer.id]: (e.target as HTMLSelectElement).value,
                               })}
+                            value={colSymbol}
                           >
                             {#each chainInfo.tokens ?? [] as t (t.symbol)}
                               <option value={t.symbol}>{t.symbol}</option>
                             {/each}
                           </select>
-                          <div class="flex flex-col items-end gap-0.5">
-                            {#if reqAmount}
-                              <span class="text-[9px] text-muted-foreground whitespace-nowrap">
-                                {parseFloat(reqAmount).toFixed(4)}
-                                {colSymbol}
-                              </span>
+                          <Button
+                            class="font-bold h-7 py-0 px-2 sm:px-3 text-[10px] sm:text-xs"
+                            disabled={acceptingOfferId === offer.id || !wallet.address || !reqAmount}
+                            onclick={() => handleAcceptOffer(offer)}
+                            size="sm"
+                            variant="default"
+                          >
+                            {#if acceptingOfferId === offer.id}
+                              <RefreshCw class="mr-1.5 h-3 w-3 animate-spin" />
+                              Accepting…
+                            {:else}
+                              Accept
                             {/if}
-                            <Button
-                              class="font-bold h-7 py-0 px-2 sm:px-3 text-[10px] sm:text-xs"
-                              disabled={acceptingOfferId === offer.id || !wallet.address || !reqAmount}
-                              onclick={() => handleAcceptOffer(offer)}
-                              size="sm"
-                              variant="default"
-                            >
-                              {#if acceptingOfferId === offer.id}
-                                <RefreshCw class="mr-1.5 h-3 w-3 animate-spin" />
-                                Accepting…
-                              {:else}
-                                Accept
-                              {/if}
-                            </Button>
-                          </div>
+                          </Button>
                         </div>
+                        {#if reqAmount}
+                          <span
+                            class="absolute bottom-1 right-4 sm:right-6 text-[9px] text-muted-foreground whitespace-nowrap"
+                          >
+                            {parseFloat(reqAmount).toFixed(4)}
+                            {colSymbol}
+                          </span>
+                        {/if}
                       {/if}
                     </Table.Cell>
                   </Table.Row>
