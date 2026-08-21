@@ -661,51 +661,29 @@ export type Database = {
         };
         Returns: undefined;
       };
-      create_lend_offer_with_transaction:
-        | {
-            Args: {
-              p_accept_deadline: string;
-              p_block_hash: string;
-              p_block_number: unknown;
-              p_collateral_ratio_bps: number;
-              p_contract_address: unknown;
-              p_created_at: string;
-              p_duration_seconds: number;
-              p_interest_rate_bps: number;
-              p_lender_address: unknown;
-              p_log_index: unknown;
-              p_max_ltv_bps: number;
-              p_network_id: string;
-              p_on_chain_offer_id: unknown;
-              p_principal_amount: string;
-              p_principal_token_address: unknown;
-              p_tx_hash: string;
-            };
-            Returns: undefined;
-          }
-        | {
-            Args: {
-              p_accept_deadline: string;
-              p_block_hash: string;
-              p_block_number: unknown;
-              p_collateral_ratio_bps: number;
-              p_contract_address: unknown;
-              p_created_at: string;
-              p_duration_seconds: number;
-              p_interest_rate_bps: number;
-              p_lender_address: unknown;
-              p_log_index: unknown;
-              p_max_ltv_bps: number;
-              p_network_id: string;
-              p_on_chain_offer_id: unknown;
-              p_principal_amount: string;
-              p_principal_token_address: unknown;
-              p_score_threshold: number;
-              p_trusted_ratio_bps: number;
-              p_tx_hash: string;
-            };
-            Returns: undefined;
-          };
+      create_lend_offer_with_transaction: {
+        Args: {
+          p_accept_deadline: string;
+          p_block_hash: string;
+          p_block_number: unknown;
+          p_collateral_ratio_bps: number;
+          p_contract_address: unknown;
+          p_created_at: string;
+          p_duration_seconds: number;
+          p_interest_rate_bps: number;
+          p_lender_address: unknown;
+          p_log_index: unknown;
+          p_max_ltv_bps: number;
+          p_network_id: string;
+          p_on_chain_offer_id: unknown;
+          p_principal_amount: string;
+          p_principal_token_address: unknown;
+          p_score_threshold: number;
+          p_trusted_ratio_bps: number;
+          p_tx_hash: string;
+        };
+        Returns: undefined;
+      };
       create_loan_with_transaction: {
         Args: {
           p_borrower_address: unknown;
