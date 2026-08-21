@@ -827,8 +827,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         offer.active = false;
 
         if (offer.principalToken == address(0)) {
-            (bool ok, ) = payable(offer.lender).call{value: offer.principalAmount}("");
-            require(ok, "ETH principal return failed");
+            _payoutEth(offer.lender, offer.principalAmount);
         } else {
             IERC20(offer.principalToken).safeTransfer(offer.lender, offer.principalAmount);
         }
@@ -846,8 +845,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         offer.active = false;
 
         if (offer.principalToken == address(0)) {
-            (bool ok, ) = payable(offer.lender).call{value: offer.principalAmount}("");
-            require(ok, "ETH principal return failed");
+            _payoutEth(offer.lender, offer.principalAmount);
         } else {
             IERC20(offer.principalToken).safeTransfer(offer.lender, offer.principalAmount);
         }
