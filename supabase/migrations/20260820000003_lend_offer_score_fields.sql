@@ -1,3 +1,0 @@
-ALTER TABLE lend_offers
-ADD COLUMN IF NOT EXISTS "trustedRatioBps" integer NOT NULL DEFAULT 0,
-ADD COLUMN IF NOT EXISTS "scoreThreshold" integer NOT NULL DEFAULT 0;
