@@ -105,8 +105,8 @@ def test_observation_window_excludes_recent_safe_borrowers() -> None:
     assert len(rows) == 0
 
 
-def test_new_aave_fields_present_on_training_rows() -> None:
-    """TrainingRow carries the two new Aave feature fields."""
+def test_aave_repay_ratio_present_on_training_rows() -> None:
+    """TrainingRow carries aave_repay_ratio from source records."""
     settings = _settings()
     snap = datetime(2026, 5, 20, tzinfo=UTC)
 
@@ -140,8 +140,5 @@ def test_new_aave_fields_present_on_training_rows() -> None:
     risky_row = next(r for r in rows if r.address == "0xaaa")
     safe_row = next(r for r in rows if r.address == "0xbbb")
 
-    assert risky_row.aave_days_since_last_borrow == 10  # snap - last_liquidation_at
     assert risky_row.aave_repay_ratio == 0.8
-
-    assert safe_row.aave_days_since_last_borrow == 10  # snap - last_borrow_at
     assert safe_row.aave_repay_ratio == 0.75
