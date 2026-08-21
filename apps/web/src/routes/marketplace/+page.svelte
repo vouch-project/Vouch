@@ -104,14 +104,23 @@
   const getRequiredCollateralAmount = (offer: LendOfferRow, symbol: string): string | null => {
     const colToken = chainInfo.tokens?.find((t) => t.symbol === symbol) ?? null;
     if (!colToken || !offer.principalToken) return null;
-    const principalUsd =
-      parseFloat(ethers.formatUnits(BigInt(offer.principalAmount), offer.principalToken.decimals)) *
-      tokenPrices.getTokenMeta(offer.principalToken.symbol).priceUsd;
+    const principalPriceUsd = tokenPrices.getTokenMeta(offer.principalToken.symbol).priceUsd;
     const colPriceUsd = tokenPrices.getTokenMeta(symbol).priceUsd;
-    if (principalUsd <= 0 || colPriceUsd <= 0) return null;
+    if (principalPriceUsd <= 0 || colPriceUsd <= 0) return null;
     const ratioBps = getEffectiveRatioBps(offer);
-    const requiredUsd = principalUsd * (ratioBps / 10000);
-    return (requiredUsd / colPriceUsd).toFixed(colToken.decimals ?? 18);
+    const colDecimals = colToken.decimals ?? 18;
+    // Integer arithmetic with ceiling so we never submit less than the contract requires.
+    // colAmount_raw = ceil(principalAmount_raw * ratioBps * principalPrice * 10^colDecimals
+    //                      / (10000 * colPrice * 10^principalDecimals))
+    // Prices are scaled by 1e9 for integer representation; the factors cancel in num/denom.
+    const principalPriceInt = BigInt(Math.round(principalPriceUsd * 1e9));
+    const colPriceInt = BigInt(Math.round(colPriceUsd * 1e9));
+    const principalDec = 10n ** BigInt(offer.principalToken.decimals ?? 18);
+    const colScale = 10n ** BigInt(colDecimals);
+    const numer = BigInt(offer.principalAmount) * BigInt(ratioBps) * principalPriceInt * colScale;
+    const denom = 10000n * colPriceInt * principalDec;
+    const colAmountRaw = (numer + denom - 1n) / denom;
+    return ethers.formatUnits(colAmountRaw, colDecimals);
   };
 
   const fetchAttestation = async (offerId: string) => {

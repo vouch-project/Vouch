@@ -109,6 +109,7 @@ services:
     volumes:
       - redis_data:/data
     env_file:
+      - .env
       - path: /etc/vouch/secrets.env
         required: false
     command: sh -c 'test -n "$$REDIS_PASSWORD" || { echo "REDIS_PASSWORD is required" >&2; exit 1; }; exec redis-server --requirepass "$$REDIS_PASSWORD" --appendonly yes'
