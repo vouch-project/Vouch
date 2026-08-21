@@ -42,18 +42,6 @@ export class CreateLendOfferDto {
   @IsString()
   contractAddress!: string;
 
-  @IsString()
-  txHash!: string;
-
-  @IsNumber()
-  blockNumber!: number;
-
-  @IsString()
-  blockHash!: string;
-
-  @IsNumber()
-  logIndex!: number;
-
   @IsDate()
   @Type(() => Date)
   createdAt!: Date;

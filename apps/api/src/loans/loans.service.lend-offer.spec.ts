@@ -35,10 +35,6 @@ describe('LoansService lend offer methods', () => {
       acceptWindowSeconds: 604800,
       networkId: '11155111',
       contractAddress: '0x' + '4'.repeat(40),
-      txHash: '0xabc',
-      blockNumber: 100,
-      blockHash: '0xblock',
-      logIndex: 0,
       createdAt: new Date('2026-08-18T00:00:00Z'),
     });
     expect(rpcMock).toHaveBeenCalledWith(

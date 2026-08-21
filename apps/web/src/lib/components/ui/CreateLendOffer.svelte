@@ -46,7 +46,7 @@
   const maxLtvBps = $derived.by(() => {
     const ratio = parseFloat(collateralRatioPct || '0');
     if (ratio <= 0) return 0;
-    return Math.round((10000 / ratio) * 100);
+    return Math.floor((10000 / ratio) * 100);
   });
 
   const minCollateralEth = $derived.by(() => {
@@ -76,6 +76,7 @@
       (trustedRatioBps === 0 || (trustedRatioBps >= 10000 && trustedRatioBps <= collateralRatioBps)) &&
       maxLtvBps > 0 &&
       rateBps >= 0 &&
+      rateBps <= 10000 &&
       durationSeconds > 0 &&
       acceptWindowSeconds > 0 &&
       !submitting,

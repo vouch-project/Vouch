@@ -63,10 +63,6 @@ CREATE OR REPLACE FUNCTION create_lend_offer_with_transaction (
     p_interest_rate_bps integer,
     p_duration_seconds integer,
     p_accept_deadline timestamptz,
-    p_tx_hash text,
-    p_block_number uint256,
-    p_block_hash text,
-    p_log_index uint256,
     p_created_at timestamptz
 ) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
 SET
@@ -123,10 +119,6 @@ REVOKE ALL ON FUNCTION create_lend_offer_with_transaction (
     integer,
     integer,
     timestamptz,
-    text,
-    uint256,
-    text,
-    uint256,
     timestamptz
 )
 FROM
@@ -147,10 +139,6 @@ EXECUTE ON FUNCTION create_lend_offer_with_transaction (
     integer,
     integer,
     timestamptz,
-    text,
-    uint256,
-    text,
-    uint256,
     timestamptz
 ) TO service_role;
 
@@ -166,7 +154,8 @@ CREATE OR REPLACE FUNCTION accept_lend_offer_with_transaction (
     p_tx_hash text,
     p_block_number uint256,
     p_block_hash text,
-    p_log_index uint256,
+    p_collateral_log_index uint256,
+    p_disbursement_log_index uint256,
     p_accepted_at timestamptz
 ) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
 SET
@@ -247,7 +236,7 @@ BEGIN
         p_tx_hash, p_block_number, p_block_hash,
         'collateral_deposit', 'confirmed',
         p_borrower_address, p_contract_address,
-        p_collateral_amount, p_log_index, p_accepted_at
+        p_collateral_amount, p_collateral_log_index, p_accepted_at
     )
     ON CONFLICT ("chainId", "txHash", "logIndex") DO NOTHING;
 
@@ -259,7 +248,7 @@ BEGIN
         p_tx_hash, p_block_number, p_block_hash,
         'loan_disbursement', 'confirmed',
         p_contract_address, p_borrower_address,
-        v_principal_amount, p_log_index + 1, p_accepted_at
+        v_principal_amount, p_disbursement_log_index, p_accepted_at
     )
     ON CONFLICT ("chainId", "txHash", "logIndex") DO NOTHING;
 END;
@@ -276,6 +265,7 @@ REVOKE ALL ON FUNCTION accept_lend_offer_with_transaction (
     text,
     uint256,
     text,
+    uint256,
     uint256,
     timestamptz
 )
@@ -294,6 +284,7 @@ EXECUTE ON FUNCTION accept_lend_offer_with_transaction (
     text,
     uint256,
     text,
+    uint256,
     uint256,
     timestamptz
 ) TO service_role;
@@ -326,6 +317,7 @@ BEGIN
     UPDATE public.lend_offers
     SET status = 'cancelled'
     WHERE "onChainOfferId" = p_on_chain_offer_id AND "chainId" = v_chain_id
+      AND "lenderAddress" = p_lender_address
       AND status = 'pending';
 END;
 $$;

@@ -270,10 +270,6 @@ export class LoansService {
     acceptWindowSeconds,
     networkId,
     contractAddress,
-    txHash,
-    blockNumber,
-    blockHash,
-    logIndex,
     createdAt,
     ...dto
   }: CreateLendOfferDto) {
@@ -296,10 +292,6 @@ export class LoansService {
         p_interest_rate_bps: interestRateBps,
         p_duration_seconds: durationSeconds,
         p_accept_deadline: acceptDeadline.toISOString(),
-        p_tx_hash: txHash,
-        p_block_number: blockNumber.toString(),
-        p_block_hash: blockHash,
-        p_log_index: logIndex.toString(),
         p_created_at: createdAt.toISOString(),
       },
     );
@@ -317,7 +309,8 @@ export class LoansService {
     txHash,
     blockNumber,
     blockHash,
-    logIndex,
+    collateralLogIndex,
+    disbursementLogIndex,
     acceptedAt,
   }: AcceptLendOfferDto) {
     const { error } = await this.supabaseService.client.rpc(
@@ -333,7 +326,8 @@ export class LoansService {
         p_tx_hash: txHash,
         p_block_number: blockNumber.toString(),
         p_block_hash: blockHash,
-        p_log_index: logIndex.toString(),
+        p_collateral_log_index: collateralLogIndex.toString(),
+        p_disbursement_log_index: disbursementLogIndex.toString(),
         p_accepted_at: acceptedAt.toISOString(),
       },
     );

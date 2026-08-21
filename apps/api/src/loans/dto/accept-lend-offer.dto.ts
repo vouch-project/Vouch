@@ -34,7 +34,10 @@ export class AcceptLendOfferDto {
   blockHash!: string;
 
   @IsNumber()
-  logIndex!: number;
+  collateralLogIndex!: number;
+
+  @IsNumber()
+  disbursementLogIndex!: number;
 
   @IsDate()
   @Type(() => Date)

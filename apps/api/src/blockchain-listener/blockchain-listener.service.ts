@@ -680,10 +680,6 @@ export class BlockchainListenerService implements OnModuleInit {
         acceptWindowSeconds,
         networkId: network.chainId.toString(),
         contractAddress,
-        txHash: transactionHash,
-        blockNumber,
-        blockHash,
-        logIndex,
         createdAt,
       });
       this.logger.log(`LendOffer ${offerId.toString()} created by ${lender}`);
@@ -702,7 +698,40 @@ export class BlockchainListenerService implements OnModuleInit {
     contract: VouchVault,
   ) {
     try {
-      const loan = await contract.loans(loanId);
+      const runner = contract.runner;
+      const provider: ethers.Provider | null =
+        runner &&
+        typeof (runner as Partial<ethers.Provider>).getBlock === 'function'
+          ? (runner as ethers.Provider)
+          : (runner?.provider ?? null);
+
+      const [loan, receipt] = await Promise.all([
+        contract.loans(loanId),
+        provider
+          ? provider.getTransactionReceipt(transactionHash)
+          : Promise.resolve(null),
+      ]);
+
+      // Locate the actual Transfer log indices from the receipt. The collateral
+      // deposit transfer (borrower → vault) precedes the disbursement transfer
+      // (vault → borrower) in the same tx. Fall back to the LendOfferAccepted
+      // event's logIndex if the receipt is unavailable.
+      const transferTopic = ethers.id('Transfer(address,address,uint256)');
+      const transferLogs =
+        receipt?.logs.filter((l) => l.topics[0] === transferTopic) ?? [];
+      const collateralLogIndex =
+        transferLogs.find(
+          (l) =>
+            l.topics[2] ===
+            ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
+        )?.index ?? logIndex;
+      const disbursementLogIndex =
+        transferLogs.find(
+          (l) =>
+            l.topics[1] ===
+            ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
+        )?.index ?? logIndex + 1;
+
       await this.loanService.acceptLendOffer({
         offerId,
         loanId,
@@ -714,7 +743,8 @@ export class BlockchainListenerService implements OnModuleInit {
         txHash: transactionHash,
         blockNumber,
         blockHash,
-        logIndex,
+        collateralLogIndex,
+        disbursementLogIndex,
         acceptedAt: new Date(Number(loan.fundedAt) * 1000),
       });
       this.logger.log(
