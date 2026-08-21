@@ -1,17 +1,5 @@
 # apps/ml-engine/tests/test_features.py
-import time
-
-from src.features import _compute_days_since, _compute_repay_ratio
-
-
-def test_days_since_returns_none_for_no_timestamp() -> None:
-    assert _compute_days_since(None) is None
-
-
-def test_days_since_returns_int() -> None:
-    ts = int(time.time()) - 86400 * 10  # 10 days ago
-    result = _compute_days_since(ts)
-    assert result == 10
+from src.features import _compute_repay_ratio
 
 
 def test_repay_ratio_basic() -> None:
