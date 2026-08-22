@@ -1,12 +1,15 @@
 <script lang="ts">
+  import { postSignedOffer } from '$api/signedOrders';
   import { Button } from '$lib/components/ui/button';
   import * as Card from '$lib/components/ui/card';
   import TokenAutocomplete from '$lib/components/ui/TokenAutocomplete.svelte';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
-  import { createLendOffer } from '$lib/wallet/vouchVault';
+  import { ensureVaultAllowance, generateNonce, signLendOffer, type SignedLendOffer } from '$lib/wallet/signedOrders';
+  import { createLendOffer, isNativeTokenAddress } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Loader2, Sparkles, Wallet } from '@lucide/svelte';
+  import { ethers } from 'ethers';
 
   let principalSymbol = $state('MOCK');
   let principalAmount = $state('');
@@ -18,10 +21,12 @@
   let acceptWindowDays = $state('7');
 
   let submitting = $state(false);
+  let status = $state<string | null>(null);
   let errorMsg = $state<string | null>(null);
 
   const tokens = $derived(chainInfo.tokens ?? []);
   const principalToken = $derived(tokens.find((t) => t.symbol === principalSymbol) ?? null);
+  const principalIsErc20 = $derived(!!principalToken && !isNativeTokenAddress(principalToken.address ?? ''));
 
   const principalUsd = $derived(
     (parseFloat(principalAmount) || 0) * tokenPrices.getTokenMeta(principalSymbol).priceUsd,
@@ -89,35 +94,90 @@
     'border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring transition w-full bg-background';
   const sectionClass = 'flex flex-col gap-3 p-4 rounded-lg border border-border/60 bg-muted/20';
 
+  /** Map a wallet/API error to a user-facing message (distinguishes user-rejection & API 400). */
+  const orderErrorMessage = (e: unknown, fallback: string): string => {
+    if (e && typeof e === 'object') {
+      const err = e as {
+        code?: unknown;
+        reason?: unknown;
+        response?: { data?: { message?: unknown } };
+        message?: unknown;
+      };
+      if (err.code === 'ACTION_REJECTED') return 'Signature rejected by user.';
+      const apiMsg = err.response?.data?.message;
+      if (typeof apiMsg === 'string') return apiMsg;
+      if (Array.isArray(apiMsg)) return apiMsg.join(', ');
+      if (typeof err.reason === 'string' && err.reason) return err.reason;
+      if (typeof err.message === 'string') return err.message.replace(/^[\w-]+:\s*/, '') || fallback;
+    }
+    return fallback;
+  };
+
   const handleSubmit = async () => {
     if (!principalToken) return;
+    if (!wallet.address || wallet.networkId == null || !chainInfo.contractAddress) {
+      errorMsg = 'Connect your wallet to create an offer.';
+      return;
+    }
     submitting = true;
     errorMsg = null;
+    status = null;
     try {
-      await createLendOffer(
-        principalToken,
-        principalAmount,
-        collateralRatioBps,
-        trustedRatioBps,
-        scoreThresholdNum,
-        maxLtvBps,
-        rateBps,
-        durationSeconds,
-        acceptWindowSeconds,
-      );
-    } catch (e) {
-      if (e instanceof Error) {
-        const err = e as { code?: unknown; reason?: unknown };
-        if (err.code === 'ACTION_REJECTED') {
-          errorMsg = null;
-        } else if (typeof err.reason === 'string' && err.reason) {
-          errorMsg = err.reason;
-        } else {
-          errorMsg = e.message.replace(/^[\w-]+:\s*/, '') || 'Transaction failed';
-        }
+      if (principalIsErc20) {
+        // Gasless path: the lender signs an offer committing ERC20 principal; the borrower chooses
+        // the collateral token + amount at fill time when calling fillLendOffer.
+        const principalParsed = ethers.parseUnits(principalAmount, principalToken.decimals ?? 18);
+        const deadline = Math.floor(Date.now() / 1000) + acceptWindowSeconds;
+        await ensureVaultAllowance(principalToken.address, principalParsed);
+        status = 'Waiting for wallet signature…';
+        const offer: SignedLendOffer = {
+          lender: wallet.address!,
+          principalToken: principalToken.address,
+          principalAmount: principalParsed,
+          collateralRatioBps,
+          trustedRatioBps,
+          scoreThreshold: scoreThresholdNum,
+          maxLtvBps,
+          interestRateBps: rateBps,
+          durationSeconds: BigInt(durationSeconds),
+          nonce: generateNonce(),
+          deadline: BigInt(deadline),
+        };
+        const { signature } = await signLendOffer(offer);
+        await postSignedOffer({
+          lenderAddress: offer.lender,
+          principalTokenAddress: principalToken.address,
+          principalAmount: principalParsed.toString(),
+          collateralRatioBps,
+          trustedRatioBps,
+          scoreThreshold: scoreThresholdNum,
+          maxLtvBps,
+          interestRateBps: rateBps,
+          durationSeconds,
+          nonce: offer.nonce.toString(),
+          deadline,
+          signature,
+          networkId: String(wallet.networkId),
+          contractAddress: chainInfo.contractAddress!,
+        });
+        status = 'Offer published!';
       } else {
-        errorMsg = 'Transaction failed';
+        // On-chain path for ETH principal.
+        await createLendOffer(
+          principalToken,
+          principalAmount,
+          collateralRatioBps,
+          trustedRatioBps,
+          scoreThresholdNum,
+          maxLtvBps,
+          rateBps,
+          durationSeconds,
+          acceptWindowSeconds,
+        );
+        status = 'Offer created!';
       }
+    } catch (e) {
+      errorMsg = orderErrorMessage(e, 'Transaction failed');
     } finally {
       submitting = false;
     }
@@ -337,15 +397,18 @@
     {#if errorMsg}
       <p class="text-sm text-destructive">{errorMsg}</p>
     {/if}
+    {#if status}
+      <p class="text-sm text-green-600">{status}</p>
+    {/if}
   </Card.Content>
-  <Card.Footer>
+  <Card.Footer class="flex flex-col gap-3">
     {#if !wallet.address}
       <p class="text-sm text-muted-foreground">Connect your wallet to create an offer.</p>
     {:else}
       <Button class="w-full font-bold" disabled={!canSubmit} onclick={handleSubmit} size="lg">
         {#if submitting}
           <Loader2 class="mr-2 h-4 w-4 animate-spin" />
-          Creating Offer…
+          {principalIsErc20 ? 'Signing…' : 'Creating Offer…'}
         {:else}
           Create Lend Offer
         {/if}

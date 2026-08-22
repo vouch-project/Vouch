@@ -2,8 +2,9 @@ import { InjectRedis } from '@nestjs-modules/ioredis';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { Tables, validAddress } from '@vouch/database-types';
+import { asAddress, Tables, validAddress } from '@vouch/database-types';
 import type { UUID } from 'crypto';
+import { ethers } from 'ethers';
 import type { Redis } from 'ioredis';
 import { SupabaseService } from '../supabase/supabase.service';
 import { PriceFeedService, priceKey } from './price-feed.service';
@@ -213,8 +214,16 @@ export class TokensService implements OnModuleInit {
    * without any LTV check. Revisit when a mainnet chain is configured.
    */
   private fetchRawTokens(mockErc20Address?: string): ResponseToken[] {
+    const ethFeedAddress = this.configService.get<string>(
+      'LOCAL_ETH_FEED_ADDRESS',
+    );
+    const mockFeedAddress = this.configService.get<string>(
+      'LOCAL_MOCK_FEED_ADDRESS',
+    );
     const mockTokens = mockErc20Address
-      ? Object.values(tokensMock(mockErc20Address)).flat()
+      ? Object.values(
+          tokensMock(mockErc20Address, ethFeedAddress, mockFeedAddress),
+        ).flat()
       : [];
 
     if (mockTokens.length) {
@@ -265,27 +274,82 @@ export class TokensService implements OnModuleInit {
   }
 
   private async upsertTokens(tokens: Token[]): Promise<Token[] | null> {
+    // Tokens with a real Chainlink feed address get a full upsert (all columns updated).
+    // Tokens with ZeroAddress feed use insert-only (ignoreDuplicates) so that a feed
+    // address previously set by deploy-mock-aggregators.ts is never overwritten on
+    // subsequent API restarts or cron runs.
+    const withFeed = tokens.filter(
+      (t) => t.price_feed_address !== ethers.ZeroAddress,
+    );
+    const withoutFeed = tokens.filter(
+      (t) => t.price_feed_address === ethers.ZeroAddress,
+    );
+
     const results: Token[] = [];
 
-    for (let i = 0; i < tokens.length; i += UPSERT_BATCH_SIZE) {
-      const batch = tokens.slice(i, i + UPSERT_BATCH_SIZE);
-      const { data, error } = await this.supabaseService.client
-        .from('tokens')
-        .upsert(batch, { onConflict: 'chainId,address' })
-        .select('*');
+    for (const [batch_tokens, ignoreDuplicates] of [
+      [withFeed, false],
+      [withoutFeed, true],
+    ] as [Token[], boolean][]) {
+      for (let i = 0; i < batch_tokens.length; i += UPSERT_BATCH_SIZE) {
+        const batch = batch_tokens.slice(i, i + UPSERT_BATCH_SIZE);
+        const { data, error } = await this.supabaseService.client
+          .from('tokens')
+          .upsert(batch, { onConflict: 'chainId,address', ignoreDuplicates })
+          .select('*');
 
-      if (error) {
-        this.logger.error(
-          `Error upserting token batch ${i}–${i + batch.length - 1}: ${error.message}`,
-          JSON.stringify(error),
+        if (error) {
+          this.logger.error(
+            `Error upserting token batch ${i}–${i + batch.length - 1}: ${error.message}`,
+            JSON.stringify(error),
+          );
+          return null;
+        }
+
+        const inserted = data as Token[];
+        results.push(...inserted);
+
+        // With ignoreDuplicates the response only contains newly inserted rows.
+        // Fetch the already-existing rows so the rest of the pipeline sees them.
+        // Group by chainId because a single batch can span multiple chains
+        // (e.g. local + Sepolia mock tokens).
+        if (ignoreDuplicates && inserted.length < batch.length) {
+          const insertedAddrs = new Set(
+            inserted.map((t) => t.address.toLowerCase()),
+          );
+          const existingTokens = batch.filter(
+            (t) => !insertedAddrs.has(t.address.toLowerCase()),
+          );
+
+          const byChainId = new Map<string, string[]>();
+          for (const t of existingTokens) {
+            const chainId = t.chainId as string;
+            if (!byChainId.has(chainId)) byChainId.set(chainId, []);
+            byChainId.get(chainId)!.push(t.address);
+          }
+
+          for (const [chainId, addrs] of byChainId) {
+            const { data: existing, error: fetchErr } =
+              await this.supabaseService.client
+                .from('tokens')
+                .select('*')
+                .eq('chainId', chainId as UUID)
+                .in('address', addrs.map(asAddress));
+
+            if (fetchErr) {
+              this.logger.warn(
+                `Failed to fetch existing tokens for chain ${chainId}: ${fetchErr.message}`,
+              );
+            } else {
+              results.push(...(existing as Token[]));
+            }
+          }
+        }
+
+        this.logger.debug(
+          `Upserted batch ${Math.floor(i / UPSERT_BATCH_SIZE) + 1}/${Math.ceil(batch_tokens.length / UPSERT_BATCH_SIZE)} (${results.length}/${tokens.length} tokens)`,
         );
-        return null;
       }
-
-      results.push(...(data as Token[]));
-      this.logger.debug(
-        `Upserted batch ${Math.floor(i / UPSERT_BATCH_SIZE) + 1}/${Math.ceil(tokens.length / UPSERT_BATCH_SIZE)} (${results.length}/${tokens.length} tokens)`,
-      );
     }
 
     return results;
@@ -425,14 +489,22 @@ export class TokensService implements OnModuleInit {
     );
 
     // First pass: enrich from cache, collect misses
-    const misses: Array<{ token: ResponseToken; feedAddress: string; rpcUrl: string }> = [];
+    const misses: Array<{
+      token: ResponseToken;
+      feedAddress: string;
+      rpcUrl: string;
+    }> = [];
 
     const enriched = tokens.map((t) => {
       const db = dbByAddress.get(t.address.toLowerCase());
       const cachedPrice = prices[priceKey(dbChainId, t.address)] ?? null;
 
       if (cachedPrice === null && db?.priceFeedAddress && db.rpcUrl) {
-        misses.push({ token: t, feedAddress: db.priceFeedAddress, rpcUrl: db.rpcUrl });
+        misses.push({
+          token: t,
+          feedAddress: db.priceFeedAddress,
+          rpcUrl: db.rpcUrl,
+        });
       }
 
       return {
@@ -450,15 +522,21 @@ export class TokensService implements OnModuleInit {
           this.priceFeedService
             .getPriceForToken(dbChainId, token.address, feedAddress, rpcUrl)
             .then((price) => ({ address: token.address.toLowerCase(), price }))
-            .catch(() => ({ address: token.address.toLowerCase(), price: null })),
+            .catch(() => ({
+              address: token.address.toLowerCase(),
+              price: null,
+            })),
         ),
       );
 
-      const fetchedByAddress = new Map(fetchedPrices.map((r) => [r.address, r.price]));
+      const fetchedByAddress = new Map(
+        fetchedPrices.map((r) => [r.address, r.price]),
+      );
 
       return enriched.map((t) => ({
         ...t,
-        priceUsd: t.priceUsd ?? fetchedByAddress.get(t.address.toLowerCase()) ?? null,
+        priceUsd:
+          t.priceUsd ?? fetchedByAddress.get(t.address.toLowerCase()) ?? null,
       }));
     }
 

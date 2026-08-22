@@ -1,7 +1,42 @@
+import { anyValue } from '@nomicfoundation/hardhat-chai-matchers/withArgs';
 import { expect } from 'chai';
 import { ethers, upgrades } from 'hardhat';
 
 describe('VouchVault', function () {
+  async function signLtvAttestation(
+    vault: any,
+    signer: any,
+    borrowerAddress: string,
+    maxLtvBps: number,
+    collateralToken: string = ethers.ZeroAddress,
+    borrowToken: string = ethers.ZeroAddress,
+    overrideExpiry?: bigint,
+  ): Promise<{ expiry: bigint; sig: string }> {
+    const network = await ethers.provider.getNetwork();
+    const vaultAddress = await vault.getAddress();
+    const nonce = await vault.nonces(borrowerAddress);
+    const expiry = overrideExpiry ?? 9999999999n;
+    const domain = {
+      name: 'VouchVault',
+      version: '1',
+      chainId: Number(network.chainId),
+      verifyingContract: vaultAddress,
+    };
+    const types = {
+      LtvAttestation: [
+        { name: 'borrower', type: 'address' },
+        { name: 'collateralToken', type: 'address' },
+        { name: 'borrowToken', type: 'address' },
+        { name: 'maxLtvBps', type: 'uint16' },
+        { name: 'expiry', type: 'uint256' },
+        { name: 'nonce', type: 'uint256' },
+      ],
+    };
+    const value = { borrower: borrowerAddress, collateralToken, borrowToken, maxLtvBps, expiry, nonce };
+    const sig = await signer.signTypedData(domain, types, value);
+    return { expiry, sig };
+  }
+
   it('Should accept deposits', async function () {
     const [owner] = await ethers.getSigners();
     const VouchVault = await ethers.getContractFactory('VouchVault');
@@ -18,12 +53,25 @@ describe('VouchVault', function () {
       const [owner] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const sentCollateral = ethers.parseEther('1.0');
 
       const fundWindow = 7n * 86400n; // 7 days
-      const tx = await vault.createLoan(ethers.ZeroAddress, sentCollateral, 500, 86400, fundWindow, 8000, {
-        value: sentCollateral,
-      });
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, owner.address, 10000);
+      const tx = await vault.createLoan(
+        ethers.ZeroAddress,
+        sentCollateral,
+        500,
+        86400,
+        fundWindow,
+        8000,
+        10000,
+        ltvExpiry,
+        ltvSig,
+        {
+          value: sentCollateral,
+        },
+      );
       await expect(tx)
         .to.emit(vault, 'LoanCreated')
         .withArgs(
@@ -68,9 +116,22 @@ describe('VouchVault', function () {
       const [owner] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
 
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, owner.address, 10000);
       await expect(
-        vault.createLoan(ethers.ZeroAddress, ethers.parseEther('1.0'), 0, 0, 7n * 86400n, 8000, { value: 0 }),
+        vault.createLoan(
+          ethers.ZeroAddress,
+          ethers.parseEther('1.0'),
+          0,
+          0,
+          7n * 86400n,
+          8000,
+          10000,
+          ltvExpiry,
+          ltvSig,
+          { value: 0 },
+        ),
       ).to.be.revertedWith('Collateral must be > 0');
     });
 
@@ -78,9 +139,13 @@ describe('VouchVault', function () {
       const [owner] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const collateral = ethers.parseEther('1.0');
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, owner.address, 10000);
       await expect(
-        vault.createLoan(ethers.ZeroAddress, collateral, 0, 86400, 0, 8000, { value: collateral }),
+        vault.createLoan(ethers.ZeroAddress, collateral, 0, 86400, 0, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        }),
       ).to.be.revertedWith('Fund window must be > 0');
     });
 
@@ -88,14 +153,21 @@ describe('VouchVault', function () {
       const [owner] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const collateral = ethers.parseEther('1.0');
       // Above the cap (10001 bps = 100.01% APR) is rejected.
+      const { expiry: ltvExpiry1, sig: ltvSig1 } = await signLtvAttestation(vault, owner, owner.address, 10000);
       await expect(
-        vault.createLoan(ethers.ZeroAddress, collateral, 10001, 86400, 7n * 86400n, 8000, { value: collateral }),
+        vault.createLoan(ethers.ZeroAddress, collateral, 10001, 86400, 7n * 86400n, 8000, 10000, ltvExpiry1, ltvSig1, {
+          value: collateral,
+        }),
       ).to.be.revertedWith('Interest rate cannot exceed 100%');
       // Exactly at the cap (10000 bps = 100% APR) is accepted.
+      const { expiry: ltvExpiry2, sig: ltvSig2 } = await signLtvAttestation(vault, owner, owner.address, 10000);
       await expect(
-        vault.createLoan(ethers.ZeroAddress, collateral, 10000, 86400, 7n * 86400n, 8000, { value: collateral }),
+        vault.createLoan(ethers.ZeroAddress, collateral, 10000, 86400, 7n * 86400n, 8000, 10000, ltvExpiry2, ltvSig2, {
+          value: collateral,
+        }),
       ).to.not.be.reverted;
       const loan = await vault.loans(0);
       expect(loan.interestRateBps).to.equal(10000n);
@@ -105,9 +177,13 @@ describe('VouchVault', function () {
       const [owner] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const collateral = ethers.parseEther('1.0');
 
-      await vault.createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, { value: collateral });
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, owner.address, 10000);
+      await vault.createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+        value: collateral,
+      });
 
       await expect(vault.withdraw(collateral)).to.be.revertedWith('Insufficient balance');
     });
@@ -118,12 +194,21 @@ describe('VouchVault', function () {
       const MockERC20 = await ethers.getContractFactory('MockERC20');
 
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
 
       const totalSupply = ethers.parseUnits('1000', 18);
       const collateral = ethers.parseUnits('50', 18);
       const token = await MockERC20.deploy('Mock', 'MOCK', 18, totalSupply);
 
       await token.approve(await vault.getAddress(), collateral);
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        owner.address,
+        10000,
+        await token.getAddress(),
+        ethers.ZeroAddress,
+      );
       await vault.createLoanWithERC20(
         await token.getAddress(),
         collateral,
@@ -133,6 +218,9 @@ describe('VouchVault', function () {
         0,
         7n * 86400n,
         8000,
+        10000,
+        ltvExpiry,
+        ltvSig,
       );
 
       const loan = await vault.getLoan(0);
@@ -145,6 +233,114 @@ describe('VouchVault', function () {
       expect(locked[0]).to.equal(await token.getAddress());
       expect(locked[1]).to.equal(collateral);
       expect(locked[2]).to.equal(true);
+    });
+
+    it('reverts when LTV attestation is expired', async function () {
+      const [owner] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
+      const collateral = ethers.parseEther('1.0');
+      const latestBlock = await ethers.provider.getBlock('latest');
+      const pastExpiry = BigInt(latestBlock!.timestamp - 1);
+      const { sig } = await signLtvAttestation(
+        vault,
+        owner,
+        owner.address,
+        10000,
+        ethers.ZeroAddress,
+        ethers.ZeroAddress,
+        pastExpiry,
+      );
+      await expect(
+        vault.createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, 10000, pastExpiry, sig, {
+          value: collateral,
+        }),
+      ).to.be.revertedWith('Attestation expired');
+    });
+
+    it('reverts when LTV attestation has an invalid signature', async function () {
+      const [owner, attacker] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
+      const collateral = ethers.parseEther('1.0');
+      // Sign with attacker instead of owner (the configured scoreSigner).
+      const { expiry, sig } = await signLtvAttestation(vault, attacker, owner.address, 10000);
+      await expect(
+        vault.createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, 10000, expiry, sig, {
+          value: collateral,
+        }),
+      ).to.be.revertedWith('Invalid attestation');
+    });
+
+    it('reverts when liquidationThresholdBps exceeds maxLtvBps', async function () {
+      const [owner] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
+      const collateral = ethers.parseEther('1.0');
+      const { expiry, sig } = await signLtvAttestation(vault, owner, owner.address, 7000);
+      await expect(
+        vault.createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, 7000, expiry, sig, {
+          value: collateral,
+        }),
+      ).to.be.revertedWith('Exceeds attested LTV');
+    });
+
+    it('reverts on nonce replay after a successful createLoan', async function () {
+      const [owner] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
+      const collateral = ethers.parseEther('1.0');
+      const { expiry, sig } = await signLtvAttestation(vault, owner, owner.address, 10000);
+      // First use succeeds and increments the nonce.
+      await vault.createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, 10000, expiry, sig, {
+        value: collateral,
+      });
+      // Replaying the same sig now fails because the nonce changed.
+      await expect(
+        vault.createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, 10000, expiry, sig, {
+          value: collateral,
+        }),
+      ).to.be.revertedWith('Invalid attestation');
+    });
+
+    it('reverts when attestation is signed for different tokens than the loan', async function () {
+      const [owner] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const MockERC20 = await ethers.getContractFactory('MockERC20');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
+      const collateral = ethers.parseUnits('50', 18);
+      const token = await MockERC20.deploy('Mock', 'MOCK', 18, ethers.parseUnits('1000', 18));
+      await token.approve(await vault.getAddress(), collateral);
+      // Sign attestation claiming ZeroAddress as collateral token (like an ETH loan).
+      const { expiry, sig } = await signLtvAttestation(
+        vault,
+        owner,
+        owner.address,
+        10000,
+        ethers.ZeroAddress,
+        ethers.ZeroAddress,
+      );
+      // But try to use it for an ERC20 collateral loan — should fail.
+      await expect(
+        vault.createLoanWithERC20(
+          await token.getAddress(),
+          collateral,
+          ethers.ZeroAddress,
+          collateral,
+          0,
+          0,
+          7n * 86400n,
+          8000,
+          10000,
+          expiry,
+          sig,
+        ),
+      ).to.be.revertedWith('Invalid attestation');
     });
   });
 
@@ -165,11 +361,15 @@ describe('VouchVault', function () {
       const [owner, borrower, lender] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const collateral = ethers.parseEther('0.5');
       const principal = ethers.parseEther('1.0');
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 500, 86400, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 500, 86400, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       return { vault, owner, borrower, lender, collateral, principal };
     }
 
@@ -241,12 +441,21 @@ describe('VouchVault', function () {
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const MockERC20 = await ethers.getContractFactory('MockERC20');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const token = await MockERC20.deploy('Mock', 'MOCK', 18, ethers.parseUnits('1000', 18));
       const collateral = ethers.parseEther('0.5');
       const principalAmount = ethers.parseUnits('100', 18);
 
       await token.transfer(borrower.address, collateral);
       await token.connect(borrower).approve(await vault.getAddress(), collateral);
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        await token.getAddress(),
+        await token.getAddress(),
+      );
       await vault
         .connect(borrower)
         .createLoanWithERC20(
@@ -258,6 +467,9 @@ describe('VouchVault', function () {
           0,
           7n * 86400n,
           8000,
+          10000,
+          ltvExpiry,
+          ltvSig,
         );
 
       await expect(vault.connect(lender).fundLoan(0, { value: ethers.parseEther('1.0') })).to.be.revertedWith(
@@ -269,11 +481,15 @@ describe('VouchVault', function () {
       const [owner, borrower, lender] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const collateral = ethers.parseEther('2.0');
       const principal = ethers.parseEther('1.0');
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 500, 86400, 3n * 86400n, 8000, { value: collateral }); // 3-day window
+        .createLoan(ethers.ZeroAddress, principal, 500, 86400, 3n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        }); // 3-day window
       await ethers.provider.send('evm_increaseTime', [4 * 86400]); // past the window
       await ethers.provider.send('evm_mine', []);
       await expect(vault.connect(lender).fundLoan(0, { value: principal })).to.be.revertedWith('Funding window passed');
@@ -299,6 +515,7 @@ describe('VouchVault', function () {
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const MockERC20 = await ethers.getContractFactory('MockERC20');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
 
       const totalSupply = ethers.parseUnits('1000', 18);
       const token = await MockERC20.deploy('Mock', 'MOCK', 18, totalSupply);
@@ -306,9 +523,19 @@ describe('VouchVault', function () {
       const collateral = ethers.parseEther('0.5');
       const principalAmount = ethers.parseUnits('100', 18);
 
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        await token.getAddress(),
+      );
       await vault
         .connect(borrower)
-        .createLoan(await token.getAddress(), principalAmount, 0, 0, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(await token.getAddress(), principalAmount, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
 
       await token.transfer(lender.address, principalAmount);
       await token.connect(lender).approve(await vault.getAddress(), principalAmount);
@@ -335,13 +562,17 @@ describe('VouchVault', function () {
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const MockERC20 = await ethers.getContractFactory('MockERC20');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const token = await MockERC20.deploy('Mock', 'MOCK', 18, ethers.parseUnits('1000', 18));
       const collateral = ethers.parseEther('0.5');
       const principalAmount = ethers.parseEther('1.0');
 
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principalAmount, 0, 0, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principalAmount, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
 
       await expect(
         vault.connect(lender).fundLoanWithERC20(0, await token.getAddress(), principalAmount),
@@ -353,6 +584,7 @@ describe('VouchVault', function () {
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const MockERC20 = await ethers.getContractFactory('MockERC20');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
 
       const totalSupply = ethers.parseUnits('1000', 18);
       const token = await MockERC20.deploy('Mock', 'MOCK', 18, totalSupply);
@@ -360,9 +592,19 @@ describe('VouchVault', function () {
       const collateral = ethers.parseEther('0.5');
       const principalAmount = ethers.parseUnits('100', 18);
 
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        await token.getAddress(),
+      );
       await vault
         .connect(borrower)
-        .createLoan(await token.getAddress(), principalAmount, 0, 0, 3n * 86400n, 8000, { value: collateral }); // 3-day window
+        .createLoan(await token.getAddress(), principalAmount, 0, 0, 3n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        }); // 3-day window
 
       await token.transfer(lender.address, principalAmount);
       await token.connect(lender).approve(await vault.getAddress(), principalAmount);
@@ -381,12 +623,25 @@ describe('VouchVault', function () {
       const [owner, borrower, lender] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const collateral = ethers.parseEther('2.0');
       const principal = ethers.parseEther('1.0');
 
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, interestRateBps, 86400, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(
+          ethers.ZeroAddress,
+          principal,
+          interestRateBps,
+          86400,
+          7n * 86400n,
+          8000,
+          10000,
+          ltvExpiry,
+          ltvSig,
+          { value: collateral },
+        );
       await vault.connect(lender).fundLoan(0, { value: principal });
 
       // Per-day accrual: no time is advanced after funding, so 0 whole days elapse
@@ -400,11 +655,15 @@ describe('VouchVault', function () {
       const [owner, borrower, lender] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const collateral = ethers.parseEther('5.0');
       const principal = ethers.parseEther('1.0');
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 3650, 30n * 86400n, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 3650, 30n * 86400n, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       await vault.connect(lender).fundLoan(0, { value: principal });
 
       await ethers.provider.send('evm_increaseTime', [10 * 86400]);
@@ -424,11 +683,15 @@ describe('VouchVault', function () {
       const [owner, borrower, lender] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const collateral = ethers.parseEther('5.0');
       const principal = ethers.parseEther('1.0');
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 3650, 30n * 86400n, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 3650, 30n * 86400n, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       await vault.connect(lender).fundLoan(0, { value: principal });
       await ethers.provider.send('evm_increaseTime', [10 * 86400]);
       await ethers.provider.send('evm_mine', []);
@@ -531,11 +794,15 @@ describe('VouchVault', function () {
       const [owner, borrower] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const collateral = ethers.parseEther('1.0');
 
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
 
       await expect(vault.connect(borrower).repayLoan(0, { value: collateral })).to.be.revertedWith(
         'Loan is not funded',
@@ -555,13 +822,24 @@ describe('VouchVault', function () {
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const MockERC20 = await ethers.getContractFactory('MockERC20');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const token = await MockERC20.deploy('Mock', 'MOCK', 18, ethers.parseUnits('1000', 18));
       const collateral = ethers.parseEther('0.5');
       const principalAmount = ethers.parseUnits('100', 18);
 
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        await token.getAddress(),
+      );
       await vault
         .connect(borrower)
-        .createLoan(await token.getAddress(), principalAmount, 500, 0, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(await token.getAddress(), principalAmount, 500, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       await token.transfer(lender.address, principalAmount);
       await token.connect(lender).approve(await vault.getAddress(), principalAmount);
       await vault.connect(lender).fundLoanWithERC20(0, await token.getAddress(), principalAmount);
@@ -699,6 +977,7 @@ describe('VouchVault', function () {
         const [owner, borrower, lender] = await ethers.getSigners();
         const VouchVault = await ethers.getContractFactory('VouchVault');
         const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+        await vault.setScoreSigner(owner.address);
 
         const principal = ethers.parseEther('1.0');
         const collateral = ethers.parseEther('5.0');
@@ -706,6 +985,7 @@ describe('VouchVault', function () {
         const durationDays = 30n;
         const elapsedDays = 10n;
 
+        const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
         await vault
           .connect(borrower)
           .createLoan(
@@ -715,6 +995,9 @@ describe('VouchVault', function () {
             durationDays * 86400n,
             7n * 86400n,
             8000,
+            10000,
+            ltvExpiry,
+            ltvSig,
             {
               value: collateral,
             },
@@ -777,16 +1060,29 @@ describe('VouchVault', function () {
         const [owner, borrower, lender] = await ethers.getSigners();
         const VouchVault = await ethers.getContractFactory('VouchVault');
         const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+        await vault.setScoreSigner(owner.address);
 
         const principal = ethers.parseEther('1.0');
         const collateral = ethers.parseEther('5.0');
         const interestRateBps = 3650n; // 36.5% APR
 
+        const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
         await vault
           .connect(borrower)
-          .createLoan(ethers.ZeroAddress, principal, Number(interestRateBps), 60n * 86400n, 7n * 86400n, 8000, {
-            value: collateral,
-          });
+          .createLoan(
+            ethers.ZeroAddress,
+            principal,
+            Number(interestRateBps),
+            60n * 86400n,
+            7n * 86400n,
+            8000,
+            10000,
+            ltvExpiry,
+            ltvSig,
+            {
+              value: collateral,
+            },
+          );
         await vault.connect(lender).fundLoan(0, { value: principal });
 
         // Day 5: accrued5 = principal * 3650 * 5 / (10000*365) = 0.005 ETH.
@@ -828,6 +1124,7 @@ describe('VouchVault', function () {
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const MockERC20 = await ethers.getContractFactory('MockERC20');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
 
       const token = await MockERC20.deploy('Mock', 'MOCK', 18, ethers.parseUnits('10000', 18));
       const collateral = ethers.parseEther('1.0');
@@ -836,11 +1133,30 @@ describe('VouchVault', function () {
       // so a single fixed amount of interest accrues once the cap is reached (see below).
       const durationSeconds = 30n * 86400n;
 
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        await token.getAddress(),
+      );
       await vault
         .connect(borrower)
-        .createLoan(await token.getAddress(), principalAmount, interestRateBps, durationSeconds, 7n * 86400n, 8000, {
-          value: collateral,
-        });
+        .createLoan(
+          await token.getAddress(),
+          principalAmount,
+          interestRateBps,
+          durationSeconds,
+          7n * 86400n,
+          8000,
+          10000,
+          ltvExpiry,
+          ltvSig,
+          {
+            value: collateral,
+          },
+        );
 
       await token.transfer(lender.address, principalAmount);
       await token.connect(lender).approve(await vault.getAddress(), principalAmount);
@@ -900,6 +1216,7 @@ describe('VouchVault', function () {
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const MockERC20 = await ethers.getContractFactory('MockERC20');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
 
       const collateralToken = await MockERC20.deploy('Collateral', 'COL', 18, ethers.parseUnits('10000', 18));
       const principalToken = await MockERC20.deploy('Principal', 'PRI', 18, ethers.parseUnits('10000', 18));
@@ -911,6 +1228,14 @@ describe('VouchVault', function () {
 
       await collateralToken.transfer(borrower.address, collateral);
       await collateralToken.connect(borrower).approve(await vault.getAddress(), collateral);
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        await collateralToken.getAddress(),
+        await principalToken.getAddress(),
+      );
       await vault
         .connect(borrower)
         .createLoanWithERC20(
@@ -922,6 +1247,9 @@ describe('VouchVault', function () {
           durationSeconds,
           7n * 86400n,
           8000,
+          10000,
+          ltvExpiry,
+          ltvSig,
         );
 
       await principalToken.transfer(lender.address, principalAmount);
@@ -979,13 +1307,17 @@ describe('VouchVault', function () {
       const [owner, borrower] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const collateral = ethers.parseEther('1.0');
       const principal = ethers.parseEther('0.5');
 
       const [, , lender] = await ethers.getSigners();
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 0, 0, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       await vault.connect(lender).fundLoan(0, { value: principal });
 
       await expect(vault.connect(borrower).repayLoanWithERC20(0, principal)).to.be.revertedWith(
@@ -1012,13 +1344,33 @@ describe('VouchVault', function () {
       const [owner, borrower, lender] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const Token = await ethers.getContractFactory('MockERC20');
       const token = await Token.deploy('Mock', 'MOCK', 18, 0);
       const collateral = ethers.parseEther('5.0');
       const principal = ethers.parseEther('1.0');
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        await token.getAddress(),
+      );
       await vault
         .connect(borrower)
-        .createLoan(await token.getAddress(), principal, 3650, 30n * 86400n, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(
+          await token.getAddress(),
+          principal,
+          3650,
+          30n * 86400n,
+          7n * 86400n,
+          8000,
+          10000,
+          ltvExpiry,
+          ltvSig,
+          { value: collateral },
+        );
       await token.mint(lender.address, principal);
       await token.connect(lender).approve(await vault.getAddress(), principal);
       await vault.connect(lender).fundLoanWithERC20(0, await token.getAddress(), principal);
@@ -1044,6 +1396,7 @@ describe('VouchVault', function () {
         const VouchVault = await ethers.getContractFactory('VouchVault');
         const MockERC20 = await ethers.getContractFactory('MockERC20');
         const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+        await vault.setScoreSigner(owner.address);
 
         const collateralToken = await MockERC20.deploy('COL', 'COL', 18, ethers.parseUnits('10000', 18));
         const principalToken = await MockERC20.deploy('PRI', 'PRI', 18, ethers.parseUnits('10000', 18));
@@ -1058,6 +1411,14 @@ describe('VouchVault', function () {
 
         await collateralToken.transfer(borrower.address, collateral);
         await collateralToken.connect(borrower).approve(await vault.getAddress(), collateral);
+        const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+          vault,
+          owner,
+          borrower.address,
+          10000,
+          await collateralToken.getAddress(),
+          await principalToken.getAddress(),
+        );
         await vault
           .connect(borrower)
           .createLoanWithERC20(
@@ -1069,6 +1430,9 @@ describe('VouchVault', function () {
             0,
             7n * 86400n,
             8000,
+            10000,
+            ltvExpiry,
+            ltvSig,
           );
 
         await principalToken.transfer(lender.address, principalAmount);
@@ -1145,17 +1509,37 @@ describe('VouchVault', function () {
         const VouchVault = await ethers.getContractFactory('VouchVault');
         const MockERC20 = await ethers.getContractFactory('MockERC20');
         const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+        await vault.setScoreSigner(owner.address);
 
         const token = await MockERC20.deploy('Mock', 'MOCK', 18, 0);
         const principal = ethers.parseEther('1.0');
         const collateral = ethers.parseEther('5.0');
         const interestRateBps = 3650n; // 36.5% APR
 
+        const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+          vault,
+          owner,
+          borrower.address,
+          10000,
+          ethers.ZeroAddress,
+          await token.getAddress(),
+        );
         await vault
           .connect(borrower)
-          .createLoan(await token.getAddress(), principal, Number(interestRateBps), 60n * 86400n, 7n * 86400n, 8000, {
-            value: collateral,
-          });
+          .createLoan(
+            await token.getAddress(),
+            principal,
+            Number(interestRateBps),
+            60n * 86400n,
+            7n * 86400n,
+            8000,
+            10000,
+            ltvExpiry,
+            ltvSig,
+            {
+              value: collateral,
+            },
+          );
         await token.mint(lender.address, principal);
         await token.connect(lender).approve(await vault.getAddress(), principal);
         await vault.connect(lender).fundLoanWithERC20(0, await token.getAddress(), principal);
@@ -1202,6 +1586,7 @@ describe('VouchVault', function () {
       const [owner, borrower, lender] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const principal = ethers.parseEther('1.0');
       const collateral = ethers.parseEther('2.0');
 
@@ -1209,9 +1594,12 @@ describe('VouchVault', function () {
       // so once the full term has accrued (and is capped at it) totalDue == 1.01 ETH.
       const durationSeconds = 10n * 86400n;
       const expectedTotalDue = principal + (principal * 3650n * 10n) / (10000n * 365n);
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 3650, durationSeconds, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 3650, durationSeconds, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       await vault.connect(lender).fundLoan(0, { value: principal });
 
       // Advance past the term so accrued interest is capped at exactly 10 whole days (deterministic).
@@ -1241,13 +1629,26 @@ describe('VouchVault', function () {
       const [owner, borrower, lender] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const collateral = ethers.parseEther('5.0');
       const principal = ethers.parseEther('1.0');
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, interestRateBps, durationSeconds, 7n * 86400n, 8000, {
-          value: collateral,
-        });
+        .createLoan(
+          ethers.ZeroAddress,
+          principal,
+          interestRateBps,
+          durationSeconds,
+          7n * 86400n,
+          8000,
+          10000,
+          ltvExpiry,
+          ltvSig,
+          {
+            value: collateral,
+          },
+        );
       await vault.connect(lender).fundLoan(0, { value: principal });
       return { vault, owner, borrower, lender, principal, collateral };
     }
@@ -1282,13 +1683,26 @@ describe('VouchVault', function () {
       const [owner, borrower, lender] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const collateral = ethers.parseEther('5.0');
       const principal = ethers.parseEther('1.0');
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, interestRateBps, durationSeconds, 7n * 86400n, 8000, {
-          value: collateral,
-        });
+        .createLoan(
+          ethers.ZeroAddress,
+          principal,
+          interestRateBps,
+          durationSeconds,
+          7n * 86400n,
+          8000,
+          10000,
+          ltvExpiry,
+          ltvSig,
+          {
+            value: collateral,
+          },
+        );
       await vault.connect(lender).fundLoan(0, { value: principal });
       return { vault, owner, borrower, lender, principal, collateral };
     }
@@ -1360,15 +1774,19 @@ describe('VouchVault', function () {
       const [owner, borrower, lender] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const principal = ethers.parseEther('1.0');
       const collateral = ethers.parseEther('2.0');
 
       // 5% floor of principal, charged immediately on funding.
       await expect(vault.connect(owner).setMinInterestBps(500)).to.emit(vault, 'MinInterestUpdated').withArgs(500);
 
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 3650, 30n * 86400n, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 3650, 30n * 86400n, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       await vault.connect(lender).fundLoan(0, { value: principal });
 
       const floor = (principal * 500n) / 10000n; // 0.05 ETH
@@ -1389,6 +1807,7 @@ describe('VouchVault', function () {
       const [owner, borrower, lender] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const principal = ethers.parseEther('1.0');
       const collateral = ethers.parseEther('2.0');
 
@@ -1396,9 +1815,12 @@ describe('VouchVault', function () {
       // Route the protocol fee away so the lender's receipt is easy to reason about.
       await vault.connect(owner).setProtocolFeeBps(0);
 
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 3650, 30n * 86400n, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 3650, 30n * 86400n, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       await vault.connect(lender).fundLoan(0, { value: principal });
 
       const floor = (principal * 500n) / 10000n; // 0.05 ETH
@@ -1419,6 +1841,7 @@ describe('VouchVault', function () {
       const [owner, borrower] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       await expect(vault.connect(owner).setMinInterestBps(10001)).to.be.revertedWith('Min interest exceeds max');
       await expect(vault.connect(borrower).setMinInterestBps(100)).to.be.reverted; // onlyOwner
     });
@@ -1429,11 +1852,15 @@ describe('VouchVault', function () {
       const [owner, borrower, lender] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const collateral = ethers.parseEther('2.0');
       const principal = ethers.parseEther('1.0');
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 500, 86400, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 500, 86400, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       return { vault, owner, borrower, lender, collateral, principal };
     }
 
@@ -1475,6 +1902,7 @@ describe('VouchVault', function () {
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const MockERC20 = await ethers.getContractFactory('MockERC20');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
 
       const totalSupply = ethers.parseUnits('1000', 18);
       const collateral = ethers.parseUnits('50', 18);
@@ -1483,6 +1911,14 @@ describe('VouchVault', function () {
 
       await token.transfer(borrower.address, collateral);
       await token.connect(borrower).approve(await vault.getAddress(), collateral);
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        await token.getAddress(),
+        ethers.ZeroAddress,
+      );
       await vault
         .connect(borrower)
         .createLoanWithERC20(
@@ -1494,6 +1930,9 @@ describe('VouchVault', function () {
           86400,
           7n * 86400n,
           8000,
+          10000,
+          ltvExpiry,
+          ltvSig,
         );
 
       const before = await token.balanceOf(borrower.address);
@@ -1512,6 +1951,7 @@ describe('VouchVault', function () {
       const [owner, borrower, lender] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       return { vault, owner, borrower, lender };
     }
 
@@ -1557,17 +1997,37 @@ describe('VouchVault', function () {
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const MockERC20 = await ethers.getContractFactory('MockERC20');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       await vault.setProtocolFeeBps(0);
 
       const token = await MockERC20.deploy('Mock', 'MOCK', 18, 0);
       const principal = ethers.parseUnits('100', 18);
       const collateral = ethers.parseEther('1.0');
       const durationSeconds = 30n * 86400n;
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        await token.getAddress(),
+      );
       await vault
         .connect(borrower)
-        .createLoan(await token.getAddress(), principal, 1000, durationSeconds, 7n * 86400n, 8000, {
-          value: collateral,
-        });
+        .createLoan(
+          await token.getAddress(),
+          principal,
+          1000,
+          durationSeconds,
+          7n * 86400n,
+          8000,
+          10000,
+          ltvExpiry,
+          ltvSig,
+          {
+            value: collateral,
+          },
+        );
       await token.mint(lender.address, principal);
       await token.connect(lender).approve(await vault.getAddress(), principal);
       await vault.connect(lender).fundLoanWithERC20(0, await token.getAddress(), principal);
@@ -1594,6 +2054,7 @@ describe('VouchVault', function () {
       const [owner, lender] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       await expect(vault.connect(lender).withdrawPayments(ethers.ZeroAddress)).to.be.revertedWith(
         'Nothing to withdraw',
       );
@@ -1603,6 +2064,7 @@ describe('VouchVault', function () {
       const [owner, borrower] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
 
       const RejectingLender = await ethers.getContractFactory('RejectingLender');
       const rejecter = await RejectingLender.deploy();
@@ -1612,9 +2074,12 @@ describe('VouchVault', function () {
       const collateral = ethers.parseEther('2.0');
 
       // Borrower opens an ETH-principal loan, funded by the rejecting contract.
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 500, 30n * 86400n, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 500, 30n * 86400n, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       await rejecter.fund(await vault.getAddress(), 0, { value: principal });
 
       // No time elapsed → no interest; totalDue == principal.
@@ -1637,15 +2102,26 @@ describe('VouchVault', function () {
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const FailableERC20 = await ethers.getContractFactory('FailableERC20');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
 
       const principal = ethers.parseUnits('100', 18);
       const collateral = ethers.parseEther('1.0');
       const token = await FailableERC20.deploy();
       const tokenAddr = await token.getAddress();
 
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        tokenAddr,
+      );
       await vault
         .connect(borrower)
-        .createLoan(tokenAddr, principal, 0, 30n * 86400n, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(tokenAddr, principal, 0, 30n * 86400n, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
 
       await token.mint(lender.address, principal);
       await token.connect(lender).approve(await vault.getAddress(), principal);
@@ -1679,11 +2155,15 @@ describe('VouchVault', function () {
       const [owner, borrower, anyone] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const collateral = ethers.parseEther('1');
       const fundWindow = 3n * 86400n; // 3 days
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, collateral, 0, 0, fundWindow, 8000, { value: collateral });
+        .createLoan(ethers.ZeroAddress, collateral, 0, 0, fundWindow, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       return { vault, borrower, anyone, collateral, fundWindow };
     }
 
@@ -1741,6 +2221,7 @@ describe('VouchVault', function () {
       const [owner, borrower, anyone] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
       // ETH/USD at $3200, 8 decimals (standard Chainlink)
       const ethFeed = await MockAgg.deploy(8, 3200n * 10n ** 8n);
@@ -1755,12 +2236,22 @@ describe('VouchVault', function () {
 
     it('can be expired within deadline when undercollateralized (price feeds set)', async function () {
       // HF = (0.001 ETH * $3200 * 80%) / (2 MOCK * $1000) = $2.56 / $2000 = 0.00128 — deeply unhealthy
-      const { vault, mockToken, borrower, anyone } = await deployForExpiryWithFeeds();
+      const { vault, mockToken, owner, borrower, anyone } = await deployForExpiryWithFeeds();
       const collateral = ethers.parseEther('0.001');
       const principal = ethers.parseUnits('2', 18);
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        await mockToken.getAddress(),
+      );
       await vault
         .connect(borrower)
-        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
 
       const balanceBefore = await ethers.provider.getBalance(borrower.address);
       const tx = await vault.connect(anyone).expireLoan(0);
@@ -1774,12 +2265,22 @@ describe('VouchVault', function () {
 
     it('reverts within deadline when loan is healthy (price feeds set)', async function () {
       // HF = (1 ETH * $3200 * 80%) / (2 MOCK * $1000) = $2560 / $2000 = 1.28 — healthy
-      const { vault, mockToken, borrower } = await deployForExpiryWithFeeds();
+      const { vault, mockToken, owner, borrower } = await deployForExpiryWithFeeds();
       const collateral = ethers.parseEther('1');
       const principal = ethers.parseUnits('2', 18);
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        await mockToken.getAddress(),
+      );
       await vault
         .connect(borrower)
-        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
 
       await expect(vault.expireLoan(0)).to.be.revertedWith('Loan cannot be expired yet');
     });
@@ -1790,6 +2291,7 @@ describe('VouchVault', function () {
       const [owner, lender, borrower] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
 
       const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
       // ETH/USD at $3200, 8 decimals (standard Chainlink)
@@ -1828,12 +2330,22 @@ describe('VouchVault', function () {
     });
 
     it('getHealthFactor reverts if the price feed reports a stale round', async function () {
-      const { vault, mockToken, ethFeed, lender, borrower } = await deployWithFeeds();
+      const { vault, mockToken, ethFeed, lender, borrower, owner } = await deployWithFeeds();
       const collateral = ethers.parseEther('1');
       const principal = ethers.parseUnits('2', 18);
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        await mockToken.getAddress(),
+      );
       await vault
         .connect(borrower)
-        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       await mockToken.transfer(lender.address, principal);
       await mockToken.connect(lender).approve(await vault.getAddress(), principal);
       await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
@@ -1844,12 +2356,22 @@ describe('VouchVault', function () {
     });
 
     it('getHealthFactor reverts if the price feed reports a future timestamp', async function () {
-      const { vault, mockToken, ethFeed, lender, borrower } = await deployWithFeeds();
+      const { vault, mockToken, ethFeed, lender, borrower, owner } = await deployWithFeeds();
       const collateral = ethers.parseEther('1');
       const principal = ethers.parseUnits('2', 18);
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        await mockToken.getAddress(),
+      );
       await vault
         .connect(borrower)
-        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       await mockToken.transfer(lender.address, principal);
       await mockToken.connect(lender).approve(await vault.getAddress(), principal);
       await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
@@ -1861,12 +2383,22 @@ describe('VouchVault', function () {
     });
 
     it('getHealthFactor reverts if the price feed reports decimals > 18', async function () {
-      const { vault, mockToken, ethFeed, lender, borrower } = await deployWithFeeds();
+      const { vault, mockToken, ethFeed, lender, borrower, owner } = await deployWithFeeds();
       const collateral = ethers.parseEther('1');
       const principal = ethers.parseUnits('2', 18);
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        await mockToken.getAddress(),
+      );
       await vault
         .connect(borrower)
-        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       await mockToken.transfer(lender.address, principal);
       await mockToken.connect(lender).approve(await vault.getAddress(), principal);
       await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
@@ -1881,15 +2413,34 @@ describe('VouchVault', function () {
       // collateral = 1 ETH = 1e18 wei, borrow = 2 MOCK tokens
       // healthFactor = (1e18 * 3200e18 * 8000 * 1e18) / (2e18 * 1000e18 * 10000)
       //              = (3200 * 8000 * 1e18) / (2000 * 10000) = 1.28e18
-      const { vault, mockToken, lender, borrower } = await deployWithFeeds();
+      const { vault, mockToken, lender, borrower, owner } = await deployWithFeeds();
 
       const collateral = ethers.parseEther('1');
       const principal = ethers.parseUnits('2', 18); // 2 MOCK tokens
       const thresholdBps = 8000;
 
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        await mockToken.getAddress(),
+      );
       await vault
         .connect(borrower)
-        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, thresholdBps, { value: collateral });
+        .createLoan(
+          await mockToken.getAddress(),
+          principal,
+          0,
+          0,
+          7n * 86400n,
+          thresholdBps,
+          10000,
+          ltvExpiry,
+          ltvSig,
+          { value: collateral },
+        );
 
       // Fund the loan
       await mockToken.transfer(lender.address, principal);
@@ -1904,26 +2455,46 @@ describe('VouchVault', function () {
     it('getHealthFactor works for unfunded loan using requestedPrincipalAmount', async function () {
       // ETH collateral $3200, MOCK principal $1000 each, threshold 8000 bps (80%)
       // HF = (1e18 * 3200e18 * 8000) / (2e18 * 1000e18 * 10000) = 1.28e18
-      const { vault, mockToken, borrower } = await deployWithFeeds();
+      const { vault, mockToken, borrower, owner } = await deployWithFeeds();
       const collateral = ethers.parseEther('1');
       const principal = ethers.parseUnits('2', 18);
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        await mockToken.getAddress(),
+      );
       await vault
         .connect(borrower)
-        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       const hf = await vault.getHealthFactor(0);
       expect(hf).to.equal(128n * 10n ** 16n); // 1.28e18
     });
 
     it('fundLoanWithERC20 reverts when loan is undercollateralized at funding time', async function () {
       // Collateral $100 ETH equivalent, borrow 2 MOCK at $1000 each => HF = 0.04 < 1
-      const { vault, mockToken, lender, borrower } = await deployWithFeeds();
+      const { vault, mockToken, lender, borrower, owner } = await deployWithFeeds();
       // ETH feed price = $3200, MOCK feed price = $1000 (set in deployWithFeeds)
       // Use tiny collateral and large principal to make HF < 1
       const collateral = ethers.parseEther('0.01'); // $32 collateral
       const principal = ethers.parseUnits('2', 18); // $2000 principal => HF=0.0128
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        await mockToken.getAddress(),
+      );
       await vault
         .connect(borrower)
-        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       await mockToken.transfer(lender.address, principal);
       await mockToken.connect(lender).approve(await vault.getAddress(), principal);
       await expect(
@@ -1934,24 +2505,37 @@ describe('VouchVault', function () {
     it('fundLoan reverts when loan is undercollateralized at funding time', async function () {
       // ETH collateral $3200, ETH principal $3200, threshold 8000 bps (80%)
       // collateral = 0.001 ETH = $3.20, principal = 1 ETH = $3200 => HF = 0.0008 < 1
-      const { vault, borrower, lender } = await deployWithFeeds();
+      const { vault, borrower, lender, owner } = await deployWithFeeds();
       const collateral = ethers.parseEther('0.001'); // $3.20 collateral
       const principal = ethers.parseEther('1'); // $3200 principal => HF << 1
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
       await vault
         .connect(borrower)
-        .createLoan(ethers.ZeroAddress, principal, 0, 0, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(ethers.ZeroAddress, principal, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       await expect(vault.connect(lender).fundLoan(0, { value: principal })).to.be.revertedWith(
         'Loan is undercollateralized',
       );
     });
 
     it('liquidate (ETH-principal entry) reverts when called on an ERC20-principal loan', async function () {
-      const { vault, mockToken, lender, borrower } = await deployWithFeeds();
+      const { vault, mockToken, lender, borrower, owner } = await deployWithFeeds();
       const collateral = ethers.parseEther('1');
       const principal = ethers.parseUnits('2', 18);
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        await mockToken.getAddress(),
+      );
       await vault
         .connect(borrower)
-        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       await mockToken.transfer(lender.address, principal);
       await mockToken.connect(lender).approve(await vault.getAddress(), principal);
       await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
@@ -1994,9 +2578,19 @@ describe('VouchVault', function () {
 
       // Borrower creates loan: 1 ETH collateral, 1000 USDC principal, threshold 9000 bps
       const collateralEth = ethers.parseEther('1');
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        usdcAddress,
+      );
       await vault
         .connect(borrower)
-        .createLoan(usdcAddress, principalUsdc, 0, 0, 7n * 86400n, 9000, { value: collateralEth });
+        .createLoan(usdcAddress, principalUsdc, 0, 0, 7n * 86400n, 9000, 10000, ltvExpiry, ltvSig, {
+          value: collateralEth,
+        });
 
       // Lender funds the loan (loan ID is 0 — first loan in this fixture)
       await vault.connect(lender).fundLoanWithERC20(0, usdcAddress, principalUsdc);
@@ -2022,9 +2616,19 @@ describe('VouchVault', function () {
       const collateral = ethers.parseEther('1'); // 1 ETH
       const principal = ethers.parseUnits('2', 18); // 2 MOCK
 
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        await mockToken.getAddress(),
+      );
       await vault
         .connect(borrower)
-        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral });
+        .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
       await mockToken.transfer(lender.address, principal);
       await mockToken.connect(lender).approve(await vault.getAddress(), principal);
       await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
@@ -2062,12 +2666,22 @@ describe('VouchVault', function () {
 
     describe('liquidate (ETH principal)', function () {
       it('reverts when called on an ERC20-principal loan', async function () {
-        const { vault, mockToken, lender, borrower } = await deployWithFeeds();
+        const { vault, mockToken, lender, borrower, owner } = await deployWithFeeds();
         const collateral = ethers.parseEther('1');
         const principal = ethers.parseUnits('2', 18);
+        const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+          vault,
+          owner,
+          borrower.address,
+          10000,
+          ethers.ZeroAddress,
+          await mockToken.getAddress(),
+        );
         await vault
           .connect(borrower)
-          .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, { value: collateral });
+          .createLoan(await mockToken.getAddress(), principal, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+            value: collateral,
+          });
         await mockToken.transfer(lender.address, principal);
         await mockToken.connect(lender).approve(await vault.getAddress(), principal);
         await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
@@ -2078,16 +2692,19 @@ describe('VouchVault', function () {
       });
 
       it('reverts on unfunded loan', async function () {
-        const { vault } = await deployWithFeeds();
+        const { vault, owner } = await deployWithFeeds();
         const collateral = ethers.parseEther('1');
-        await vault.createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, { value: collateral });
+        const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, owner.address, 10000);
+        await vault.createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
         await expect(vault.liquidate(0, ethers.ZeroAddress, { value: collateral })).to.be.revertedWith(
           'Loan is not funded',
         );
       });
 
       it('expired ETH-principal loan: liquidator pays debt, lender paid, excess collateral returned, LoanLiquidated emitted', async function () {
-        const { vault, ethFeed, lender, borrower } = await deployWithFeeds();
+        const { vault, ethFeed, lender, borrower, owner } = await deployWithFeeds();
         const [liquidator] = (await ethers.getSigners()).slice(3);
 
         // ETH-principal: collateral = 1.5 ETH, principal = 1 ETH, 30-day duration
@@ -2095,9 +2712,12 @@ describe('VouchVault', function () {
         const principal = ethers.parseEther('1');
         const duration = 30n * 86400n;
 
+        const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
         await vault
           .connect(borrower)
-          .createLoan(ethers.ZeroAddress, principal, 0, duration, 7n * 86400n, 8000, { value: collateral });
+          .createLoan(ethers.ZeroAddress, principal, 0, duration, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+            value: collateral,
+          });
         await vault.connect(lender).fundLoan(0, { value: principal });
 
         // Advance past duration then refresh feed so _getPrice doesn't revert on staleness
@@ -2141,10 +2761,13 @@ describe('VouchVault', function () {
       });
 
       it('reverts when wrong entry point used (ETH-principal loan)', async function () {
-        const { vault } = await deployWithFeeds();
+        const { vault, owner } = await deployWithFeeds();
         const collateral = ethers.parseEther('1');
         // ETH-principal loan
-        await vault.createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, { value: collateral });
+        const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, owner.address, 10000);
+        await vault.createLoan(ethers.ZeroAddress, collateral, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
         await expect(vault.liquidateWithERC20(0, collateral, ethers.ZeroAddress)).to.be.revertedWith(
           'Loan has ETH principal; use liquidate',
         );
@@ -2234,11 +2857,30 @@ describe('VouchVault', function () {
         const collateral = ethers.parseEther('1');
         const principal = ethers.parseUnits('2', 18);
         // 1000 bps (10%) APR, duration 365 days
+        const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+          vault,
+          owner,
+          borrower.address,
+          10000,
+          ethers.ZeroAddress,
+          await mockToken.getAddress(),
+        );
         await vault
           .connect(borrower)
-          .createLoan(await mockToken.getAddress(), principal, 1000, 365n * 86400n, 7n * 86400n, 8000, {
-            value: collateral,
-          });
+          .createLoan(
+            await mockToken.getAddress(),
+            principal,
+            1000,
+            365n * 86400n,
+            7n * 86400n,
+            8000,
+            10000,
+            ltvExpiry,
+            ltvSig,
+            {
+              value: collateral,
+            },
+          );
         await mockToken.transfer(lender.address, principal);
         await mockToken.connect(lender).approve(await vault.getAddress(), principal);
         await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
@@ -2340,16 +2982,35 @@ describe('VouchVault', function () {
       it('expired loan is liquidatable regardless of health factor', async function () {
         // durationSeconds = 30 days, no interest rate so debt stays at 2 MOCK
         // ETH at $3200 → HF = 1.28, healthy BUT expired after 30 days
-        const { vault, mockToken, ethFeed, mockFeed, lender, borrower } = await deployWithFeeds();
+        const { vault, mockToken, ethFeed, mockFeed, lender, borrower, owner } = await deployWithFeeds();
         const [liquidator] = (await ethers.getSigners()).slice(3);
 
         const collateral = ethers.parseEther('1');
         const principal = ethers.parseUnits('2', 18);
         const duration = 30n * 86400n;
 
+        const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+          vault,
+          owner,
+          borrower.address,
+          10000,
+          ethers.ZeroAddress,
+          await mockToken.getAddress(),
+        );
         await vault
           .connect(borrower)
-          .createLoan(await mockToken.getAddress(), principal, 0, duration, 7n * 86400n, 8000, { value: collateral });
+          .createLoan(
+            await mockToken.getAddress(),
+            principal,
+            0,
+            duration,
+            7n * 86400n,
+            8000,
+            10000,
+            ltvExpiry,
+            ltvSig,
+            { value: collateral },
+          );
         await mockToken.transfer(lender.address, principal);
         await mockToken.connect(lender).approve(await vault.getAddress(), principal);
         await vault.connect(lender).fundLoanWithERC20(0, await mockToken.getAddress(), principal);
@@ -2440,9 +3101,19 @@ describe('VouchVault', function () {
         await usdc.mint(lender.address, principalUsdc);
         await usdc.connect(lender).approve(await vault.getAddress(), principalUsdc);
 
+        const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+          vault,
+          owner,
+          borrower.address,
+          10000,
+          ethers.ZeroAddress,
+          await usdc.getAddress(),
+        );
         await vault
           .connect(borrower)
-          .createLoan(await usdc.getAddress(), principalUsdc, 0, 0, 7n * 86400n, 8000, { value: collateralEth });
+          .createLoan(await usdc.getAddress(), principalUsdc, 0, 0, 7n * 86400n, 8000, 10000, ltvExpiry, ltvSig, {
+            value: collateralEth,
+          });
         await vault.connect(lender).fundLoanWithERC20(0, await usdc.getAddress(), principalUsdc);
 
         // Drop ETH to $1100
@@ -2494,6 +3165,7 @@ describe('VouchVault', function () {
       const [owner, lender, borrower] = await ethers.getSigners();
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
       // ETH price feed required by acceptLendOffer → _checkCollateralValue → _getPrice
       const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
       const ethFeed = await MockAgg.deploy(8, 3200n * 10n ** 8n); // ETH = $3200
@@ -2667,11 +3339,9 @@ describe('VouchVault', function () {
       const TRUSTED_RATIO = 12000; // 120%
       const SCORE_MIN = 700;
       const MAX_LTV = 8334; // ceil(10000*10000/12000)
-      await vault
-        .connect(lender)
-        .createLendOffer(20000, TRUSTED_RATIO, SCORE_MIN, MAX_LTV, RATE, DURATION, WINDOW, {
-          value: ethers.parseEther('1.0'),
-        });
+      await vault.connect(lender).createLendOffer(20000, TRUSTED_RATIO, SCORE_MIN, MAX_LTV, RATE, DURATION, WINDOW, {
+        value: ethers.parseEther('1.0'),
+      });
 
       // Sign attestation: keccak256(borrower, score, expiry, vaultAddress, chainId)
       const score = 800;
@@ -2691,14 +3361,699 @@ describe('VouchVault', function () {
       await expect(tx).to.emit(vault, 'LendOfferAccepted').withArgs(1, 0, borrower.address);
 
       // Confirm 1.2 ETH would have been rejected at base 200% ratio
-      await vault
-        .connect(lender)
-        .createLendOffer(20000, TRUSTED_RATIO, SCORE_MIN, MAX_LTV, RATE, DURATION, WINDOW, {
-          value: ethers.parseEther('1.0'),
-        });
+      await vault.connect(lender).createLendOffer(20000, TRUSTED_RATIO, SCORE_MIN, MAX_LTV, RATE, DURATION, WINDOW, {
+        value: ethers.parseEther('1.0'),
+      });
       await expect(vault.connect(borrower).acceptLendOffer(2, 0, 0, '0x', { value: collateral })).to.be.revertedWith(
         'Collateral value below required ratio',
       );
+    });
+  });
+
+  describe('signedOrders', function () {
+    const RATIO = 16000,
+      TRUSTED = 0,
+      SCORE_THRESH = 0,
+      LTV = 6500,
+      RATE = 800;
+    const DURATION = 30n * 86400n;
+
+    async function deployFixture() {
+      const [owner, lender, borrower] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const ethFeed = await MockAgg.deploy(8, 3200n * 10n ** 8n);
+      await vault.connect(owner).setPriceFeed(ethers.ZeroAddress, await ethFeed.getAddress(), 18);
+      return { vault, owner, lender, borrower };
+    }
+
+    it('hashLoanRequest matches ethers TypedDataEncoder', async function () {
+      const { vault, borrower } = await deployFixture();
+      const net = await ethers.provider.getNetwork();
+      const domain = { name: 'Vouch', version: '1', chainId: net.chainId, verifyingContract: await vault.getAddress() };
+      const types = {
+        LoanRequest: [
+          { name: 'borrower', type: 'address' },
+          { name: 'collateralToken', type: 'address' },
+          { name: 'collateralAmount', type: 'uint256' },
+          { name: 'principalToken', type: 'address' },
+          { name: 'principalAmount', type: 'uint256' },
+          { name: 'interestRateBps', type: 'uint16' },
+          { name: 'durationSeconds', type: 'uint256' },
+          { name: 'maxLtvBps', type: 'uint16' },
+          { name: 'nonce', type: 'uint256' },
+          { name: 'deadline', type: 'uint256' },
+        ],
+      };
+      const req = {
+        borrower: borrower.address,
+        collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: ethers.parseEther('2'),
+        principalToken: ethers.ZeroAddress,
+        principalAmount: ethers.parseEther('1'),
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 7n,
+        deadline: 9999999999n,
+      };
+      const expected = ethers.TypedDataEncoder.hash(domain, types, req);
+      expect(await vault.hashLoanRequest(req)).to.equal(expected);
+    });
+
+    async function signLoanRequest(vault: any, signer: any, req: any) {
+      const net = await ethers.provider.getNetwork();
+      const domain = { name: 'Vouch', version: '1', chainId: net.chainId, verifyingContract: await vault.getAddress() };
+      const types = {
+        LoanRequest: [
+          { name: 'borrower', type: 'address' },
+          { name: 'collateralToken', type: 'address' },
+          { name: 'collateralAmount', type: 'uint256' },
+          { name: 'principalToken', type: 'address' },
+          { name: 'principalAmount', type: 'uint256' },
+          { name: 'interestRateBps', type: 'uint16' },
+          { name: 'durationSeconds', type: 'uint256' },
+          { name: 'maxLtvBps', type: 'uint16' },
+          { name: 'nonce', type: 'uint256' },
+          { name: 'deadline', type: 'uint256' },
+        ],
+      };
+      return signer.signTypedData(domain, types, req);
+    }
+
+    it('fillLoanRequest: lender fills ERC20-collateral / ETH-principal request', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      // Collateral token = mock WBTC at $64000, 8 decimals
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const wbtc = await Mock.deploy('WBTC', 'WBTC', 8, 0);
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const wbtcFeed = await MockAgg.deploy(8, 64000n * 10n ** 8n);
+      await vault.connect(owner).setPriceFeed(await wbtc.getAddress(), await wbtcFeed.getAddress(), 8);
+
+      const principal = ethers.parseEther('1'); // $3200
+      // need collateral USD >= principal * 1.6 = $5120 -> in WBTC: 5120/64000 = 0.08 WBTC
+      const collateral = 8n * 10n ** 6n; // 0.08 WBTC (8 decimals)
+      await wbtc.mint(borrower.address, collateral);
+      await wbtc.connect(borrower).approve(await vault.getAddress(), collateral);
+
+      const req = {
+        borrower: borrower.address,
+        collateralToken: await wbtc.getAddress(),
+        collateralAmount: collateral,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: principal,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 1n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLoanRequest(vault, borrower, req);
+      const digest = await vault.hashLoanRequest(req);
+
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: principal }))
+        .to.emit(vault, 'SignedLoanRequestFilled')
+        .withArgs(
+          0,
+          digest,
+          borrower.address,
+          lender.address,
+          await wbtc.getAddress(),
+          collateral,
+          ethers.ZeroAddress,
+          principal,
+          anyValue,
+        );
+
+      const loan = await vault.loans(0);
+      expect(loan.borrower).to.equal(borrower.address);
+      expect(loan.lender).to.equal(lender.address);
+      expect(await vault.consumedSignatures(digest)).to.equal(true);
+    });
+
+    it('fillLoanRequest: reverts on wrong signer', async function () {
+      const { vault, lender, borrower, owner } = await deployFixture();
+      const req = {
+        borrower: borrower.address,
+        collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: 1n,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: 1n,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 1n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLoanRequest(vault, owner, req); // wrong signer
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n })).to.be.revertedWith(
+        'Invalid signature',
+      );
+    });
+
+    it('fillLoanRequest: reverts when already consumed', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const wbtc = await Mock.deploy('WBTC', 'WBTC', 8, 0);
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const wbtcFeed = await MockAgg.deploy(8, 64000n * 10n ** 8n);
+      await vault.connect(owner).setPriceFeed(await wbtc.getAddress(), await wbtcFeed.getAddress(), 8);
+      const principal = ethers.parseEther('1');
+      const collateral = 8n * 10n ** 6n;
+      await wbtc.mint(borrower.address, collateral * 2n);
+      await wbtc.connect(borrower).approve(await vault.getAddress(), collateral * 2n);
+      const req = {
+        borrower: borrower.address,
+        collateralToken: await wbtc.getAddress(),
+        collateralAmount: collateral,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: principal,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 1n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLoanRequest(vault, borrower, req);
+      await vault.connect(lender).fillLoanRequest(req, sig, { value: principal });
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: principal })).to.be.revertedWith(
+        'Signature already used',
+      );
+    });
+
+    it('fillLoanRequest: reverts on ETH collateral (address(0))', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const req = {
+        borrower: borrower.address,
+        collateralToken: ethers.ZeroAddress,
+        collateralAmount: 1n,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: 1n,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 1n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLoanRequest(vault, borrower, req);
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n })).to.be.revertedWith(
+        'Collateral must be ERC20',
+      );
+    });
+
+    it('fillLoanRequest: reverts when collateral is above broken LTV threshold but below correct ratio', async function () {
+      // This test catches the inverted-formula bug. Setup:
+      //   principal = 1 ETH @ $3200 -> principalUsd = $3200
+      //   maxLtvBps = 6500 (65% LTV)
+      //   Correct min collateral: $3200 * (10000/6500) = $3200 * 1.53846 ~= $4923
+      //   Broken min collateral:  $3200 * (6500/10000) = $3200 * 0.65   = $2080
+      //   Test collateral: 0.055 WBTC @ $64000 = $3520
+      //   $3520 > $2080 (would pass broken check) but $3520 < $4923 (must revert with correct check)
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const wbtc = await Mock.deploy('WBTC', 'WBTC', 8, 0);
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const wbtcFeed = await MockAgg.deploy(8, 64000n * 10n ** 8n);
+      await vault.connect(owner).setPriceFeed(await wbtc.getAddress(), await wbtcFeed.getAddress(), 8);
+
+      const principal = ethers.parseEther('1'); // $3200
+      // 0.055 WBTC = 5_500_000 satoshis (8 decimals); worth $3520 — above broken floor ($2080) but below correct floor (~$4923)
+      const collateral = 55n * 10n ** 5n; // 0.055 WBTC
+      await wbtc.mint(borrower.address, collateral);
+      await wbtc.connect(borrower).approve(await vault.getAddress(), collateral);
+
+      const req = {
+        borrower: borrower.address,
+        collateralToken: await wbtc.getAddress(),
+        collateralAmount: collateral,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: principal,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 2n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLoanRequest(vault, borrower, req);
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: principal })).to.be.revertedWith(
+        'Collateral value below required ratio',
+      );
+    });
+
+    it('fillLoanRequest: reverts when principalAmount is zero', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const req = {
+        borrower: borrower.address,
+        collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: 1n,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: 0n,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 1n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLoanRequest(vault, borrower, req);
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 0n })).to.be.revertedWith(
+        'Principal must be > 0',
+      );
+    });
+
+    // --- signLendOffer helper ---
+    async function signLendOffer(vault: any, signer: any, offer: any) {
+      const net = await ethers.provider.getNetwork();
+      const domain = { name: 'Vouch', version: '1', chainId: net.chainId, verifyingContract: await vault.getAddress() };
+      const types = {
+        LendOffer: [
+          { name: 'lender', type: 'address' },
+          { name: 'principalToken', type: 'address' },
+          { name: 'principalAmount', type: 'uint256' },
+          { name: 'collateralRatioBps', type: 'uint16' },
+          { name: 'trustedRatioBps', type: 'uint16' },
+          { name: 'scoreThreshold', type: 'uint16' },
+          { name: 'maxLtvBps', type: 'uint16' },
+          { name: 'interestRateBps', type: 'uint16' },
+          { name: 'durationSeconds', type: 'uint256' },
+          { name: 'nonce', type: 'uint256' },
+          { name: 'deadline', type: 'uint256' },
+        ],
+      };
+      return signer.signTypedData(domain, types, offer);
+    }
+
+    it('fillLendOffer: borrower fills ERC20-principal / ETH-collateral offer', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const usdcFeed = await MockAgg.deploy(8, 1n * 10n ** 8n); // $1
+      await vault.connect(owner).setPriceFeed(await usdc.getAddress(), await usdcFeed.getAddress(), 6);
+
+      const principal = 3200n * 10n ** 6n; // 3200 USDC = $3200
+      await usdc.mint(lender.address, principal);
+      await usdc.connect(lender).approve(await vault.getAddress(), principal);
+
+      // ETH collateral supplied by borrower; ratio 160% -> need $5120 -> 1.6 ETH at $3200
+      const collateral = ethers.parseEther('1.6');
+      const offer = {
+        lender: lender.address,
+        principalToken: await usdc.getAddress(),
+        principalAmount: principal,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 1n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLendOffer(vault, lender, offer);
+      const digest = await vault.hashLendOffer(offer);
+
+      await expect(vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: collateral }))
+        .to.emit(vault, 'SignedLendOfferFilled')
+        .withArgs(
+          0,
+          digest,
+          lender.address,
+          borrower.address,
+          await usdc.getAddress(),
+          principal,
+          ethers.ZeroAddress,
+          collateral,
+          anyValue,
+        );
+
+      const loan = await vault.loans(0);
+      expect(loan.lender).to.equal(lender.address);
+      expect(loan.borrower).to.equal(borrower.address);
+      expect(await vault.consumedSignatures(digest)).to.equal(true);
+    });
+
+    it('fillLendOffer: borrower fills ERC20-principal / ERC20-collateral offer', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const weth = await Mock.deploy('WETH', 'WETH', 18, 0);
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const usdcFeed = await MockAgg.deploy(8, 1n * 10n ** 8n); // USDC = $1
+      const wethFeed = await MockAgg.deploy(8, 2000n * 10n ** 8n); // WETH = $2000
+      await vault.connect(owner).setPriceFeed(await usdc.getAddress(), await usdcFeed.getAddress(), 6);
+      await vault.connect(owner).setPriceFeed(await weth.getAddress(), await wethFeed.getAddress(), 18);
+
+      // principal = 1000 USDC = $1000
+      // ratio 160% -> need collateral USD >= $1600 -> 0.8 WETH at $2000
+      const principal = 1000n * 10n ** 6n;
+      const collateralAmount = ethers.parseEther('0.8'); // 0.8 WETH = $1600
+
+      await usdc.mint(lender.address, principal);
+      await usdc.connect(lender).approve(await vault.getAddress(), principal);
+      await weth.mint(borrower.address, collateralAmount);
+      await weth.connect(borrower).approve(await vault.getAddress(), collateralAmount);
+
+      const offer = {
+        lender: lender.address,
+        principalToken: await usdc.getAddress(),
+        principalAmount: principal,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 2n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLendOffer(vault, lender, offer);
+      const digest = await vault.hashLendOffer(offer);
+
+      await expect(vault.connect(borrower).fillLendOffer(offer, await weth.getAddress(), collateralAmount, sig))
+        .to.emit(vault, 'SignedLendOfferFilled')
+        .withArgs(
+          0,
+          digest,
+          lender.address,
+          borrower.address,
+          await usdc.getAddress(),
+          principal,
+          await weth.getAddress(),
+          collateralAmount,
+          anyValue,
+        );
+
+      const loan = await vault.loans(0);
+      expect(loan.lender).to.equal(lender.address);
+      expect(loan.borrower).to.equal(borrower.address);
+      expect(loan.collateralToken).to.equal(await weth.getAddress());
+      expect(loan.collateralAmount).to.equal(collateralAmount);
+      expect(await vault.consumedSignatures(digest)).to.equal(true);
+    });
+
+    it('fillLendOffer: reverts on ETH principal (address(0))', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const offer = {
+        lender: lender.address,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: 1n,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 1n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLendOffer(vault, lender, offer);
+      await expect(
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: 1n }),
+      ).to.be.revertedWith('Principal must be ERC20');
+    });
+
+    it('cancelSignedLoanRequest: borrower cancels, then fill reverts', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const req = {
+        borrower: borrower.address,
+        collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: 1n,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: 1n,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 1n,
+        deadline: 9999999999n,
+      };
+      const digest = await vault.hashLoanRequest(req);
+      await expect(vault.connect(borrower).cancelSignedLoanRequest(req))
+        .to.emit(vault, 'SignedLoanRequestCancelled')
+        .withArgs(digest, borrower.address);
+      const sig = await signLoanRequest(vault, borrower, req);
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n })).to.be.revertedWith(
+        'Signature already used',
+      );
+    });
+
+    it('cancelSignedLoanRequest: reverts if caller is not borrower', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const req = {
+        borrower: borrower.address,
+        collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: 1n,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: 1n,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 1n,
+        deadline: 9999999999n,
+      };
+      await expect(vault.connect(lender).cancelSignedLoanRequest(req)).to.be.revertedWith('Not signer');
+    });
+
+    it('fillLoanRequest: reverts on expired deadline', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const latestBlock = await ethers.provider.getBlock('latest');
+      const pastDeadline = BigInt(latestBlock!.timestamp - 1);
+      const req = {
+        borrower: borrower.address,
+        collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: 1n,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: 1n,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 10n,
+        deadline: pastDeadline,
+      };
+      const sig = await signLoanRequest(vault, borrower, req);
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n })).to.be.revertedWith(
+        'Request expired',
+      );
+    });
+
+    it('fillLoanRequest: lender fills ERC20-collateral / ERC20-principal request', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const wbtc = await Mock.deploy('WBTC', 'WBTC', 8, 0);
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const wbtcFeed = await MockAgg.deploy(8, 64000n * 10n ** 8n); // WBTC = $64000
+      const usdcFeed = await MockAgg.deploy(8, 1n * 10n ** 8n); // USDC = $1
+      await vault.connect(owner).setPriceFeed(await wbtc.getAddress(), await wbtcFeed.getAddress(), 8);
+      await vault.connect(owner).setPriceFeed(await usdc.getAddress(), await usdcFeed.getAddress(), 6);
+
+      // principal = 3200 USDC = $3200; collateralRatio ~153.8% at LTV 65%
+      // min collateral: $3200 * (10000/6500) ~= $4923 -> 0.077 WBTC at $64000
+      const principal = 3200n * 10n ** 6n;
+      const collateral = 8n * 10n ** 6n; // 0.08 WBTC = $5120 > $4923
+
+      await wbtc.mint(borrower.address, collateral);
+      await wbtc.connect(borrower).approve(await vault.getAddress(), collateral);
+      await usdc.mint(lender.address, principal);
+      await usdc.connect(lender).approve(await vault.getAddress(), principal);
+
+      const req = {
+        borrower: borrower.address,
+        collateralToken: await wbtc.getAddress(),
+        collateralAmount: collateral,
+        principalToken: await usdc.getAddress(),
+        principalAmount: principal,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 11n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLoanRequest(vault, borrower, req);
+      const digest = await vault.hashLoanRequest(req);
+
+      await expect(vault.connect(lender).fillLoanRequest(req, sig))
+        .to.emit(vault, 'SignedLoanRequestFilled')
+        .withArgs(
+          0,
+          digest,
+          borrower.address,
+          lender.address,
+          await wbtc.getAddress(),
+          collateral,
+          await usdc.getAddress(),
+          principal,
+          anyValue,
+        );
+
+      const loan = await vault.loans(0);
+      expect(loan.borrower).to.equal(borrower.address);
+      expect(loan.lender).to.equal(lender.address);
+      expect(loan.requestedPrincipalToken).to.equal(await usdc.getAddress());
+      expect(await vault.consumedSignatures(digest)).to.equal(true);
+    });
+
+    it('fillLendOffer: reverts on wrong signer', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const offer = {
+        lender: lender.address,
+        principalToken: await usdc.getAddress(),
+        principalAmount: 1000n * 10n ** 6n,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 10n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLendOffer(vault, owner, offer); // wrong signer
+      await expect(
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: ethers.parseEther('1') }),
+      ).to.be.revertedWith('Invalid signature');
+    });
+
+    it('fillLendOffer: reverts when already consumed', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const usdcFeed = await MockAgg.deploy(8, 1n * 10n ** 8n);
+      await vault.connect(owner).setPriceFeed(await usdc.getAddress(), await usdcFeed.getAddress(), 6);
+
+      // 1600 USDC = $1600; 160% ratio -> need $2560 -> 0.8 ETH at $3200
+      const principal = 1600n * 10n ** 6n;
+      const collateral = ethers.parseEther('0.8');
+      await usdc.mint(lender.address, principal * 2n);
+      await usdc.connect(lender).approve(await vault.getAddress(), principal * 2n);
+
+      const offer = {
+        lender: lender.address,
+        principalToken: await usdc.getAddress(),
+        principalAmount: principal,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 11n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLendOffer(vault, lender, offer);
+      await vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: collateral });
+      await expect(
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: collateral }),
+      ).to.be.revertedWith('Signature already used');
+    });
+
+    it('fillLendOffer: reverts on expired deadline', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const latestBlock = await ethers.provider.getBlock('latest');
+      const pastDeadline = BigInt(latestBlock!.timestamp - 1);
+      const offer = {
+        lender: lender.address,
+        principalToken: await usdc.getAddress(),
+        principalAmount: 1000n * 10n ** 6n,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 12n,
+        deadline: pastDeadline,
+      };
+      const sig = await signLendOffer(vault, lender, offer);
+      await expect(
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: ethers.parseEther('1') }),
+      ).to.be.revertedWith('Offer expired');
+    });
+
+    it('fillLendOffer: reverts when collateral below required ratio', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const usdcFeed = await MockAgg.deploy(8, 1n * 10n ** 8n);
+      await vault.connect(owner).setPriceFeed(await usdc.getAddress(), await usdcFeed.getAddress(), 6);
+
+      // 3200 USDC = $3200; 160% ratio -> need $5120 -> 1.6 ETH at $3200
+      // Supply only 1.0 ETH = $3200 < $5120
+      const principal = 3200n * 10n ** 6n;
+      const insufficientCollateral = ethers.parseEther('1.0'); // $3200 < $5120 required
+      await usdc.mint(lender.address, principal);
+      await usdc.connect(lender).approve(await vault.getAddress(), principal);
+
+      const offer = {
+        lender: lender.address,
+        principalToken: await usdc.getAddress(),
+        principalAmount: principal,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 13n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLendOffer(vault, lender, offer);
+      await expect(
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: insufficientCollateral }),
+      ).to.be.revertedWith('Collateral value below required ratio');
+    });
+
+    it('cancelSignedLendOffer: lender cancels, then fill reverts', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const offer = {
+        lender: lender.address,
+        principalToken: await usdc.getAddress(),
+        principalAmount: 1000n * 10n ** 6n,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 20n,
+        deadline: 9999999999n,
+      };
+      const digest = await vault.hashLendOffer(offer);
+      await expect(vault.connect(lender).cancelSignedLendOffer(offer))
+        .to.emit(vault, 'SignedLendOfferCancelled')
+        .withArgs(digest, lender.address);
+      const sig = await signLendOffer(vault, lender, offer);
+      await expect(
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: ethers.parseEther('1') }),
+      ).to.be.revertedWith('Signature already used');
+    });
+
+    it('cancelSignedLendOffer: reverts if caller is not lender', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const offer = {
+        lender: lender.address,
+        principalToken: await usdc.getAddress(),
+        principalAmount: 1000n * 10n ** 6n,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 21n,
+        deadline: 9999999999n,
+      };
+      await expect(vault.connect(borrower).cancelSignedLendOffer(offer)).to.be.revertedWith('Not signer');
     });
   });
 });

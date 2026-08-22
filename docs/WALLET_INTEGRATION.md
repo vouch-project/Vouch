@@ -177,6 +177,55 @@ await getAppKit()?.disconnect();
 
 ---
 
+## Gasless signed orders (EIP-712)
+
+Borrowers and lenders can publish a loan **off-chain** by signing an EIP-712 order instead of sending a transaction. The counterparty later fills it on-chain in a single call. Because the signer's committed asset is pulled at fill time, that asset must be an **ERC20** (never native ETH); the counterparty supplies the other leg (ETH or ERC20).
+
+The domain is shared with the API and the contract:
+
+```ts
+// apps/web/src/lib/wallet/signedOrders.ts
+export const EIP712_DOMAIN_META = { name: 'Vouch', version: '1' } as const;
+// chainId + verifyingContract (vault proxy address) are added at signing time
+```
+
+**Signer flow (approve → sign → POST):**
+
+```ts
+import {
+  ensureVaultAllowance,
+  generateNonce,
+  signLoanRequest,
+  type SignedLoanRequest,
+} from '$lib/wallet/signedOrders';
+import { postSignedRequest } from '$api/signedOrders';
+
+const req: SignedLoanRequest = { /* borrower, ERC20 collateral, principal, terms, */
+  nonce: generateNonce(),
+  deadline: BigInt(Math.floor(Date.now() / 1000) + fundWindowSeconds),
+};
+
+// 1. Approve the vault to pull the committed ERC20 (once per allowance).
+await ensureVaultAllowance(req.collateralToken, req.collateralAmount);
+// 2. Sign the typed data (no gas). Returns the signature + the on-chain digest.
+const { signature } = await signLoanRequest(req);
+// 3. Publish to the API (amounts/nonce as strings; bps/duration/deadline as numbers).
+await postSignedRequest({ /* …wire fields…, */ signature, networkId, contractAddress });
+```
+
+Lend offers mirror this with `signLendOffer` / `postSignedOffer` (the lender's committed asset is the ERC20 **principal**).
+
+**Filler flow (marketplace):** the counterparty reconstructs the *exact* signed struct — resolving token ids to addresses (ETH → `ethers.ZeroAddress`), the Postgres interval to `durationSeconds`, and the ISO deadline to unix seconds — then calls:
+
+```ts
+import { fillLoanRequest, fillLendOffer } from '$lib/wallet/signedOrders';
+
+await fillLoanRequest(req, signature);                       // lender supplies principal
+await fillLendOffer(offer, requiredCollateral, signature);   // borrower posts collateral
+```
+
+Any mismatch in the rebuilt struct breaks the on-chain ECDSA verification, so the field order and value types must match what was signed. Both helpers auto-approve an ERC20 leg or attach `{ value }` for an ETH leg, then parse the `loanId` from the fill receipt. A signer can revoke an unfilled order on-chain with `cancelSignedLoanRequest` / `cancelSignedLendOffer`.
+
 ---
 
 ## Adding a new network

@@ -2,6 +2,7 @@ import type { VouchVault } from '@vouch/contracts';
 import { VouchVault__factory } from '@vouch/contracts';
 import { ethers } from 'ethers';
 import type { Token } from '../../api/chain';
+import type { LtvAttestation } from '../loans/creditScore';
 import { chainInfo } from '../stores/chainInfo.svelte';
 
 export const getVouchVaultContract = async (): Promise<VouchVault> => {
@@ -15,7 +16,10 @@ export const getVouchVaultContract = async (): Promise<VouchVault> => {
   return VouchVault__factory.connect(chainInfo.contractAddress, signer);
 };
 
-const isNativeToken = (token: Token): boolean => !token.address || token.address === ethers.ZeroAddress;
+export const isNativeTokenAddress = (address: string): boolean =>
+  !address || address === ethers.ZeroAddress;
+
+const isNativeToken = (token: Token): boolean => isNativeTokenAddress(token.address);
 
 const createEthLoan = async (
   contract: VouchVault,
@@ -26,6 +30,7 @@ const createEthLoan = async (
   durationSeconds: number,
   fundWindowSeconds: number,
   liquidationThresholdBps: number,
+  attestation: LtvAttestation,
 ): Promise<ethers.TransactionResponse> => {
   const value = ethers.parseEther(collateralAmount);
   const principalTokenAddress = isNativeToken(principalToken) ? ethers.ZeroAddress : principalToken.address;
@@ -39,11 +44,14 @@ const createEthLoan = async (
     durationSeconds,
     fundWindowSeconds,
     liquidationThresholdBps,
+    attestation.maxLtvBps,
+    attestation.expiry,
+    attestation.sig,
     { value },
   );
 };
 
-const ERC20_ABI = [
+export const ERC20_ABI = [
   'function approve(address spender, uint256 amount) returns (bool)',
   'function allowance(address owner, address spender) view returns (uint256)',
 ];
@@ -58,6 +66,7 @@ const createErc20Loan = async (
   durationSeconds: number,
   fundWindowSeconds: number,
   liquidationThresholdBps: number,
+  attestation: LtvAttestation,
 ): Promise<ethers.TransactionResponse> => {
   const amount = ethers.parseUnits(collateralAmount, token.decimals ?? 18);
 
@@ -81,6 +90,9 @@ const createErc20Loan = async (
     durationSeconds,
     fundWindowSeconds,
     liquidationThresholdBps,
+    attestation.maxLtvBps,
+    attestation.expiry,
+    attestation.sig,
   );
 };
 
@@ -98,6 +110,7 @@ export const createLoan = async (
   durationSeconds: number,
   fundWindowSeconds: number,
   liquidationThresholdBps: number,
+  attestation: LtvAttestation,
 ): Promise<CreateLoanResult> => {
   const contract = await getVouchVaultContract();
 
@@ -111,6 +124,7 @@ export const createLoan = async (
         durationSeconds,
         fundWindowSeconds,
         liquidationThresholdBps,
+        attestation,
       )
     : createErc20Loan(
         contract,
@@ -122,6 +136,7 @@ export const createLoan = async (
         durationSeconds,
         fundWindowSeconds,
         liquidationThresholdBps,
+        attestation,
       ));
 
   const receipt = await tx.wait();
