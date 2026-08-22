@@ -5,8 +5,8 @@
   import TokenAutocomplete from '$lib/components/ui/TokenAutocomplete.svelte';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
-  import { createLendOffer, isNativeTokenAddress } from '$lib/wallet/vouchVault';
   import { ensureVaultAllowance, generateNonce, signLendOffer, type SignedLendOffer } from '$lib/wallet/signedOrders';
+  import { createLendOffer, isNativeTokenAddress } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Loader2, Sparkles, Wallet } from '@lucide/svelte';
   import { ethers } from 'ethers';
@@ -21,16 +21,12 @@
   let acceptWindowDays = $state('7');
 
   let submitting = $state(false);
+  let status = $state<string | null>(null);
   let errorMsg = $state<string | null>(null);
-
-  // Gasless (off-chain signed offer) state
-  let gaslessSubmitting = $state(false);
-  let gaslessStatus = $state<string | null>(null);
-  let gaslessCollateralSymbol = $state('ETH');
 
   const tokens = $derived(chainInfo.tokens ?? []);
   const principalToken = $derived(tokens.find((t) => t.symbol === principalSymbol) ?? null);
-  const principalIsErc20 = $derived(!!principalToken && !isNativeTokenAddress(principalToken.address));
+  const principalIsErc20 = $derived(!!principalToken && !isNativeTokenAddress(principalToken.address ?? ''));
 
   const principalUsd = $derived(
     (parseFloat(principalAmount) || 0) * tokenPrices.getTokenMeta(principalSymbol).priceUsd,
@@ -98,40 +94,6 @@
     'border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring transition w-full bg-background';
   const sectionClass = 'flex flex-col gap-3 p-4 rounded-lg border border-border/60 bg-muted/20';
 
-  const handleSubmit = async () => {
-    if (!principalToken) return;
-    submitting = true;
-    errorMsg = null;
-    try {
-      await createLendOffer(
-        principalToken,
-        principalAmount,
-        collateralRatioBps,
-        trustedRatioBps,
-        scoreThresholdNum,
-        maxLtvBps,
-        rateBps,
-        durationSeconds,
-        acceptWindowSeconds,
-      );
-    } catch (e) {
-      if (e instanceof Error) {
-        const err = e as { code?: unknown; reason?: unknown };
-        if (err.code === 'ACTION_REJECTED') {
-          errorMsg = null;
-        } else if (typeof err.reason === 'string' && err.reason) {
-          errorMsg = err.reason;
-        } else {
-          errorMsg = e.message.replace(/^[\w-]+:\s*/, '') || 'Transaction failed';
-        }
-      } else {
-        errorMsg = 'Transaction failed';
-      }
-    } finally {
-      submitting = false;
-    }
-  };
-
   /** Map a wallet/API error to a user-facing message (distinguishes user-rejection & API 400). */
   const orderErrorMessage = (e: unknown, fallback: string): string => {
     if (e && typeof e === 'object') {
@@ -151,77 +113,74 @@
     return fallback;
   };
 
-  // ── Gasless (off-chain signed offer) ────────────────────────────────────────
-  // The lender pre-approves ERC-20 principal and signs the offer; a borrower later
-  // fills it on-chain, posting the committed collateral token (or ETH). ETH principal
-  // is not supported off-chain.
-  const handleGaslessOffer = async () => {
+  const handleSubmit = async () => {
     if (!principalToken) return;
-    if (isNativeTokenAddress(principalToken.address)) {
-      errorMsg = 'Gasless offers require an ERC-20 principal token (ETH principal is not supported off-chain).';
-      return;
-    }
     if (!wallet.address || wallet.networkId == null || !chainInfo.contractAddress) {
-      errorMsg = 'Connect your wallet to create a gasless offer.';
+      errorMsg = 'Connect your wallet to create an offer.';
       return;
     }
-    const collateralToken = tokens.find((t) => t.symbol === gaslessCollateralSymbol) ?? null;
-    if (!collateralToken) {
-      errorMsg = 'Select a collateral token for the gasless offer.';
-      return;
-    }
-
-    gaslessSubmitting = true;
+    submitting = true;
     errorMsg = null;
-    gaslessStatus = null;
+    status = null;
     try {
-      const principalParsed = ethers.parseUnits(principalAmount, principalToken.decimals ?? 18);
-      const collateralTokenAddress = isNativeTokenAddress(collateralToken.address)
-        ? ethers.ZeroAddress
-        : collateralToken.address;
-      const nonce = generateNonce();
-      const deadline = Math.floor(Date.now() / 1000) + acceptWindowSeconds;
-
-      const offer: SignedLendOffer = {
-        lender: wallet.address,
-        principalToken: principalToken.address,
-        principalAmount: principalParsed,
-        collateralToken: collateralTokenAddress,
-        collateralRatioBps,
-        trustedRatioBps,
-        scoreThreshold: scoreThresholdNum,
-        maxLtvBps,
-        interestRateBps: rateBps,
-        durationSeconds: BigInt(durationSeconds),
-        nonce,
-        deadline: BigInt(deadline),
-      };
-
-      // Pre-approve so a filling borrower can pull the principal in the same fill tx.
-      await ensureVaultAllowance(principalToken.address, principalParsed);
-      const { signature } = await signLendOffer(offer);
-      await postSignedOffer({
-        lenderAddress: offer.lender,
-        principalTokenAddress: principalToken.address,
-        principalAmount: principalParsed.toString(),
-        collateralTokenAddress,
-        collateralRatioBps,
-        trustedRatioBps,
-        scoreThreshold: scoreThresholdNum,
-        maxLtvBps,
-        interestRateBps: rateBps,
-        durationSeconds,
-        nonce: nonce.toString(),
-        deadline,
-        signature,
-        networkId: String(wallet.networkId),
-        contractAddress: chainInfo.contractAddress,
-      });
-      gaslessStatus = 'Gasless offer published!';
+      if (principalIsErc20) {
+        // Gasless path: sign a single offer with collateralToken = address(0), meaning
+        // "any collateral — borrower picks at fill time." The contract's fillLendOffer
+        // accepts a caller-supplied collateralToken when the offer's field is zero.
+        const principalParsed = ethers.parseUnits(principalAmount, principalToken.decimals ?? 18);
+        const deadline = Math.floor(Date.now() / 1000) + acceptWindowSeconds;
+        await ensureVaultAllowance(principalToken.address, principalParsed);
+        status = 'Waiting for wallet signature…';
+        const offer: SignedLendOffer = {
+          lender: wallet.address!,
+          principalToken: principalToken.address,
+          principalAmount: principalParsed,
+          collateralRatioBps,
+          trustedRatioBps,
+          scoreThreshold: scoreThresholdNum,
+          maxLtvBps,
+          interestRateBps: rateBps,
+          durationSeconds: BigInt(durationSeconds),
+          nonce: generateNonce(),
+          deadline: BigInt(deadline),
+        };
+        const { signature } = await signLendOffer(offer);
+        await postSignedOffer({
+          lenderAddress: offer.lender,
+          principalTokenAddress: principalToken.address,
+          principalAmount: principalParsed.toString(),
+          collateralRatioBps,
+          trustedRatioBps,
+          scoreThreshold: scoreThresholdNum,
+          maxLtvBps,
+          interestRateBps: rateBps,
+          durationSeconds,
+          nonce: offer.nonce.toString(),
+          deadline,
+          signature,
+          networkId: String(wallet.networkId),
+          contractAddress: chainInfo.contractAddress!,
+        });
+        status = 'Offer published!';
+      } else {
+        // On-chain path for ETH principal.
+        await createLendOffer(
+          principalToken,
+          principalAmount,
+          collateralRatioBps,
+          trustedRatioBps,
+          scoreThresholdNum,
+          maxLtvBps,
+          rateBps,
+          durationSeconds,
+          acceptWindowSeconds,
+        );
+        status = 'Offer created!';
+      }
     } catch (e) {
-      errorMsg = orderErrorMessage(e, 'Failed to publish gasless offer.');
+      errorMsg = orderErrorMessage(e, 'Transaction failed');
     } finally {
-      gaslessSubmitting = false;
+      submitting = false;
     }
   };
 </script>
@@ -439,58 +398,22 @@
     {#if errorMsg}
       <p class="text-sm text-destructive">{errorMsg}</p>
     {/if}
-    {#if gaslessStatus}
-      <p class="text-sm text-green-600">{gaslessStatus}</p>
+    {#if status}
+      <p class="text-sm text-green-600">{status}</p>
     {/if}
   </Card.Content>
   <Card.Footer class="flex flex-col gap-3">
     {#if !wallet.address}
       <p class="text-sm text-muted-foreground">Connect your wallet to create an offer.</p>
     {:else}
-      <Button class="w-full font-bold" disabled={!canSubmit || gaslessSubmitting} onclick={handleSubmit} size="lg">
+      <Button class="w-full font-bold" disabled={!canSubmit} onclick={handleSubmit} size="lg">
         {#if submitting}
           <Loader2 class="mr-2 h-4 w-4 animate-spin" />
-          Creating Offer…
+          {principalIsErc20 ? 'Signing…' : 'Creating Offer…'}
         {:else}
           Create Lend Offer
         {/if}
       </Button>
-
-      <div class="flex w-full items-center gap-2">
-        <div class="flex flex-col gap-1">
-          <span class="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Collateral</span>
-          <select
-            class="rounded-md border border-border bg-background px-2 py-2 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-ring"
-            bind:value={gaslessCollateralSymbol}
-          >
-            {#each tokens as t (t.symbol)}
-              <option value={t.symbol}>{t.symbol}</option>
-            {/each}
-          </select>
-        </div>
-        <Button
-          class="flex-1 font-bold"
-          disabled={!canSubmit || gaslessSubmitting || submitting || !principalIsErc20}
-          onclick={handleGaslessOffer}
-          size="lg"
-          title={principalIsErc20
-            ? 'Sign off-chain; a borrower fills it later. No gas to publish.'
-            : 'Gasless offers require an ERC-20 principal token.'}
-          variant="outline"
-        >
-          {#if gaslessSubmitting}
-            <Loader2 class="mr-2 h-4 w-4 animate-spin" />
-            Signing…
-          {:else}
-            Create Gasless Offer
-          {/if}
-        </Button>
-      </div>
-      {#if !principalIsErc20}
-        <p class="text-xs text-muted-foreground">
-          Gasless offers need an ERC-20 principal token (ETH is not supported off-chain).
-        </p>
-      {/if}
     {/if}
   </Card.Footer>
 </Card.Root>

@@ -1072,11 +1072,6 @@
             "type": "uint256"
           },
           {
-            "internalType": "address",
-            "name": "collateralToken",
-            "type": "address"
-          },
-          {
             "internalType": "uint16",
             "name": "collateralRatioBps",
             "type": "uint16"
@@ -1508,11 +1503,6 @@
             "type": "uint256"
           },
           {
-            "internalType": "address",
-            "name": "collateralToken",
-            "type": "address"
-          },
-          {
             "internalType": "uint16",
             "name": "collateralRatioBps",
             "type": "uint16"
@@ -1556,6 +1546,11 @@
         "internalType": "struct VouchVault.SignedLendOffer",
         "name": "offer",
         "type": "tuple"
+      },
+      {
+        "internalType": "address",
+        "name": "collateralToken",
+        "type": "address"
       },
       {
         "internalType": "uint256",
@@ -1867,11 +1862,6 @@
             "internalType": "uint256",
             "name": "principalAmount",
             "type": "uint256"
-          },
-          {
-            "internalType": "address",
-            "name": "collateralToken",
-            "type": "address"
           },
           {
             "internalType": "uint16",

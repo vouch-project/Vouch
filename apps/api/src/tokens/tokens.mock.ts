@@ -58,13 +58,17 @@ export const sepoliaTokensMock = (
   });
 };
 
+const ZERO = '0x0000000000000000000000000000000000000000';
+
 export const tokensMock = (
   HARDCODED_MOCK_ERC20_ADDRESS: string,
+  ethFeedAddress = ZERO,
+  mockFeedAddress = ZERO,
 ): TokenListResponse['tokens'] => ({
   '1337': [
     {
       chainId: 1337,
-      address: '0x0000000000000000000000000000000000000000',
+      address: ZERO,
       symbol: 'ETH',
       name: 'ETH',
       decimals: 18,
@@ -72,7 +76,7 @@ export const tokensMock = (
         'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2/logo.png',
       priceUsd: null,
       volatility: null,
-      priceFeedAddress: '0x0000000000000000000000000000000000000000',
+      priceFeedAddress: ethFeedAddress,
     },
     {
       chainId: 1337,
@@ -83,7 +87,7 @@ export const tokensMock = (
       logoURI: null,
       priceUsd: null,
       volatility: null,
-      priceFeedAddress: '0x0000000000000000000000000000000000000000',
+      priceFeedAddress: mockFeedAddress,
     },
   ],
 });

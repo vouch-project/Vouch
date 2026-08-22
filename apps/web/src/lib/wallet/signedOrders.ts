@@ -1,6 +1,6 @@
 import type { VouchVault } from '@vouch/contracts';
 import { ethers } from 'ethers';
-import { getVouchVaultContract, isNativeTokenAddress, ERC20_ABI } from './vouchVault';
+import { ERC20_ABI, getVouchVaultContract, isNativeTokenAddress } from './vouchVault';
 
 // ---------------------------------------------------------------------------
 // EIP-712 domain meta (chain-id + contract address added at runtime)
@@ -33,7 +33,6 @@ export const LEND_OFFER_TYPES = {
     { name: 'lender', type: 'address' },
     { name: 'principalToken', type: 'address' },
     { name: 'principalAmount', type: 'uint256' },
-    { name: 'collateralToken', type: 'address' },
     { name: 'collateralRatioBps', type: 'uint16' },
     { name: 'trustedRatioBps', type: 'uint16' },
     { name: 'scoreThreshold', type: 'uint16' },
@@ -66,7 +65,6 @@ export type SignedLendOffer = {
   lender: string;
   principalToken: string;
   principalAmount: bigint;
-  collateralToken: string;
   collateralRatioBps: number;
   trustedRatioBps: number;
   scoreThreshold: number;
@@ -90,11 +88,7 @@ const buildDomain = async (contract: VouchVault) => {
   };
 };
 
-const approveERC20IfNeeded = async (
-  contract: VouchVault,
-  tokenAddress: string,
-  amount: bigint,
-): Promise<void> => {
+const approveERC20IfNeeded = async (contract: VouchVault, tokenAddress: string, amount: bigint): Promise<void> => {
   const erc20 = new ethers.Contract(tokenAddress, ERC20_ABI, contract.runner);
   const signer = await (contract.runner as ethers.JsonRpcSigner).getAddress();
   const allowance: bigint = await erc20.allowance(signer, contract.target);
@@ -122,11 +116,7 @@ export const generateNonce = (): bigint => {
   return n;
 };
 
-const parseLoanId = (
-  contract: VouchVault,
-  receipt: ethers.TransactionReceipt,
-  eventName: string,
-): bigint => {
+const parseLoanId = (contract: VouchVault, receipt: ethers.TransactionReceipt, eventName: string): bigint => {
   for (const log of receipt.logs) {
     try {
       const parsed = contract.interface.parseLog({ topics: [...log.topics], data: log.data });
@@ -148,9 +138,7 @@ const parseLoanId = (
  * Sign a loan request as the borrower (EIP-712).
  * Returns the signature and the on-chain digest (from hashLoanRequest).
  */
-export const signLoanRequest = async (
-  request: SignedLoanRequest,
-): Promise<{ signature: string; digest: string }> => {
+export const signLoanRequest = async (request: SignedLoanRequest): Promise<{ signature: string; digest: string }> => {
   const contract = await getVouchVaultContract();
   const domain = await buildDomain(contract);
   const signer = contract.runner as ethers.JsonRpcSigner;
@@ -169,9 +157,7 @@ export const signLoanRequest = async (
  * Sign a lend offer as the lender (EIP-712).
  * Returns the signature and the on-chain digest (from hashLendOffer).
  */
-export const signLendOffer = async (
-  offer: SignedLendOffer,
-): Promise<{ signature: string; digest: string }> => {
+export const signLendOffer = async (offer: SignedLendOffer): Promise<{ signature: string; digest: string }> => {
   const contract = await getVouchVaultContract();
   const domain = await buildDomain(contract);
   const signer = contract.runner as ethers.JsonRpcSigner;
@@ -200,10 +186,7 @@ export type FillResult = {
  * - ETH principal: sends value.
  * - ERC20 principal: approves the vault, then calls fillLoanRequest.
  */
-export const fillLoanRequest = async (
-  request: SignedLoanRequest,
-  signature: string,
-): Promise<FillResult> => {
+export const fillLoanRequest = async (request: SignedLoanRequest, signature: string): Promise<FillResult> => {
   const contract = await getVouchVaultContract();
 
   let tx: ethers.TransactionResponse;
@@ -224,11 +207,16 @@ export const fillLoanRequest = async (
 
 /**
  * Fill a signed lend offer as the borrower (borrower supplies collateral).
- * - ETH collateral: sends value.
+ * - ETH collateral (collateralToken === ZeroAddress): sends value.
  * - ERC20 collateral: approves the vault, then calls fillLendOffer.
+ *
+ * `collateralToken` is the borrower's chosen token at fill time. When the
+ * signed offer has `collateralToken = address(0)` ("any collateral"), this
+ * value tells the contract which token the borrower is providing.
  */
 export const fillLendOffer = async (
   offer: SignedLendOffer,
+  collateralToken: string,
   collateralAmount: bigint,
   signature: string,
 ): Promise<FillResult> => {
@@ -236,11 +224,13 @@ export const fillLendOffer = async (
 
   let tx: ethers.TransactionResponse;
 
-  if (isNativeTokenAddress(offer.collateralToken)) {
-    tx = await contract.fillLendOffer(offer, collateralAmount, signature, { value: collateralAmount });
+  if (isNativeTokenAddress(collateralToken)) {
+    tx = await contract.fillLendOffer(offer, ethers.ZeroAddress, collateralAmount, signature, {
+      value: collateralAmount,
+    });
   } else {
-    await approveERC20IfNeeded(contract, offer.collateralToken, collateralAmount);
-    tx = await contract.fillLendOffer(offer, collateralAmount, signature);
+    await approveERC20IfNeeded(contract, collateralToken, collateralAmount);
+    tx = await contract.fillLendOffer(offer, collateralToken, collateralAmount, signature);
   }
 
   const receipt = await tx.wait();
@@ -257,9 +247,7 @@ export const fillLendOffer = async (
 /**
  * Cancel a signed loan request on-chain (borrower cancels their own request).
  */
-export const cancelSignedLoanRequest = async (
-  request: SignedLoanRequest,
-): Promise<ethers.TransactionReceipt> => {
+export const cancelSignedLoanRequest = async (request: SignedLoanRequest): Promise<ethers.TransactionReceipt> => {
   const contract = await getVouchVaultContract();
   const tx: ethers.TransactionResponse = await contract.cancelSignedLoanRequest(request);
   const receipt = await tx.wait();
@@ -270,9 +258,7 @@ export const cancelSignedLoanRequest = async (
 /**
  * Cancel a signed lend offer on-chain (lender cancels their own offer).
  */
-export const cancelSignedLendOffer = async (
-  offer: SignedLendOffer,
-): Promise<ethers.TransactionReceipt> => {
+export const cancelSignedLendOffer = async (offer: SignedLendOffer): Promise<ethers.TransactionReceipt> => {
   const contract = await getVouchVaultContract();
   const tx: ethers.TransactionResponse = await contract.cancelSignedLendOffer(offer);
   const receipt = await tx.wait();

@@ -86,7 +86,6 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         address lender;
         address principalToken;
         uint256 principalAmount;
-        address collateralToken;
         uint16  collateralRatioBps;
         uint16  trustedRatioBps;
         uint16  scoreThreshold;
@@ -138,7 +137,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         "LoanRequest(address borrower,address collateralToken,uint256 collateralAmount,address principalToken,uint256 principalAmount,uint16 interestRateBps,uint256 durationSeconds,uint16 maxLtvBps,uint256 nonce,uint256 deadline)"
     );
     bytes32 private constant LEND_OFFER_TYPEHASH = keccak256(
-        "LendOffer(address lender,address principalToken,uint256 principalAmount,address collateralToken,uint16 collateralRatioBps,uint16 trustedRatioBps,uint16 scoreThreshold,uint16 maxLtvBps,uint16 interestRateBps,uint256 durationSeconds,uint256 nonce,uint256 deadline)"
+        "LendOffer(address lender,address principalToken,uint256 principalAmount,uint16 collateralRatioBps,uint16 trustedRatioBps,uint16 scoreThreshold,uint16 maxLtvBps,uint16 interestRateBps,uint256 durationSeconds,uint256 nonce,uint256 deadline)"
     );
 
     // --- Minimum interest floor ---
@@ -860,9 +859,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     ///         and the signature digest is consumed to prevent replay.
     /// @param offer           The signed lend offer struct.
     /// @param collateralAmount Amount of ERC20 collateral (offer.collateralToken) to pull from the borrower.
-    ///                         Ignored when offer.collateralToken == address(0); use msg.value for ETH collateral.
+    ///                         Pass address(0) with msg.value for ETH collateral; any other address for ERC20.
     /// @param sig             EIP-712 signature from offer.lender over the offer hash.
-    function fillLendOffer(SignedLendOffer calldata offer, uint256 collateralAmount, bytes calldata sig) external payable nonReentrant {
+    function fillLendOffer(SignedLendOffer calldata offer, address collateralToken, uint256 collateralAmount, bytes calldata sig) external payable nonReentrant {
         require(offer.principalToken != address(0), "Principal must be ERC20");
         require(offer.principalAmount > 0, "Principal must be > 0");
         require(offer.collateralRatioBps >= 10000, "Collateral ratio must be >= 100%");
@@ -878,10 +877,11 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         // Checks-effects-interactions: mark consumed before any external call.
         consumedSignatures[digest] = true;
 
-        // Borrower (msg.sender) supplies collateral: ETH via msg.value or ERC20 via approve.
+        // The borrower chooses the collateral token at fill time (collateralToken parameter).
+        // address(0) means native ETH (send via msg.value); any other address is an ERC20.
         address _collateralToken;
         uint256 _collateralAmount;
-        if (offer.collateralToken == address(0)) {
+        if (collateralToken == address(0)) {
             // ETH collateral path
             require(msg.value > 0, "Collateral required");
             _collateralToken = address(0);
@@ -891,7 +891,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
             // ERC20 collateral path
             require(msg.value == 0, "Unexpected ETH");
             require(collateralAmount > 0, "Collateral required");
-            _collateralToken = offer.collateralToken;
+            _collateralToken = collateralToken;
             _collateralAmount = collateralAmount;
             uint256 balBefore = IERC20(_collateralToken).balanceOf(address(this));
             IERC20(_collateralToken).safeTransferFrom(msg.sender, address(this), _collateralAmount);
@@ -1879,7 +1879,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     function hashLendOffer(SignedLendOffer calldata offer) public view returns (bytes32) {
         return _hashTypedDataV4(keccak256(abi.encode(
             LEND_OFFER_TYPEHASH, offer.lender, offer.principalToken, offer.principalAmount,
-            offer.collateralToken, offer.collateralRatioBps, offer.trustedRatioBps, offer.scoreThreshold,
+            offer.collateralRatioBps, offer.trustedRatioBps, offer.scoreThreshold,
             offer.maxLtvBps, offer.interestRateBps, offer.durationSeconds, offer.nonce, offer.deadline
         )));
     }

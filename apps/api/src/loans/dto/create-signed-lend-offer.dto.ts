@@ -11,9 +11,6 @@ export class CreateSignedLendOfferDto {
   @IsBigInt()
   principalAmount!: bigint;
 
-  @IsString()
-  collateralTokenAddress!: string;
-
   @IsNumber()
   collateralRatioBps!: number;
 

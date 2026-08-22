@@ -26,7 +26,6 @@ export type SignedOfferPayload = {
   lenderAddress: string;
   principalTokenAddress: string;
   principalAmount: string; // uint256
-  collateralTokenAddress: string;
   collateralRatioBps: number;
   trustedRatioBps: number;
   scoreThreshold: number;

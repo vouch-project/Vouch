@@ -6,8 +6,13 @@
   import { maxLtv } from '$lib/ltv';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
+  import {
+    ensureVaultAllowance,
+    generateNonce,
+    signLoanRequest,
+    type SignedLoanRequest,
+  } from '$lib/wallet/signedOrders';
   import { createLoan, isNativeTokenAddress } from '$lib/wallet/vouchVault';
-  import { ensureVaultAllowance, generateNonce, signLoanRequest, type SignedLoanRequest } from '$lib/wallet/signedOrders';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { ethers } from 'ethers';
   import CollateralBorrowFields from '../create-loan/CollateralBorrowFields.svelte';
@@ -148,7 +153,14 @@
     }
 
     const liquidationThresholdBps = Math.max(1, Math.min(10000, Math.round(computedMaxLtv * 100)));
-    return { collateralToken, borrowToken, interestRateBps, durationSeconds, fundWindowSeconds, liquidationThresholdBps };
+    return {
+      collateralToken,
+      borrowToken,
+      interestRateBps,
+      durationSeconds,
+      fundWindowSeconds,
+      liquidationThresholdBps,
+    };
   };
 
   /** Map a wallet/API error to a user-facing message (distinguishes user-rejection & API 400). */
@@ -170,102 +182,89 @@
     return fallback;
   };
 
-  // ── Submit (on-chain) ─────────────────────────────────────────────────────
+  const collateralIsErc20 = $derived(
+    !isNativeTokenAddress(chainInfo.tokens.find((t) => t.symbol === selectedCollateralToken)?.address ?? ''),
+  );
+
+  // ── Submit ────────────────────────────────────────────────────────────────
+  // Gasless path when collateral is ERC-20 (sign off-chain, lender fills later);
+  // on-chain path for ETH collateral.
   const handleCreateLoan = async (e: SubmitEvent) => {
     e.preventDefault();
     const terms = parseTerms();
     if (!terms) return;
 
-    status = 'Waiting for wallet confirmation...';
-    try {
-      await createLoan(
-        collateralAmount,
-        terms.collateralToken,
-        terms.borrowToken,
-        borrowAmount,
-        terms.interestRateBps,
-        terms.durationSeconds,
-        terms.fundWindowSeconds,
-        terms.liquidationThresholdBps,
-      );
-      status = 'Loan created!';
-    } catch (err) {
-      status = orderErrorMessage(err, 'Transaction failed');
+    if (collateralIsErc20) {
+      if (!wallet.address || wallet.networkId == null || !chainInfo.contractAddress) {
+        status = 'Connect your wallet to create a loan request.';
+        return;
+      }
+      status = 'Waiting for wallet signature...';
+      try {
+        const collateralParsed = ethers.parseUnits(collateralAmount, terms.collateralToken.decimals ?? 18);
+        const principalParsed = ethers.parseUnits(borrowAmount, terms.borrowToken.decimals ?? 18);
+        const principalTokenAddress = isNativeTokenAddress(terms.borrowToken.address)
+          ? ethers.ZeroAddress
+          : terms.borrowToken.address;
+        const nonce = generateNonce();
+        const deadline = Math.floor(Date.now() / 1000) + terms.fundWindowSeconds;
+        const req: SignedLoanRequest = {
+          borrower: wallet.address,
+          collateralToken: terms.collateralToken.address,
+          collateralAmount: collateralParsed,
+          principalToken: principalTokenAddress,
+          principalAmount: principalParsed,
+          interestRateBps: terms.interestRateBps,
+          durationSeconds: BigInt(terms.durationSeconds),
+          maxLtvBps: terms.liquidationThresholdBps,
+          nonce,
+          deadline: BigInt(deadline),
+        };
+        await ensureVaultAllowance(terms.collateralToken.address, collateralParsed);
+        const { signature } = await signLoanRequest(req);
+        await postSignedRequest({
+          borrowerAddress: req.borrower,
+          collateralTokenAddress: req.collateralToken,
+          collateralAmount: collateralParsed.toString(),
+          principalTokenAddress,
+          principalAmount: principalParsed.toString(),
+          interestRateBps: terms.interestRateBps,
+          durationSeconds: terms.durationSeconds,
+          maxLtvBps: terms.liquidationThresholdBps,
+          nonce: nonce.toString(),
+          deadline,
+          signature,
+          networkId: String(wallet.networkId),
+          contractAddress: chainInfo.contractAddress,
+        });
+        status = 'Loan request published!';
+      } catch (err) {
+        status = orderErrorMessage(err, 'Failed to publish loan request.');
+      }
+    } else {
+      status = 'Waiting for wallet confirmation...';
+      try {
+        await createLoan(
+          collateralAmount,
+          terms.collateralToken,
+          terms.borrowToken,
+          borrowAmount,
+          terms.interestRateBps,
+          terms.durationSeconds,
+          terms.fundWindowSeconds,
+          terms.liquidationThresholdBps,
+        );
+        status = 'Loan created!';
+      } catch (err) {
+        status = orderErrorMessage(err, 'Transaction failed');
+      }
     }
   };
 
-  // ── Submit (gasless / off-chain signed request) ─────────────────────────────
-  // The borrower pre-approves ERC-20 collateral and signs the request; a lender
-  // later fills it on-chain (supplying principal). ETH collateral is not supported.
-  const handleGaslessRequest = async () => {
-    const terms = parseTerms();
-    if (!terms) return;
-
-    if (isNativeTokenAddress(terms.collateralToken.address)) {
-      status = 'Gasless requests require an ERC-20 collateral token (ETH collateral is not supported off-chain).';
-      return;
-    }
-    if (!wallet.address || wallet.networkId == null || !chainInfo.contractAddress) {
-      status = 'Connect your wallet to create a gasless request.';
-      return;
-    }
-
-    gaslessSubmitting = true;
-    status = 'Waiting for wallet signature...';
-    try {
-      const collateralParsed = ethers.parseUnits(collateralAmount, terms.collateralToken.decimals ?? 18);
-      const principalParsed = ethers.parseUnits(borrowAmount, terms.borrowToken.decimals ?? 18);
-      const principalTokenAddress = isNativeTokenAddress(terms.borrowToken.address)
-        ? ethers.ZeroAddress
-        : terms.borrowToken.address;
-      const nonce = generateNonce();
-      const deadline = Math.floor(Date.now() / 1000) + terms.fundWindowSeconds;
-
-      const req: SignedLoanRequest = {
-        borrower: wallet.address,
-        collateralToken: terms.collateralToken.address,
-        collateralAmount: collateralParsed,
-        principalToken: principalTokenAddress,
-        principalAmount: principalParsed,
-        interestRateBps: terms.interestRateBps,
-        durationSeconds: BigInt(terms.durationSeconds),
-        maxLtvBps: terms.liquidationThresholdBps,
-        nonce,
-        deadline: BigInt(deadline),
-      };
-
-      // Pre-approve so a filling lender can pull the collateral in the same fill tx.
-      await ensureVaultAllowance(terms.collateralToken.address, collateralParsed);
-      const { signature } = await signLoanRequest(req);
-      await postSignedRequest({
-        borrowerAddress: req.borrower,
-        collateralTokenAddress: req.collateralToken,
-        collateralAmount: collateralParsed.toString(),
-        principalTokenAddress: principalTokenAddress,
-        principalAmount: principalParsed.toString(),
-        interestRateBps: terms.interestRateBps,
-        durationSeconds: terms.durationSeconds,
-        maxLtvBps: terms.liquidationThresholdBps,
-        nonce: nonce.toString(),
-        deadline,
-        signature,
-        networkId: String(wallet.networkId),
-        contractAddress: chainInfo.contractAddress,
-      });
-      status = 'Gasless request published!';
-    } catch (err) {
-      status = orderErrorMessage(err, 'Failed to publish gasless request.');
-    } finally {
-      gaslessSubmitting = false;
-    }
-  };
-
-  let gaslessSubmitting = $state(false);
-  const isSubmitting = $derived(status === 'Waiting for wallet confirmation...');
-  const collateralIsErc20 = $derived(
-    !isNativeTokenAddress(chainInfo.tokens.find((t) => t.symbol === selectedCollateralToken)?.address ?? ''),
+  const isSubmitting = $derived(
+    status === 'Waiting for wallet confirmation...' || status === 'Waiting for wallet signature...',
   );
-  const statusIsSuccess = $derived(status === 'Loan created!' || status === 'Gasless request published!');
+  const statusIsSuccess = $derived(status === 'Loan created!' || status === 'Loan request published!');
 
   const inputClass =
     'border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring transition w-full bg-background';
@@ -304,29 +303,11 @@
     class="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-6 py-2.5 rounded-lg shadow transition disabled:opacity-60 disabled:cursor-not-allowed {ltvExceeded
       ? '!bg-destructive hover:!bg-destructive/90'
       : ''}"
-    disabled={isSubmitting || gaslessSubmitting || ltvExceeded}
+    disabled={isSubmitting || ltvExceeded}
     type="submit"
   >
     {isSubmitting ? 'Processing...' : ltvExceeded ? 'LTV Exceeded' : 'Create Loan'}
   </button>
-
-  <button
-    class="w-full border border-border bg-background hover:bg-muted/40 text-foreground font-semibold px-6 py-2.5 rounded-lg transition disabled:opacity-60 disabled:cursor-not-allowed"
-    disabled={isSubmitting || gaslessSubmitting || ltvExceeded || !collateralIsErc20 || !wallet.address}
-    onclick={handleGaslessRequest}
-    title={collateralIsErc20
-      ? 'Sign off-chain; a lender fills it later. No gas to publish.'
-      : 'Gasless requests require an ERC-20 collateral token.'}
-    type="button"
-  >
-    {gaslessSubmitting ? 'Signing…' : 'Create Gasless Request'}
-  </button>
-
-  {#if !collateralIsErc20}
-    <p class="text-xs text-muted-foreground text-center -mt-2">
-      Gasless requests need an ERC-20 collateral token (ETH is not supported off-chain).
-    </p>
-  {/if}
 
   {#if status}
     <p

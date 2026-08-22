@@ -27,7 +27,6 @@ export const LEND_OFFER_TYPES = {
     { name: 'lender', type: 'address' },
     { name: 'principalToken', type: 'address' },
     { name: 'principalAmount', type: 'uint256' },
-    { name: 'collateralToken', type: 'address' },
     { name: 'collateralRatioBps', type: 'uint16' },
     { name: 'trustedRatioBps', type: 'uint16' },
     { name: 'scoreThreshold', type: 'uint16' },
