@@ -1,5 +1,12 @@
 <script lang="ts">
   import { axiosApi } from '$api/axiosApi';
+  import type { Token } from '$api/chain';
+  import {
+    getSignedOffers,
+    getSignedRequests,
+    type SignedOfferRow,
+    type SignedRequestRow,
+  } from '$api/signedOrders';
   import { resolve } from '$app/paths';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
@@ -7,7 +14,7 @@
   import * as Table from '$lib/components/ui/table';
   import * as Tabs from '$lib/components/ui/tabs';
   import { formatUint256 } from '$lib/formatUint256';
-  import { formatLoanTerm } from '$lib/loans/loanMath';
+  import { formatLoanTerm, intervalToSeconds } from '$lib/loans/loanMath';
   import { maxLtv } from '$lib/ltv';
   import { navLinksMap } from '$lib/navLinks';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
@@ -15,7 +22,13 @@
   import { supabase } from '$lib/supabase';
   import type { LoanWithTokens } from '$lib/types';
   import { cn } from '$lib/utils';
-  import { acceptLendOffer, fundLoan, type ScoreAttestation } from '$lib/wallet/vouchVault';
+  import {
+    fillLendOffer,
+    fillLoanRequest,
+    type SignedLendOffer,
+    type SignedLoanRequest,
+  } from '$lib/wallet/signedOrders';
+  import { acceptLendOffer, fundLoan, isNativeTokenAddress, type ScoreAttestation } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Check, Clock, Copy, Info, RefreshCw, ShieldCheck, TrendingUp, Zap } from '@lucide/svelte';
   import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -323,6 +336,140 @@
       errorMsg = getErrorMessage(e);
     } finally {
       fundingLoanId = null;
+    }
+  };
+
+  // ── Gasless (signed) orders ─────────────────────────────────────────────────
+  let signedRequests: SignedRequestRow[] = $state([]);
+  let signedOffers: SignedOfferRow[] = $state([]);
+  let signedLoading = $state(true);
+  let signedError: string | null = $state(null);
+  let fillingDigest: string | null = $state(null);
+
+  const fetchSignedOrders = async () => {
+    try {
+      signedError = null;
+      const [reqs, offers] = await Promise.all([getSignedRequests(), getSignedOffers()]);
+      signedRequests = reqs;
+      signedOffers = offers;
+    } catch (e) {
+      signedError = getErrorMessage(e);
+    } finally {
+      signedLoading = false;
+    }
+  };
+
+  $effect(() => {
+    void fetchSignedOrders();
+  });
+
+  // Resolve a stored token id (null → ETH) to a chainInfo Token.
+  const findToken = (tokenId: string | null): Token | null => {
+    if (!tokenId) return chainInfo.tokens?.find((t) => isNativeTokenAddress(t.address)) ?? null;
+    return chainInfo.tokens?.find((t) => t.id === tokenId) ?? null;
+  };
+  // The exact address that was signed (ETH → ZeroAddress).
+  const tokenAddress = (tokenId: string | null): string | undefined => {
+    if (!tokenId) return ethers.ZeroAddress;
+    return findToken(tokenId)?.address;
+  };
+  const deadlineSeconds = (iso: string): bigint => BigInt(Math.floor(Date.parse(iso) / 1000));
+
+  // Rebuild the exact structs that were signed so the on-chain digest matches.
+  const toRequestStruct = (row: SignedRequestRow): SignedLoanRequest | null => {
+    const collateralToken = tokenAddress(row.collateralTokenId);
+    const principalToken = tokenAddress(row.principalTokenId);
+    if (collateralToken === undefined || principalToken === undefined) return null;
+    return {
+      borrower: row.borrowerAddress,
+      collateralToken,
+      collateralAmount: BigInt(row.collateralAmount),
+      principalToken,
+      principalAmount: BigInt(row.principalAmount),
+      interestRateBps: row.interestRateBps,
+      durationSeconds: BigInt(intervalToSeconds(row.duration)),
+      maxLtvBps: row.maxLtvBps,
+      nonce: BigInt(row.nonce),
+      deadline: deadlineSeconds(row.deadline),
+    };
+  };
+
+  const toOfferStruct = (row: SignedOfferRow): SignedLendOffer | null => {
+    const principalToken = tokenAddress(row.principalTokenId);
+    const collateralToken = tokenAddress(row.collateralTokenId);
+    if (principalToken === undefined || collateralToken === undefined) return null;
+    return {
+      lender: row.lenderAddress,
+      principalToken,
+      principalAmount: BigInt(row.principalAmount),
+      collateralToken,
+      collateralRatioBps: row.collateralRatioBps,
+      trustedRatioBps: row.trustedRatioBps,
+      scoreThreshold: row.scoreThreshold,
+      maxLtvBps: row.maxLtvBps,
+      interestRateBps: row.interestRateBps,
+      durationSeconds: BigInt(intervalToSeconds(row.duration)),
+      nonce: BigInt(row.nonce),
+      deadline: deadlineSeconds(row.deadline),
+    };
+  };
+
+  // Collateral the borrower must post to satisfy the offer's base ratio (ceiling).
+  const requiredCollateralRaw = (offer: SignedLendOffer, principalTok: Token, colTok: Token): bigint | null => {
+    const principalPriceUsd = tokenPrices.getTokenMeta(principalTok.symbol).priceUsd;
+    const colPriceUsd = tokenPrices.getTokenMeta(colTok.symbol).priceUsd;
+    if (principalPriceUsd <= 0 || colPriceUsd <= 0) return null;
+    const principalPriceInt = BigInt(Math.ceil(principalPriceUsd * 1e9));
+    const colPriceIntNum = Math.floor(colPriceUsd * 1e9);
+    if (colPriceIntNum <= 0) return null;
+    const colPriceInt = BigInt(colPriceIntNum);
+    const principalDec = 10n ** BigInt(principalTok.decimals ?? 18);
+    const colScale = 10n ** BigInt(colTok.decimals ?? 18);
+    const numer = offer.principalAmount * BigInt(offer.collateralRatioBps) * principalPriceInt * colScale;
+    const denom = 10000n * colPriceInt * principalDec;
+    return (numer + denom - 1n) / denom;
+  };
+
+  const handleFillRequest = async (row: SignedRequestRow) => {
+    const req = toRequestStruct(row);
+    if (!req) {
+      signedError = 'Unable to reconstruct request — unknown token on this chain.';
+      return;
+    }
+    fillingDigest = row.digest;
+    signedError = null;
+    try {
+      await fillLoanRequest(req, row.signature);
+      signedRequests = signedRequests.filter((r) => r.digest !== row.digest);
+    } catch (e) {
+      signedError = getErrorMessage(e);
+    } finally {
+      fillingDigest = null;
+    }
+  };
+
+  const handleFillOffer = async (row: SignedOfferRow) => {
+    const offer = toOfferStruct(row);
+    const colTok = findToken(row.collateralTokenId);
+    const prinTok = findToken(row.principalTokenId);
+    if (!offer || !colTok || !prinTok) {
+      signedError = 'Unable to reconstruct offer — unknown token on this chain.';
+      return;
+    }
+    const colRaw = requiredCollateralRaw(offer, prinTok, colTok);
+    if (colRaw === null) {
+      signedError = 'Missing price data to size the required collateral.';
+      return;
+    }
+    fillingDigest = row.digest;
+    signedError = null;
+    try {
+      await fillLendOffer(offer, colRaw, row.signature);
+      signedOffers = signedOffers.filter((r) => r.digest !== row.digest);
+    } catch (e) {
+      signedError = getErrorMessage(e);
+    } finally {
+      fillingDigest = null;
     }
   };
 </script>
@@ -818,6 +965,196 @@
       </Card.Root>
     </Tabs.Content>
   </Tabs.Root>
+
+  <!-- Gasless (Signed) Orders -->
+  <div class="space-y-4 pt-4">
+    <div class="flex items-center gap-3">
+      <Zap class="h-5 w-5 text-amber-500" />
+      <h2 class="text-2xl font-black tracking-tight text-foreground">Gasless Orders</h2>
+      <Badge class="font-semibold" variant="outline">EIP-712 signed</Badge>
+    </div>
+    <p class="text-sm text-muted-foreground">
+      Off-chain signed orders. Filling one settles the loan on-chain in a single transaction — the signer's
+      committed asset is pulled automatically.
+    </p>
+
+    {#if signedError}
+      <div class="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-destructive flex items-center gap-2">
+        <Info class="h-4 w-4" />
+        <p class="text-sm font-medium">{signedError}</p>
+      </div>
+    {/if}
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Signed loan requests (a lender fills, supplying principal) -->
+      <Card.Root class="border-border/50 shadow-lg dark:shadow-none overflow-hidden bg-card/80 backdrop-blur-md">
+        <Card.Header class="pb-2">
+          <Card.Title class="text-base font-bold">Borrow Requests</Card.Title>
+          <Card.Description>Sign-free requests you can fund as a lender.</Card.Description>
+        </Card.Header>
+        <div class="overflow-x-auto">
+          <Table.Root>
+            <Table.Header class="bg-muted/30">
+              <Table.Row>
+                <Table.Head class="pl-4 py-2 text-[10px] uppercase tracking-wider font-bold">Borrower</Table.Head>
+                <Table.Head class="px-2 py-2 text-[10px] uppercase tracking-wider font-bold">Principal</Table.Head>
+                <Table.Head class="px-2 py-2 text-[10px] uppercase tracking-wider font-bold">Collateral</Table.Head>
+                <Table.Head class="px-2 py-2 text-[10px] uppercase tracking-wider font-bold">APR</Table.Head>
+                <Table.Head class="px-2 py-2 text-[10px] uppercase tracking-wider font-bold">Term</Table.Head>
+                <Table.Head class="pr-4 py-2 text-right text-[10px] uppercase tracking-wider font-bold">Action</Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {#if signedLoading}
+                {#each Array(3) as _, i (i)}
+                  <Table.Row>
+                    {#each Array(6) as _, j (j)}
+                      <Table.Cell class={cn('px-2 py-3', j === 0 && 'pl-4', j === 5 && 'pr-4')}>
+                        <div class="h-4 w-14 bg-muted animate-pulse rounded"></div>
+                      </Table.Cell>
+                    {/each}
+                  </Table.Row>
+                {/each}
+              {:else if signedRequests.length === 0}
+                <Table.Row>
+                  <Table.Cell class="h-32 text-center text-sm text-muted-foreground" colspan={6}>
+                    No open gasless requests.
+                  </Table.Cell>
+                </Table.Row>
+              {:else}
+                {#each signedRequests as row (row.digest)}
+                  {@const prinTok = findToken(row.principalTokenId)}
+                  {@const colTok = findToken(row.collateralTokenId)}
+                  {@const isOwn = wallet.address?.toLowerCase() === row.borrowerAddress.toLowerCase()}
+                  <Table.Row class="hover:bg-muted/10 transition-colors">
+                    <Table.Cell class="pl-4 py-3 font-mono text-[10px]">{truncateAddress(row.borrowerAddress)}</Table.Cell>
+                    <Table.Cell class="px-2 py-3 text-sm font-semibold">
+                      {formatUint256(row.principalAmount, prinTok?.decimals)}
+                      <span class="text-[10px] text-muted-foreground uppercase">{prinTok?.symbol ?? ''}</span>
+                    </Table.Cell>
+                    <Table.Cell class="px-2 py-3 text-sm">
+                      {formatUint256(row.collateralAmount, colTok?.decimals)}
+                      <span class="text-[10px] text-muted-foreground uppercase">{colTok?.symbol ?? ''}</span>
+                    </Table.Cell>
+                    <Table.Cell class="px-2 py-3 text-sm font-bold text-indigo-600">
+                      {(row.interestRateBps / 100).toFixed(2)}%
+                    </Table.Cell>
+                    <Table.Cell class="px-2 py-3 text-sm">{formatLoanTerm(row.duration)}</Table.Cell>
+                    <Table.Cell class="pr-4 py-3 text-right">
+                      {#if isOwn}
+                        <span class="text-[10px] italic text-muted-foreground">Your request</span>
+                      {:else}
+                        <Button
+                          class="font-bold h-7 py-0 px-3 text-[10px]"
+                          disabled={fillingDigest === row.digest || !wallet.address}
+                          onclick={() => handleFillRequest(row)}
+                          size="sm"
+                        >
+                          {#if fillingDigest === row.digest}
+                            <RefreshCw class="mr-1.5 h-3 w-3 animate-spin" />
+                            Filling…
+                          {:else}
+                            Fill
+                          {/if}
+                        </Button>
+                      {/if}
+                    </Table.Cell>
+                  </Table.Row>
+                {/each}
+              {/if}
+            </Table.Body>
+          </Table.Root>
+        </div>
+      </Card.Root>
+
+      <!-- Signed lend offers (a borrower fills, posting collateral) -->
+      <Card.Root class="border-border/50 shadow-lg dark:shadow-none overflow-hidden bg-card/80 backdrop-blur-md">
+        <Card.Header class="pb-2">
+          <Card.Title class="text-base font-bold">Lend Offers</Card.Title>
+          <Card.Description>Sign-free offers you can borrow against.</Card.Description>
+        </Card.Header>
+        <div class="overflow-x-auto">
+          <Table.Root>
+            <Table.Header class="bg-muted/30">
+              <Table.Row>
+                <Table.Head class="pl-4 py-2 text-[10px] uppercase tracking-wider font-bold">Lender</Table.Head>
+                <Table.Head class="px-2 py-2 text-[10px] uppercase tracking-wider font-bold">Principal</Table.Head>
+                <Table.Head class="px-2 py-2 text-[10px] uppercase tracking-wider font-bold">Collateral</Table.Head>
+                <Table.Head class="px-2 py-2 text-[10px] uppercase tracking-wider font-bold">APR</Table.Head>
+                <Table.Head class="px-2 py-2 text-[10px] uppercase tracking-wider font-bold">Term</Table.Head>
+                <Table.Head class="pr-4 py-2 text-right text-[10px] uppercase tracking-wider font-bold">Action</Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {#if signedLoading}
+                {#each Array(3) as _, i (i)}
+                  <Table.Row>
+                    {#each Array(6) as _, j (j)}
+                      <Table.Cell class={cn('px-2 py-3', j === 0 && 'pl-4', j === 5 && 'pr-4')}>
+                        <div class="h-4 w-14 bg-muted animate-pulse rounded"></div>
+                      </Table.Cell>
+                    {/each}
+                  </Table.Row>
+                {/each}
+              {:else if signedOffers.length === 0}
+                <Table.Row>
+                  <Table.Cell class="h-32 text-center text-sm text-muted-foreground" colspan={6}>
+                    No open gasless offers.
+                  </Table.Cell>
+                </Table.Row>
+              {:else}
+                {#each signedOffers as row (row.digest)}
+                  {@const prinTok = findToken(row.principalTokenId)}
+                  {@const colTok = findToken(row.collateralTokenId)}
+                  {@const struct = toOfferStruct(row)}
+                  {@const colRaw = struct && prinTok && colTok ? requiredCollateralRaw(struct, prinTok, colTok) : null}
+                  {@const isOwn = wallet.address?.toLowerCase() === row.lenderAddress.toLowerCase()}
+                  <Table.Row class="hover:bg-muted/10 transition-colors">
+                    <Table.Cell class="pl-4 py-3 font-mono text-[10px]">{truncateAddress(row.lenderAddress)}</Table.Cell>
+                    <Table.Cell class="px-2 py-3 text-sm font-semibold">
+                      {formatUint256(row.principalAmount, prinTok?.decimals)}
+                      <span class="text-[10px] text-muted-foreground uppercase">{prinTok?.symbol ?? ''}</span>
+                    </Table.Cell>
+                    <Table.Cell class="px-2 py-3 text-sm">
+                      {#if colRaw !== null && colTok}
+                        {parseFloat(ethers.formatUnits(colRaw, colTok.decimals ?? 18)).toFixed(4)}
+                      {:else}
+                        —
+                      {/if}
+                      <span class="text-[10px] text-muted-foreground uppercase">{colTok?.symbol ?? 'ETH'}</span>
+                    </Table.Cell>
+                    <Table.Cell class="px-2 py-3 text-sm font-bold text-indigo-600">
+                      {(row.interestRateBps / 100).toFixed(2)}%
+                    </Table.Cell>
+                    <Table.Cell class="px-2 py-3 text-sm">{formatLoanTerm(row.duration)}</Table.Cell>
+                    <Table.Cell class="pr-4 py-3 text-right">
+                      {#if isOwn}
+                        <span class="text-[10px] italic text-muted-foreground">Your offer</span>
+                      {:else}
+                        <Button
+                          class="font-bold h-7 py-0 px-3 text-[10px]"
+                          disabled={fillingDigest === row.digest || !wallet.address || colRaw === null}
+                          onclick={() => handleFillOffer(row)}
+                          size="sm"
+                        >
+                          {#if fillingDigest === row.digest}
+                            <RefreshCw class="mr-1.5 h-3 w-3 animate-spin" />
+                            Filling…
+                          {:else}
+                            Fill
+                          {/if}
+                        </Button>
+                      {/if}
+                    </Table.Cell>
+                  </Table.Row>
+                {/each}
+              {/if}
+            </Table.Body>
+          </Table.Root>
+        </div>
+      </Card.Root>
+    </div>
+  </div>
 
   <!-- Ecosystem Stats Footer (Aesthetic) -->
   <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-8">

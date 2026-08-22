@@ -104,6 +104,24 @@ const approveERC20IfNeeded = async (
   }
 };
 
+/**
+ * Ensure the vault is approved to pull at least `amount` of `tokenAddress` from
+ * the connected wallet. Used by the signer side (borrower's collateral / lender's
+ * principal) so the counterparty can pull the committed asset at fill time.
+ */
+export const ensureVaultAllowance = async (tokenAddress: string, amount: bigint): Promise<void> => {
+  const contract = await getVouchVaultContract();
+  await approveERC20IfNeeded(contract, tokenAddress, amount);
+};
+
+/** Generate a cryptographically-random uint256 nonce for signed-order digest uniqueness. */
+export const generateNonce = (): bigint => {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  let n = 0n;
+  for (const b of bytes) n = (n << 8n) | BigInt(b);
+  return n;
+};
+
 const parseLoanId = (
   contract: VouchVault,
   receipt: ethers.TransactionReceipt,
