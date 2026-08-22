@@ -12,17 +12,20 @@ export class SignedOrdersService {
   async createLoanRequest(
     dto: CreateSignedLoanRequestDto,
   ): Promise<{ digest: string }> {
+    const collateralAmount = BigInt(dto.collateralAmount);
+    const principalAmount = BigInt(dto.principalAmount);
+    const nonce = BigInt(dto.nonce);
     const domain = buildDomain(BigInt(dto.networkId), dto.contractAddress);
     const value = {
       borrower: dto.borrowerAddress,
       collateralToken: dto.collateralTokenAddress,
-      collateralAmount: dto.collateralAmount.toString(),
+      collateralAmount: collateralAmount.toString(),
       principalToken: dto.principalTokenAddress,
-      principalAmount: dto.principalAmount.toString(),
+      principalAmount: principalAmount.toString(),
       interestRateBps: dto.interestRateBps,
       durationSeconds: dto.durationSeconds.toString(),
       maxLtvBps: dto.maxLtvBps,
-      nonce: dto.nonce.toString(),
+      nonce: nonce.toString(),
       deadline: dto.deadline.toString(),
     };
     const { valid, digest } = verifyLoanRequest(value, dto.signature, domain);
@@ -34,9 +37,9 @@ export class SignedOrdersService {
       '0x0000000000000000000000000000000000000000'
     )
       throw new BadRequestException('Collateral must be ERC20');
-    if (dto.collateralAmount <= 0n)
+    if (collateralAmount <= 0n)
       throw new BadRequestException('Collateral amount must be > 0');
-    if (dto.principalAmount <= 0n)
+    if (principalAmount <= 0n)
       throw new BadRequestException('Principal amount must be > 0');
     if (dto.durationSeconds <= 0)
       throw new BadRequestException('Duration must be > 0');
@@ -53,13 +56,13 @@ export class SignedOrdersService {
         p_digest: digest,
         p_borrower_address: asAddress(dto.borrowerAddress),
         p_collateral_token_address: asAddress(dto.collateralTokenAddress),
-        p_collateral_amount: dto.collateralAmount.toString(),
+        p_collateral_amount: collateralAmount.toString(),
         p_principal_token_address: asAddress(dto.principalTokenAddress),
-        p_principal_amount: dto.principalAmount.toString(),
+        p_principal_amount: principalAmount.toString(),
         p_interest_rate_bps: dto.interestRateBps,
         p_duration_seconds: dto.durationSeconds,
         p_max_ltv_bps: dto.maxLtvBps,
-        p_nonce: dto.nonce.toString(),
+        p_nonce: nonce.toString(),
         p_deadline: new Date(dto.deadline * 1000).toISOString(),
         p_signature: dto.signature,
       },
@@ -71,18 +74,20 @@ export class SignedOrdersService {
   async createLendOffer(
     dto: CreateSignedLendOfferDto,
   ): Promise<{ digest: string }> {
+    const principalAmount = BigInt(dto.principalAmount);
+    const nonce = BigInt(dto.nonce);
     const domain = buildDomain(BigInt(dto.networkId), dto.contractAddress);
     const value = {
       lender: dto.lenderAddress,
       principalToken: dto.principalTokenAddress,
-      principalAmount: dto.principalAmount.toString(),
+      principalAmount: principalAmount.toString(),
       collateralRatioBps: dto.collateralRatioBps,
       trustedRatioBps: dto.trustedRatioBps,
       scoreThreshold: dto.scoreThreshold,
       maxLtvBps: dto.maxLtvBps,
       interestRateBps: dto.interestRateBps,
       durationSeconds: dto.durationSeconds.toString(),
-      nonce: dto.nonce.toString(),
+      nonce: nonce.toString(),
       deadline: dto.deadline.toString(),
     };
     const { valid, digest } = verifyLendOffer(value, dto.signature, domain);
@@ -93,7 +98,7 @@ export class SignedOrdersService {
       dto.principalTokenAddress === '0x0000000000000000000000000000000000000000'
     )
       throw new BadRequestException('Principal must be ERC20');
-    if (dto.principalAmount <= 0n)
+    if (principalAmount <= 0n)
       throw new BadRequestException('Principal amount must be > 0');
     if (dto.durationSeconds <= 0)
       throw new BadRequestException('Duration must be > 0');
@@ -122,7 +127,7 @@ export class SignedOrdersService {
         p_digest: digest,
         p_lender_address: asAddress(dto.lenderAddress),
         p_principal_token_address: asAddress(dto.principalTokenAddress),
-        p_principal_amount: dto.principalAmount.toString(),
+        p_principal_amount: principalAmount.toString(),
         p_collateral_token_address: null,
         p_collateral_ratio_bps: dto.collateralRatioBps,
         p_trusted_ratio_bps: dto.trustedRatioBps,
@@ -130,7 +135,7 @@ export class SignedOrdersService {
         p_max_ltv_bps: dto.maxLtvBps,
         p_interest_rate_bps: dto.interestRateBps,
         p_duration_seconds: dto.durationSeconds,
-        p_nonce: dto.nonce.toString(),
+        p_nonce: nonce.toString(),
         p_deadline: new Date(dto.deadline * 1000).toISOString(),
         p_signature: dto.signature,
       },

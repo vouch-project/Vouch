@@ -210,9 +210,8 @@ export const fillLoanRequest = async (request: SignedLoanRequest, signature: str
  * - ETH collateral (collateralToken === ZeroAddress): sends value.
  * - ERC20 collateral: approves the vault, then calls fillLendOffer.
  *
- * `collateralToken` is the borrower's chosen token at fill time. When the
- * signed offer has `collateralToken = address(0)` ("any collateral"), this
- * value tells the contract which token the borrower is providing.
+ * `collateralToken` is the borrower's chosen token at fill time; it is not part of the
+ * signed EIP-712 payload (the offer only commits the principal + terms).
  */
 export const fillLendOffer = async (
   offer: SignedLendOffer,

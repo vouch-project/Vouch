@@ -1,5 +1,4 @@
 import { IsNumber, IsNumberString, IsString } from 'class-validator';
-import { IsBigInt } from '../../decorators/is-bigint.decorator';
 
 export class CreateSignedLendOfferDto {
   @IsString()
@@ -8,8 +7,8 @@ export class CreateSignedLendOfferDto {
   @IsString()
   principalTokenAddress!: string;
 
-  @IsBigInt()
-  principalAmount!: bigint;
+  @IsNumberString()
+  principalAmount!: string;
 
   @IsNumber()
   collateralRatioBps!: number;
@@ -29,8 +28,8 @@ export class CreateSignedLendOfferDto {
   @IsNumber()
   durationSeconds!: number;
 
-  @IsBigInt()
-  nonce!: bigint;
+  @IsNumberString()
+  nonce!: string;
 
   @IsNumber()
   deadline!: number;
