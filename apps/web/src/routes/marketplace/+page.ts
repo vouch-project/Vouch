@@ -48,8 +48,8 @@ export const load: PageLoad = () => {
       return (data as unknown as LendOfferRow[]) ?? [];
     });
 
-  const signedRequestsPromise = getSignedRequests().catch((): [] => []);
-  const signedOffersPromise = getSignedOffers().catch((): [] => []);
+  const signedRequestsPromise = getSignedRequests().catch(() => []);
+  const signedOffersPromise = getSignedOffers().catch(() => []);
 
   return { streamed: { loansPromise, scoresPromise, lendOffersPromise, signedRequestsPromise, signedOffersPromise } };
 };
