@@ -27,7 +27,9 @@ export const load: PageLoad = () => {
     const addresses = [...new Set(loans.map((l) => l.borrowerAddress))];
     const results = await Promise.allSettled(
       addresses.map((address) =>
-        axiosApi.get<{ score: number }>(`/scoring/${address}`).then(({ data }) => ({ address, score: data.score })),
+        axiosApi
+          .get<{ score: number }>(`/scoring/${encodeURIComponent(address)}`)
+          .then(({ data }) => ({ address, score: data.score })),
       ),
     );
     return Object.fromEntries(
