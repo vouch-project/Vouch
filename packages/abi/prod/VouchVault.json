@@ -17,6 +17,11 @@
   },
   {
     "inputs": [],
+    "name": "BonusExceedsMax",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "BorrowerCannotFundOwnLoan",
     "type": "error"
   },
@@ -155,6 +160,11 @@
   },
   {
     "inputs": [],
+    "name": "InvalidLtvAttestation",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "InvalidMaxLtv",
     "type": "error"
   },
@@ -205,7 +215,22 @@
   },
   {
     "inputs": [],
+    "name": "LtvAttestationExpired",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "LtvExceedsAttestedMax",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "MaxLtvBelowRatioImpliedLtv",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "MinInterestExceedsMax",
     "type": "error"
   },
   {
@@ -293,6 +318,11 @@
   {
     "inputs": [],
     "name": "PrincipalTokenMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ReentrantCall",
     "type": "error"
   },
   {

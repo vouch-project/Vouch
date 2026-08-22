@@ -58,6 +58,12 @@ error StalePrice();
 error FeedDecimalsTooLarge();
 error ExceedsMaxPayment();
 error InsufficientBalance();
+error ReentrantCall();
+error MinInterestExceedsMax();
+error BonusExceedsMax();
+error LtvExceedsAttestedMax();
+error LtvAttestationExpired();
+error InvalidLtvAttestation();
 
 /// @title VouchVault (Upgradeable)
 /// @notice Lending vault contract for the Vouch protocol supporting collateralized loans
@@ -197,7 +203,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     uint256 public constant MAX_MIN_INTEREST_BPS = 10000; // hard cap: 100% of principal
 
     modifier nonReentrant() {
-        if (_reentrancyStatus == _ENTERED) revert("ReentrancyGuard: reentrant call");
+        if (_reentrancyStatus == _ENTERED) revert ReentrantCall();
         _reentrancyStatus = _ENTERED;
         _;
         _reentrancyStatus = _NOT_ENTERED;
@@ -388,7 +394,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
      * @param newMinInterestBps Floor in basis points of principal (1000 = 10%), capped at MAX_MIN_INTEREST_BPS.
      */
     function setMinInterestBps(uint256 newMinInterestBps) external onlyOwner {
-        if (newMinInterestBps > MAX_MIN_INTEREST_BPS) revert FeeExceedsMax();
+        if (newMinInterestBps > MAX_MIN_INTEREST_BPS) revert MinInterestExceedsMax();
         minInterestBps = newMinInterestBps;
         emit MinInterestUpdated(newMinInterestBps);
     }
@@ -398,7 +404,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
      * @param newBonusBps Bonus in basis points (500 = 5%), capped at MAX_LIQUIDATION_BONUS_BPS.
      */
     function setLiquidationBonusBps(uint256 newBonusBps) external onlyOwner {
-        if (newBonusBps > MAX_LIQUIDATION_BONUS_BPS) revert FeeExceedsMax();
+        if (newBonusBps > MAX_LIQUIDATION_BONUS_BPS) revert BonusExceedsMax();
         liquidationBonusBps = newBonusBps;
         emit LiquidationBonusUpdated(newBonusBps);
     }
@@ -407,6 +413,33 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         if (newSigner == address(0)) revert InvalidAddress();
         scoreSigner = newSigner;
         emit ScoreSignerUpdated(newSigner);
+    }
+
+    /// @dev Verify an EIP-712 LtvAttestation signed by `scoreSigner` and consume the nonce.
+    ///      No-op when `scoreSigner` is unset (attestation not required).
+    function _verifyLtvAttestation(
+        address borrower,
+        address collateralToken,
+        address borrowToken,
+        uint16 maxLtvBps,
+        uint256 expiry,
+        bytes calldata sig
+    ) internal {
+        if (scoreSigner == address(0)) return;
+        if (block.timestamp > expiry) revert LtvAttestationExpired();
+        uint256 nonce = nonces[borrower];
+        bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(
+            LTV_ATTESTATION_TYPEHASH,
+            borrower,
+            collateralToken,
+            borrowToken,
+            maxLtvBps,
+            expiry,
+            nonce
+        )));
+        if (ECDSA.recover(digest, sig) != scoreSigner) revert InvalidLtvAttestation();
+        nonces[borrower]++;
+        emit LtvAttestationUsed(borrower, nonce);
     }
 
     /**
@@ -508,6 +541,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         if (fundWindowSeconds == 0) revert InvalidFundWindow();
         if (interestRateBps > 10000) revert InvalidInterestRate();
         if (liquidationThresholdBps == 0 || liquidationThresholdBps > 10000) revert InvalidLiquidationThreshold();
+        if (liquidationThresholdBps > maxLtvBps) revert LtvExceedsAttestedMax();
+        _verifyLtvAttestation(msg.sender, collateralToken, principalToken, maxLtvBps, expiry, sig);
 
         uint256 actualCollateral;
         if (collateralToken == address(0)) {

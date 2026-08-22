@@ -17,7 +17,7 @@ describe('VouchVault', function () {
     const nonce = await vault.nonces(borrowerAddress);
     const expiry = overrideExpiry ?? 9999999999n;
     const domain = {
-      name: 'VouchVault',
+      name: 'Vouch',
       version: '1',
       chainId: Number(network.chainId),
       verifyingContract: vaultAddress,
@@ -313,22 +313,24 @@ describe('VouchVault', function () {
         ethers.ZeroAddress,
         pastExpiry,
       );
-      await vault.createLoan(
-        ethers.ZeroAddress,
-        0n,
-        ethers.ZeroAddress,
-        collateral,
-        0,
-        0,
-        7n * 86400n,
-        8000,
-        10000,
-        pastExpiry,
-        sig,
-        {
-          value: collateral,
-        },
-      );
+      await expect(
+        vault.createLoan(
+          ethers.ZeroAddress,
+          0n,
+          ethers.ZeroAddress,
+          collateral,
+          0,
+          0,
+          7n * 86400n,
+          8000,
+          10000,
+          pastExpiry,
+          sig,
+          {
+            value: collateral,
+          },
+        ),
+      ).to.be.revertedWithCustomError(vault, 'LtvAttestationExpired');
     });
 
     it('reverts when LTV attestation has an invalid signature', async function () {
@@ -339,22 +341,24 @@ describe('VouchVault', function () {
       const collateral = ethers.parseEther('1.0');
       // Sign with attacker instead of owner (the configured scoreSigner).
       const { expiry, sig } = await signLtvAttestation(vault, attacker, owner.address, 10000);
-      await vault.createLoan(
-        ethers.ZeroAddress,
-        0n,
-        ethers.ZeroAddress,
-        collateral,
-        0,
-        0,
-        7n * 86400n,
-        8000,
-        10000,
-        expiry,
-        sig,
-        {
-          value: collateral,
-        },
-      );
+      await expect(
+        vault.createLoan(
+          ethers.ZeroAddress,
+          0n,
+          ethers.ZeroAddress,
+          collateral,
+          0,
+          0,
+          7n * 86400n,
+          8000,
+          10000,
+          expiry,
+          sig,
+          {
+            value: collateral,
+          },
+        ),
+      ).to.be.revertedWithCustomError(vault, 'InvalidLtvAttestation');
     });
 
     it('reverts when liquidationThresholdBps exceeds maxLtvBps', async function () {
@@ -364,22 +368,24 @@ describe('VouchVault', function () {
       await vault.setScoreSigner(owner.address);
       const collateral = ethers.parseEther('1.0');
       const { expiry, sig } = await signLtvAttestation(vault, owner, owner.address, 7000);
-      await vault.createLoan(
-        ethers.ZeroAddress,
-        0n,
-        ethers.ZeroAddress,
-        collateral,
-        0,
-        0,
-        7n * 86400n,
-        8000,
-        7000,
-        expiry,
-        sig,
-        {
-          value: collateral,
-        },
-      );
+      await expect(
+        vault.createLoan(
+          ethers.ZeroAddress,
+          0n,
+          ethers.ZeroAddress,
+          collateral,
+          0,
+          0,
+          7n * 86400n,
+          8000,
+          7000,
+          expiry,
+          sig,
+          {
+            value: collateral,
+          },
+        ),
+      ).to.be.revertedWithCustomError(vault, 'LtvExceedsAttestedMax');
     });
 
     it('reverts on nonce replay after a successful createLoan', async function () {
@@ -406,23 +412,25 @@ describe('VouchVault', function () {
           value: collateral,
         },
       );
-      // Attestation is no longer verified, so second call also succeeds.
-      await vault.createLoan(
-        ethers.ZeroAddress,
-        0n,
-        ethers.ZeroAddress,
-        collateral,
-        0,
-        0,
-        7n * 86400n,
-        8000,
-        10000,
-        expiry,
-        sig,
-        {
-          value: collateral,
-        },
-      );
+      // Second call with the same sig is rejected — nonce was already consumed.
+      await expect(
+        vault.createLoan(
+          ethers.ZeroAddress,
+          0n,
+          ethers.ZeroAddress,
+          collateral,
+          0,
+          0,
+          7n * 86400n,
+          8000,
+          10000,
+          expiry,
+          sig,
+          {
+            value: collateral,
+          },
+        ),
+      ).to.be.revertedWithCustomError(vault, 'InvalidLtvAttestation');
     });
 
     it('reverts when attestation is signed for different tokens than the loan', async function () {
@@ -443,20 +451,22 @@ describe('VouchVault', function () {
         ethers.ZeroAddress,
         ethers.ZeroAddress,
       );
-      // Attestation is no longer verified, so mismatched tokens are accepted.
-      await vault.createLoan(
-        await token.getAddress(),
-        collateral,
-        ethers.ZeroAddress,
-        collateral,
-        0,
-        0,
-        7n * 86400n,
-        8000,
-        10000,
-        expiry,
-        sig,
-      );
+      // Mismatched token in attestation vs actual collateral token — signature does not cover this loan.
+      await expect(
+        vault.createLoan(
+          await token.getAddress(),
+          collateral,
+          ethers.ZeroAddress,
+          collateral,
+          0,
+          0,
+          7n * 86400n,
+          8000,
+          10000,
+          expiry,
+          sig,
+        ),
+      ).to.be.revertedWithCustomError(vault, 'InvalidLtvAttestation');
     });
   });
 
@@ -2170,7 +2180,10 @@ describe('VouchVault', function () {
       const VouchVault = await ethers.getContractFactory('VouchVault');
       const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
       await vault.setScoreSigner(owner.address);
-      await expect(vault.connect(owner).setMinInterestBps(10001)).to.be.revertedWithCustomError(vault, 'FeeExceedsMax');
+      await expect(vault.connect(owner).setMinInterestBps(10001)).to.be.revertedWithCustomError(
+        vault,
+        'MinInterestExceedsMax',
+      );
       await expect(vault.connect(borrower).setMinInterestBps(100)).to.be.reverted; // onlyOwner
     });
   });
@@ -3180,7 +3193,7 @@ describe('VouchVault', function () {
         const { vault, owner } = await deployWithFeeds();
         await expect(vault.connect(owner).setLiquidationBonusBps(2001)).to.be.revertedWithCustomError(
           vault,
-          'FeeExceedsMax',
+          'BonusExceedsMax',
         );
       });
 

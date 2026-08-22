@@ -171,38 +171,21 @@ export type RepaymentDetails = {
   collateralReleased: bigint;
 };
 
-const ACCRUAL_PERIOD = 86400n;
-const PERIODS_PER_YEAR = 365n;
-
 export const getRepaymentDetails = async (onChainLoanId: bigint): Promise<RepaymentDetails> => {
   const contract = await getVouchVaultContract();
-  const loan = await contract.loans(onChainLoanId);
-
-  let owed = loan.interestAccrued;
-  if (loan.funded && loan.durationSeconds > 0n) {
-    const from = loan.lastAccrualAt === 0n ? loan.fundedAt : loan.lastAccrualAt;
-    const dueAt = loan.fundedAt + loan.durationSeconds;
-    const latestBlock = await (contract.runner as ethers.JsonRpcSigner).provider?.getBlock('latest');
-    const nowSec = BigInt(latestBlock?.timestamp ?? Math.floor(Date.now() / 1000));
-    const cappedNow = nowSec < dueAt ? nowSec : dueAt;
-    if (cappedNow > from) {
-      const periods = (cappedNow - from) / ACCRUAL_PERIOD;
-      const outstanding = loan.principalAmount - loan.principalRepaid;
-      owed += (outstanding * loan.interestRateBps * periods) / (10000n * PERIODS_PER_YEAR);
-    }
-  }
-
-  const totalDue = loan.repaid ? loan.amountRepaid : loan.funded ? loan.principalAmount + owed : 0n;
-  const remaining = totalDue > loan.amountRepaid ? totalDue - loan.amountRepaid : 0n;
+  const [loan, details] = await Promise.all([
+    contract.loans(onChainLoanId),
+    contract.getRepaymentDetails(onChainLoanId),
+  ]);
 
   return {
-    interestRateBps: Number(loan.interestRateBps),
-    durationSeconds: loan.durationSeconds,
-    repaid: loan.repaid,
-    totalDue,
-    amountRepaid: loan.amountRepaid,
-    remaining,
-    fundDeadline: loan.fundDeadline,
+    interestRateBps: Number(details[0]),
+    durationSeconds: details[1],
+    repaid: details[2],
+    totalDue: details[3],
+    amountRepaid: details[4],
+    remaining: details[5],
+    fundDeadline: details[6],
     principalRepaid: loan.principalRepaid,
     collateralReleased: loan.collateralReleased,
   };
