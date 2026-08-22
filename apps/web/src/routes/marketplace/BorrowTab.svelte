@@ -31,17 +31,15 @@
   let fundingLoanId: string | null = $state(null);
   let copiedAddress: string | null = $state(null);
 
+  let fundError: string | null = $state(null);
   let signedError: string | null = $state(null);
   let fillingDigest: string | null = $state(null);
 
   const handleFundLoan = async (loan: LoanWithTokens) => {
-    if (loan.onChainLoanId == null) {
-      return;
-    }
-    if (!loan.principalAmount) {
-      return;
-    }
+    if (loan.onChainLoanId == null) return;
+    if (!loan.principalAmount) return;
     fundingLoanId = loan.id;
+    fundError = null;
     try {
       await fundLoan(
         ethers.getBigInt(loan.onChainLoanId),
@@ -49,7 +47,7 @@
         loan.principalToken?.address ?? ethers.ZeroAddress,
       );
     } catch (e) {
-      console.error(getErrorMessage(e));
+      fundError = getErrorMessage(e);
     } finally {
       fundingLoanId = null;
     }
@@ -466,6 +464,15 @@
   >
     <Info class="h-5 w-5" />
     <p class="font-medium">{errorMsg}</p>
+  </div>
+{/if}
+
+{#if fundError}
+  <div
+    class="mt-3 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-destructive flex items-center gap-2"
+  >
+    <Info class="h-4 w-4" />
+    <p class="text-sm font-medium">{fundError}</p>
   </div>
 {/if}
 
