@@ -3813,5 +3813,247 @@ describe('VouchVault', function () {
       };
       await expect(vault.connect(lender).cancelSignedLoanRequest(req)).to.be.revertedWith('Not signer');
     });
+
+    it('fillLoanRequest: reverts on expired deadline', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const latestBlock = await ethers.provider.getBlock('latest');
+      const pastDeadline = BigInt(latestBlock!.timestamp - 1);
+      const req = {
+        borrower: borrower.address,
+        collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: 1n,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: 1n,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 10n,
+        deadline: pastDeadline,
+      };
+      const sig = await signLoanRequest(vault, borrower, req);
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n })).to.be.revertedWith(
+        'Request expired',
+      );
+    });
+
+    it('fillLoanRequest: lender fills ERC20-collateral / ERC20-principal request', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const wbtc = await Mock.deploy('WBTC', 'WBTC', 8, 0);
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const wbtcFeed = await MockAgg.deploy(8, 64000n * 10n ** 8n); // WBTC = $64000
+      const usdcFeed = await MockAgg.deploy(8, 1n * 10n ** 8n); // USDC = $1
+      await vault.connect(owner).setPriceFeed(await wbtc.getAddress(), await wbtcFeed.getAddress(), 8);
+      await vault.connect(owner).setPriceFeed(await usdc.getAddress(), await usdcFeed.getAddress(), 6);
+
+      // principal = 3200 USDC = $3200; collateralRatio ~153.8% at LTV 65%
+      // min collateral: $3200 * (10000/6500) ~= $4923 -> 0.077 WBTC at $64000
+      const principal = 3200n * 10n ** 6n;
+      const collateral = 8n * 10n ** 6n; // 0.08 WBTC = $5120 > $4923
+
+      await wbtc.mint(borrower.address, collateral);
+      await wbtc.connect(borrower).approve(await vault.getAddress(), collateral);
+      await usdc.mint(lender.address, principal);
+      await usdc.connect(lender).approve(await vault.getAddress(), principal);
+
+      const req = {
+        borrower: borrower.address,
+        collateralToken: await wbtc.getAddress(),
+        collateralAmount: collateral,
+        principalToken: await usdc.getAddress(),
+        principalAmount: principal,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 11n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLoanRequest(vault, borrower, req);
+      const digest = await vault.hashLoanRequest(req);
+
+      await expect(vault.connect(lender).fillLoanRequest(req, sig))
+        .to.emit(vault, 'SignedLoanRequestFilled')
+        .withArgs(
+          0,
+          digest,
+          borrower.address,
+          lender.address,
+          await wbtc.getAddress(),
+          collateral,
+          await usdc.getAddress(),
+          principal,
+          anyValue,
+        );
+
+      const loan = await vault.loans(0);
+      expect(loan.borrower).to.equal(borrower.address);
+      expect(loan.lender).to.equal(lender.address);
+      expect(loan.requestedPrincipalToken).to.equal(await usdc.getAddress());
+      expect(await vault.consumedSignatures(digest)).to.equal(true);
+    });
+
+    it('fillLendOffer: reverts on wrong signer', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const offer = {
+        lender: lender.address,
+        principalToken: await usdc.getAddress(),
+        principalAmount: 1000n * 10n ** 6n,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 10n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLendOffer(vault, owner, offer); // wrong signer
+      await expect(
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: ethers.parseEther('1') }),
+      ).to.be.revertedWith('Invalid signature');
+    });
+
+    it('fillLendOffer: reverts when already consumed', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const usdcFeed = await MockAgg.deploy(8, 1n * 10n ** 8n);
+      await vault.connect(owner).setPriceFeed(await usdc.getAddress(), await usdcFeed.getAddress(), 6);
+
+      // 1600 USDC = $1600; 160% ratio -> need $2560 -> 0.8 ETH at $3200
+      const principal = 1600n * 10n ** 6n;
+      const collateral = ethers.parseEther('0.8');
+      await usdc.mint(lender.address, principal * 2n);
+      await usdc.connect(lender).approve(await vault.getAddress(), principal * 2n);
+
+      const offer = {
+        lender: lender.address,
+        principalToken: await usdc.getAddress(),
+        principalAmount: principal,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 11n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLendOffer(vault, lender, offer);
+      await vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: collateral });
+      await expect(
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: collateral }),
+      ).to.be.revertedWith('Signature already used');
+    });
+
+    it('fillLendOffer: reverts on expired deadline', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const latestBlock = await ethers.provider.getBlock('latest');
+      const pastDeadline = BigInt(latestBlock!.timestamp - 1);
+      const offer = {
+        lender: lender.address,
+        principalToken: await usdc.getAddress(),
+        principalAmount: 1000n * 10n ** 6n,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 12n,
+        deadline: pastDeadline,
+      };
+      const sig = await signLendOffer(vault, lender, offer);
+      await expect(
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: ethers.parseEther('1') }),
+      ).to.be.revertedWith('Offer expired');
+    });
+
+    it('fillLendOffer: reverts when collateral below required ratio', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const usdcFeed = await MockAgg.deploy(8, 1n * 10n ** 8n);
+      await vault.connect(owner).setPriceFeed(await usdc.getAddress(), await usdcFeed.getAddress(), 6);
+
+      // 3200 USDC = $3200; 160% ratio -> need $5120 -> 1.6 ETH at $3200
+      // Supply only 1.0 ETH = $3200 < $5120
+      const principal = 3200n * 10n ** 6n;
+      const insufficientCollateral = ethers.parseEther('1.0'); // $3200 < $5120 required
+      await usdc.mint(lender.address, principal);
+      await usdc.connect(lender).approve(await vault.getAddress(), principal);
+
+      const offer = {
+        lender: lender.address,
+        principalToken: await usdc.getAddress(),
+        principalAmount: principal,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 13n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLendOffer(vault, lender, offer);
+      await expect(
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: insufficientCollateral }),
+      ).to.be.revertedWith('Collateral value below required ratio');
+    });
+
+    it('cancelSignedLendOffer: lender cancels, then fill reverts', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const offer = {
+        lender: lender.address,
+        principalToken: await usdc.getAddress(),
+        principalAmount: 1000n * 10n ** 6n,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 20n,
+        deadline: 9999999999n,
+      };
+      const digest = await vault.hashLendOffer(offer);
+      await expect(vault.connect(lender).cancelSignedLendOffer(offer))
+        .to.emit(vault, 'SignedLendOfferCancelled')
+        .withArgs(digest, lender.address);
+      const sig = await signLendOffer(vault, lender, offer);
+      await expect(
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: ethers.parseEther('1') }),
+      ).to.be.revertedWith('Signature already used');
+    });
+
+    it('cancelSignedLendOffer: reverts if caller is not lender', async function () {
+      const { vault, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const offer = {
+        lender: lender.address,
+        principalToken: await usdc.getAddress(),
+        principalAmount: 1000n * 10n ** 6n,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 21n,
+        deadline: 9999999999n,
+      };
+      await expect(vault.connect(borrower).cancelSignedLendOffer(offer)).to.be.revertedWith('Not signer');
+    });
   });
 });
