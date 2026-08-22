@@ -317,11 +317,6 @@
   },
   {
     "inputs": [],
-    "name": "PrincipalTokenMismatch",
-    "type": "error"
-  },
-  {
-    "inputs": [],
     "name": "ReentrantCall",
     "type": "error"
   },
