@@ -124,9 +124,8 @@
     status = null;
     try {
       if (principalIsErc20) {
-        // Gasless path: sign a single offer with collateralToken = address(0), meaning
-        // "any collateral — borrower picks at fill time." The contract's fillLendOffer
-        // accepts a caller-supplied collateralToken when the offer's field is zero.
+        // Gasless path: the lender signs an offer committing ERC20 principal; the borrower chooses
+        // the collateral token + amount at fill time when calling fillLendOffer.
         const principalParsed = ethers.parseUnits(principalAmount, principalToken.decimals ?? 18);
         const deadline = Math.floor(Date.now() / 1000) + acceptWindowSeconds;
         await ensureVaultAllowance(principalToken.address, principalParsed);

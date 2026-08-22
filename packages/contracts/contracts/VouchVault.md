@@ -155,7 +155,6 @@ struct SignedLendOffer {
     address lender;
     address principalToken;    // ERC20 only (signer's committed asset)
     uint256 principalAmount;
-    address collateralToken;   // ETH (address(0)) or ERC20 (supplied by borrower at fill)
     uint16  collateralRatioBps;
     uint16  trustedRatioBps;
     uint16  scoreThreshold;
@@ -179,10 +178,10 @@ struct SignedLendOffer {
 - Pulls the borrower's ERC20 collateral (pre-approved at sign time) and the lender's principal — ETH via `msg.value` when `principalToken == address(0)`, otherwise ERC20 `transferFrom`. Creates the loan and emits `SignedLoanRequestFilled`.
 - Reverts on: ETH collateral (`collateralToken == address(0)`), zero `principalAmount`, wrong signer, expired deadline, already-consumed digest, or collateral below the required ratio.
 
-#### fillLendOffer(SignedLendOffer offer, uint256 collateralAmount, bytes sig) — payable
+#### fillLendOffer(SignedLendOffer offer, address collateralToken, uint256 collateralAmount, bytes sig) — payable
 
-- Called by the **borrower**, who chooses `collateralAmount` (must satisfy `collateralRatioBps` at current prices). Recovers the signer, requires `signer == offer.lender`, checks `deadline` and the consumed marker.
-- Pulls the lender's ERC20 principal (pre-approved) and the borrower's collateral — ETH via `msg.value` when `collateralToken == address(0)`, otherwise ERC20. Creates the loan and emits `SignedLendOfferFilled`.
+- Called by the **borrower**, who supplies `collateralToken` and `collateralAmount` (must satisfy `collateralRatioBps` at current prices). Recovers the signer, requires `signer == offer.lender`, checks `deadline` and the consumed marker.
+- Pulls the lender's ERC20 principal (pre-approved) and the borrower's collateral — ETH via `msg.value` when `collateralToken == address(0)`, otherwise ERC20 `transferFrom`. Creates the loan and emits `SignedLendOfferFilled`.
 - Reverts on: ETH principal (`principalToken == address(0)`), wrong signer, expired deadline, already-consumed digest, or insufficient collateral. Signed offers fill at the base `collateralRatioBps` (no score attestation is passed at fill).
 
 #### cancelSignedLoanRequest(SignedLoanRequest req) / cancelSignedLendOffer(SignedLendOffer offer)

@@ -857,10 +857,10 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     ///         the borrower supplies collateral (ETH via msg.value OR ERC20 via approve),
     ///         a funded loan is created, principal is disbursed to the borrower,
     ///         and the signature digest is consumed to prevent replay.
-    /// @param offer           The signed lend offer struct.
-    /// @param collateralAmount Amount of ERC20 collateral (offer.collateralToken) to pull from the borrower.
-    ///                         Pass address(0) with msg.value for ETH collateral; any other address for ERC20.
-    /// @param sig             EIP-712 signature from offer.lender over the offer hash.
+    /// @param offer            The signed lend offer struct.
+    /// @param collateralToken  Collateral token provided by the borrower at fill time (address(0) = native ETH).
+    /// @param collateralAmount Amount of ERC20 collateral to pull when collateralToken != address(0). Ignored for ETH collateral (uses msg.value).
+    /// @param sig              EIP-712 signature from offer.lender over the offer hash.
     function fillLendOffer(SignedLendOffer calldata offer, address collateralToken, uint256 collateralAmount, bytes calldata sig) external payable nonReentrant {
         require(offer.principalToken != address(0), "Principal must be ERC20");
         require(offer.principalAmount > 0, "Principal must be > 0");

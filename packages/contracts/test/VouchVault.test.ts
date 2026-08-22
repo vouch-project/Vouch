@@ -1,6 +1,6 @@
+import { anyValue } from '@nomicfoundation/hardhat-chai-matchers/withArgs';
 import { expect } from 'chai';
 import { ethers, upgrades } from 'hardhat';
-import { anyValue } from '@nomicfoundation/hardhat-chai-matchers/withArgs';
 
 describe('VouchVault', function () {
   it('Should accept deposits', async function () {
@@ -2668,11 +2668,9 @@ describe('VouchVault', function () {
       const TRUSTED_RATIO = 12000; // 120%
       const SCORE_MIN = 700;
       const MAX_LTV = 8334; // ceil(10000*10000/12000)
-      await vault
-        .connect(lender)
-        .createLendOffer(20000, TRUSTED_RATIO, SCORE_MIN, MAX_LTV, RATE, DURATION, WINDOW, {
-          value: ethers.parseEther('1.0'),
-        });
+      await vault.connect(lender).createLendOffer(20000, TRUSTED_RATIO, SCORE_MIN, MAX_LTV, RATE, DURATION, WINDOW, {
+        value: ethers.parseEther('1.0'),
+      });
 
       // Sign attestation: keccak256(borrower, score, expiry, vaultAddress, chainId)
       const score = 800;
@@ -2692,11 +2690,9 @@ describe('VouchVault', function () {
       await expect(tx).to.emit(vault, 'LendOfferAccepted').withArgs(1, 0, borrower.address);
 
       // Confirm 1.2 ETH would have been rejected at base 200% ratio
-      await vault
-        .connect(lender)
-        .createLendOffer(20000, TRUSTED_RATIO, SCORE_MIN, MAX_LTV, RATE, DURATION, WINDOW, {
-          value: ethers.parseEther('1.0'),
-        });
+      await vault.connect(lender).createLendOffer(20000, TRUSTED_RATIO, SCORE_MIN, MAX_LTV, RATE, DURATION, WINDOW, {
+        value: ethers.parseEther('1.0'),
+      });
       await expect(vault.connect(borrower).acceptLendOffer(2, 0, 0, '0x', { value: collateral })).to.be.revertedWith(
         'Collateral value below required ratio',
       );
@@ -2704,7 +2700,11 @@ describe('VouchVault', function () {
   });
 
   describe('signedOrders', function () {
-    const RATIO = 16000, TRUSTED = 0, SCORE_THRESH = 0, LTV = 6500, RATE = 800;
+    const RATIO = 16000,
+      TRUSTED = 0,
+      SCORE_THRESH = 0,
+      LTV = 6500,
+      RATE = 800;
     const DURATION = 30n * 86400n;
 
     async function deployFixture() {
@@ -2721,18 +2721,31 @@ describe('VouchVault', function () {
       const { vault, borrower } = await deployFixture();
       const net = await ethers.provider.getNetwork();
       const domain = { name: 'Vouch', version: '1', chainId: net.chainId, verifyingContract: await vault.getAddress() };
-      const types = { LoanRequest: [
-        { name: 'borrower', type: 'address' }, { name: 'collateralToken', type: 'address' },
-        { name: 'collateralAmount', type: 'uint256' }, { name: 'principalToken', type: 'address' },
-        { name: 'principalAmount', type: 'uint256' }, { name: 'interestRateBps', type: 'uint16' },
-        { name: 'durationSeconds', type: 'uint256' }, { name: 'maxLtvBps', type: 'uint16' },
-        { name: 'nonce', type: 'uint256' }, { name: 'deadline', type: 'uint256' },
-      ]};
+      const types = {
+        LoanRequest: [
+          { name: 'borrower', type: 'address' },
+          { name: 'collateralToken', type: 'address' },
+          { name: 'collateralAmount', type: 'uint256' },
+          { name: 'principalToken', type: 'address' },
+          { name: 'principalAmount', type: 'uint256' },
+          { name: 'interestRateBps', type: 'uint16' },
+          { name: 'durationSeconds', type: 'uint256' },
+          { name: 'maxLtvBps', type: 'uint16' },
+          { name: 'nonce', type: 'uint256' },
+          { name: 'deadline', type: 'uint256' },
+        ],
+      };
       const req = {
-        borrower: borrower.address, collateralToken: '0x0000000000000000000000000000000000000001',
-        collateralAmount: ethers.parseEther('2'), principalToken: ethers.ZeroAddress,
-        principalAmount: ethers.parseEther('1'), interestRateBps: RATE, durationSeconds: DURATION,
-        maxLtvBps: LTV, nonce: 7n, deadline: 9999999999n,
+        borrower: borrower.address,
+        collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: ethers.parseEther('2'),
+        principalToken: ethers.ZeroAddress,
+        principalAmount: ethers.parseEther('1'),
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 7n,
+        deadline: 9999999999n,
       };
       const expected = ethers.TypedDataEncoder.hash(domain, types, req);
       expect(await vault.hashLoanRequest(req)).to.equal(expected);
@@ -2741,13 +2754,20 @@ describe('VouchVault', function () {
     async function signLoanRequest(vault: any, signer: any, req: any) {
       const net = await ethers.provider.getNetwork();
       const domain = { name: 'Vouch', version: '1', chainId: net.chainId, verifyingContract: await vault.getAddress() };
-      const types = { LoanRequest: [
-        { name: 'borrower', type: 'address' }, { name: 'collateralToken', type: 'address' },
-        { name: 'collateralAmount', type: 'uint256' }, { name: 'principalToken', type: 'address' },
-        { name: 'principalAmount', type: 'uint256' }, { name: 'interestRateBps', type: 'uint16' },
-        { name: 'durationSeconds', type: 'uint256' }, { name: 'maxLtvBps', type: 'uint16' },
-        { name: 'nonce', type: 'uint256' }, { name: 'deadline', type: 'uint256' },
-      ]};
+      const types = {
+        LoanRequest: [
+          { name: 'borrower', type: 'address' },
+          { name: 'collateralToken', type: 'address' },
+          { name: 'collateralAmount', type: 'uint256' },
+          { name: 'principalToken', type: 'address' },
+          { name: 'principalAmount', type: 'uint256' },
+          { name: 'interestRateBps', type: 'uint16' },
+          { name: 'durationSeconds', type: 'uint256' },
+          { name: 'maxLtvBps', type: 'uint16' },
+          { name: 'nonce', type: 'uint256' },
+          { name: 'deadline', type: 'uint256' },
+        ],
+      };
       return signer.signTypedData(domain, types, req);
     }
 
@@ -2767,17 +2787,33 @@ describe('VouchVault', function () {
       await wbtc.connect(borrower).approve(await vault.getAddress(), collateral);
 
       const req = {
-        borrower: borrower.address, collateralToken: await wbtc.getAddress(),
-        collateralAmount: collateral, principalToken: ethers.ZeroAddress,
-        principalAmount: principal, interestRateBps: RATE, durationSeconds: DURATION,
-        maxLtvBps: LTV, nonce: 1n, deadline: 9999999999n,
+        borrower: borrower.address,
+        collateralToken: await wbtc.getAddress(),
+        collateralAmount: collateral,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: principal,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 1n,
+        deadline: 9999999999n,
       };
       const sig = await signLoanRequest(vault, borrower, req);
       const digest = await vault.hashLoanRequest(req);
 
       await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: principal }))
         .to.emit(vault, 'SignedLoanRequestFilled')
-        .withArgs(0, digest, borrower.address, lender.address, await wbtc.getAddress(), collateral, ethers.ZeroAddress, principal, anyValue);
+        .withArgs(
+          0,
+          digest,
+          borrower.address,
+          lender.address,
+          await wbtc.getAddress(),
+          collateral,
+          ethers.ZeroAddress,
+          principal,
+          anyValue,
+        );
 
       const loan = await vault.loans(0);
       expect(loan.borrower).to.equal(borrower.address);
@@ -2788,13 +2824,21 @@ describe('VouchVault', function () {
     it('fillLoanRequest: reverts on wrong signer', async function () {
       const { vault, lender, borrower, owner } = await deployFixture();
       const req = {
-        borrower: borrower.address, collateralToken: '0x0000000000000000000000000000000000000001',
-        collateralAmount: 1n, principalToken: ethers.ZeroAddress, principalAmount: 1n,
-        interestRateBps: RATE, durationSeconds: DURATION, maxLtvBps: LTV, nonce: 1n, deadline: 9999999999n,
+        borrower: borrower.address,
+        collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: 1n,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: 1n,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 1n,
+        deadline: 9999999999n,
       };
       const sig = await signLoanRequest(vault, owner, req); // wrong signer
-      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n }))
-        .to.be.revertedWith('Invalid signature');
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n })).to.be.revertedWith(
+        'Invalid signature',
+      );
     });
 
     it('fillLoanRequest: reverts when already consumed', async function () {
@@ -2809,26 +2853,42 @@ describe('VouchVault', function () {
       await wbtc.mint(borrower.address, collateral * 2n);
       await wbtc.connect(borrower).approve(await vault.getAddress(), collateral * 2n);
       const req = {
-        borrower: borrower.address, collateralToken: await wbtc.getAddress(), collateralAmount: collateral,
-        principalToken: ethers.ZeroAddress, principalAmount: principal, interestRateBps: RATE,
-        durationSeconds: DURATION, maxLtvBps: LTV, nonce: 1n, deadline: 9999999999n,
+        borrower: borrower.address,
+        collateralToken: await wbtc.getAddress(),
+        collateralAmount: collateral,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: principal,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 1n,
+        deadline: 9999999999n,
       };
       const sig = await signLoanRequest(vault, borrower, req);
       await vault.connect(lender).fillLoanRequest(req, sig, { value: principal });
-      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: principal }))
-        .to.be.revertedWith('Signature already used');
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: principal })).to.be.revertedWith(
+        'Signature already used',
+      );
     });
 
     it('fillLoanRequest: reverts on ETH collateral (address(0))', async function () {
       const { vault, lender, borrower } = await deployFixture();
       const req = {
-        borrower: borrower.address, collateralToken: ethers.ZeroAddress, collateralAmount: 1n,
-        principalToken: ethers.ZeroAddress, principalAmount: 1n, interestRateBps: RATE,
-        durationSeconds: DURATION, maxLtvBps: LTV, nonce: 1n, deadline: 9999999999n,
+        borrower: borrower.address,
+        collateralToken: ethers.ZeroAddress,
+        collateralAmount: 1n,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: 1n,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 1n,
+        deadline: 9999999999n,
       };
       const sig = await signLoanRequest(vault, borrower, req);
-      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n }))
-        .to.be.revertedWith('Collateral must be ERC20');
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n })).to.be.revertedWith(
+        'Collateral must be ERC20',
+      );
     });
 
     it('fillLoanRequest: reverts when collateral is above broken LTV threshold but below correct ratio', async function () {
@@ -2853,40 +2913,62 @@ describe('VouchVault', function () {
       await wbtc.connect(borrower).approve(await vault.getAddress(), collateral);
 
       const req = {
-        borrower: borrower.address, collateralToken: await wbtc.getAddress(),
-        collateralAmount: collateral, principalToken: ethers.ZeroAddress,
-        principalAmount: principal, interestRateBps: RATE, durationSeconds: DURATION,
-        maxLtvBps: LTV, nonce: 2n, deadline: 9999999999n,
+        borrower: borrower.address,
+        collateralToken: await wbtc.getAddress(),
+        collateralAmount: collateral,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: principal,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 2n,
+        deadline: 9999999999n,
       };
       const sig = await signLoanRequest(vault, borrower, req);
-      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: principal }))
-        .to.be.revertedWith('Collateral value below required ratio');
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: principal })).to.be.revertedWith(
+        'Collateral value below required ratio',
+      );
     });
 
     it('fillLoanRequest: reverts when principalAmount is zero', async function () {
       const { vault, lender, borrower } = await deployFixture();
       const req = {
-        borrower: borrower.address, collateralToken: '0x0000000000000000000000000000000000000001',
-        collateralAmount: 1n, principalToken: ethers.ZeroAddress, principalAmount: 0n,
-        interestRateBps: RATE, durationSeconds: DURATION, maxLtvBps: LTV, nonce: 1n, deadline: 9999999999n,
+        borrower: borrower.address,
+        collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: 1n,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: 0n,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 1n,
+        deadline: 9999999999n,
       };
       const sig = await signLoanRequest(vault, borrower, req);
-      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 0n }))
-        .to.be.revertedWith('Principal must be > 0');
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 0n })).to.be.revertedWith(
+        'Principal must be > 0',
+      );
     });
 
     // --- signLendOffer helper ---
     async function signLendOffer(vault: any, signer: any, offer: any) {
       const net = await ethers.provider.getNetwork();
       const domain = { name: 'Vouch', version: '1', chainId: net.chainId, verifyingContract: await vault.getAddress() };
-      const types = { LendOffer: [
-        { name: 'lender', type: 'address' }, { name: 'principalToken', type: 'address' },
-        { name: 'principalAmount', type: 'uint256' }, { name: 'collateralToken', type: 'address' },
-        { name: 'collateralRatioBps', type: 'uint16' }, { name: 'trustedRatioBps', type: 'uint16' },
-        { name: 'scoreThreshold', type: 'uint16' }, { name: 'maxLtvBps', type: 'uint16' },
-        { name: 'interestRateBps', type: 'uint16' }, { name: 'durationSeconds', type: 'uint256' },
-        { name: 'nonce', type: 'uint256' }, { name: 'deadline', type: 'uint256' },
-      ]};
+      const types = {
+        LendOffer: [
+          { name: 'lender', type: 'address' },
+          { name: 'principalToken', type: 'address' },
+          { name: 'principalAmount', type: 'uint256' },
+          { name: 'collateralRatioBps', type: 'uint16' },
+          { name: 'trustedRatioBps', type: 'uint16' },
+          { name: 'scoreThreshold', type: 'uint16' },
+          { name: 'maxLtvBps', type: 'uint16' },
+          { name: 'interestRateBps', type: 'uint16' },
+          { name: 'durationSeconds', type: 'uint256' },
+          { name: 'nonce', type: 'uint256' },
+          { name: 'deadline', type: 'uint256' },
+        ],
+      };
       return signer.signTypedData(domain, types, offer);
     }
 
@@ -2905,17 +2987,35 @@ describe('VouchVault', function () {
       // ETH collateral supplied by borrower; ratio 160% -> need $5120 -> 1.6 ETH at $3200
       const collateral = ethers.parseEther('1.6');
       const offer = {
-        lender: lender.address, principalToken: await usdc.getAddress(), principalAmount: principal,
-        collateralToken: ethers.ZeroAddress, collateralRatioBps: RATIO, trustedRatioBps: TRUSTED,
-        scoreThreshold: SCORE_THRESH, maxLtvBps: LTV, interestRateBps: RATE, durationSeconds: DURATION,
-        nonce: 1n, deadline: 9999999999n,
+        lender: lender.address,
+        principalToken: await usdc.getAddress(),
+        principalAmount: principal,
+        collateralToken: ethers.ZeroAddress,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 1n,
+        deadline: 9999999999n,
       };
       const sig = await signLendOffer(vault, lender, offer);
       const digest = await vault.hashLendOffer(offer);
 
-      await expect(vault.connect(borrower).fillLendOffer(offer, 0, sig, { value: collateral }))
+      await expect(vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: collateral }))
         .to.emit(vault, 'SignedLendOfferFilled')
-        .withArgs(0, digest, lender.address, borrower.address, await usdc.getAddress(), principal, ethers.ZeroAddress, collateral, anyValue);
+        .withArgs(
+          0,
+          digest,
+          lender.address,
+          borrower.address,
+          await usdc.getAddress(),
+          principal,
+          ethers.ZeroAddress,
+          collateral,
+          anyValue,
+        );
 
       const loan = await vault.loans(0);
       expect(loan.lender).to.equal(lender.address);
@@ -2945,17 +3045,35 @@ describe('VouchVault', function () {
       await weth.connect(borrower).approve(await vault.getAddress(), collateralAmount);
 
       const offer = {
-        lender: lender.address, principalToken: await usdc.getAddress(), principalAmount: principal,
-        collateralToken: await weth.getAddress(), collateralRatioBps: RATIO, trustedRatioBps: TRUSTED,
-        scoreThreshold: SCORE_THRESH, maxLtvBps: LTV, interestRateBps: RATE, durationSeconds: DURATION,
-        nonce: 2n, deadline: 9999999999n,
+        lender: lender.address,
+        principalToken: await usdc.getAddress(),
+        principalAmount: principal,
+        collateralToken: await weth.getAddress(),
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 2n,
+        deadline: 9999999999n,
       };
       const sig = await signLendOffer(vault, lender, offer);
       const digest = await vault.hashLendOffer(offer);
 
-      await expect(vault.connect(borrower).fillLendOffer(offer, collateralAmount, sig))
+      await expect(vault.connect(borrower).fillLendOffer(offer, await weth.getAddress(), collateralAmount, sig))
         .to.emit(vault, 'SignedLendOfferFilled')
-        .withArgs(0, digest, lender.address, borrower.address, await usdc.getAddress(), principal, await weth.getAddress(), collateralAmount, anyValue);
+        .withArgs(
+          0,
+          digest,
+          lender.address,
+          borrower.address,
+          await usdc.getAddress(),
+          principal,
+          await weth.getAddress(),
+          collateralAmount,
+          anyValue,
+        );
 
       const loan = await vault.loans(0);
       expect(loan.lender).to.equal(lender.address);
@@ -2968,37 +3086,62 @@ describe('VouchVault', function () {
     it('fillLendOffer: reverts on ETH principal (address(0))', async function () {
       const { vault, lender, borrower } = await deployFixture();
       const offer = {
-        lender: lender.address, principalToken: ethers.ZeroAddress, principalAmount: 1n,
-        collateralToken: ethers.ZeroAddress, collateralRatioBps: RATIO, trustedRatioBps: TRUSTED,
-        scoreThreshold: SCORE_THRESH, maxLtvBps: LTV, interestRateBps: RATE, durationSeconds: DURATION,
-        nonce: 1n, deadline: 9999999999n,
+        lender: lender.address,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: 1n,
+        collateralToken: ethers.ZeroAddress,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED,
+        scoreThreshold: SCORE_THRESH,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 1n,
+        deadline: 9999999999n,
       };
       const sig = await signLendOffer(vault, lender, offer);
-      await expect(vault.connect(borrower).fillLendOffer(offer, 0, sig, { value: 1n }))
-        .to.be.revertedWith('Principal must be ERC20');
+      await expect(
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: 1n }),
+      ).to.be.revertedWith('Principal must be ERC20');
     });
 
     it('cancelSignedLoanRequest: borrower cancels, then fill reverts', async function () {
       const { vault, lender, borrower } = await deployFixture();
       const req = {
-        borrower: borrower.address, collateralToken: '0x0000000000000000000000000000000000000001',
-        collateralAmount: 1n, principalToken: ethers.ZeroAddress, principalAmount: 1n,
-        interestRateBps: RATE, durationSeconds: DURATION, maxLtvBps: LTV, nonce: 1n, deadline: 9999999999n,
+        borrower: borrower.address,
+        collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: 1n,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: 1n,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 1n,
+        deadline: 9999999999n,
       };
       const digest = await vault.hashLoanRequest(req);
       await expect(vault.connect(borrower).cancelSignedLoanRequest(req))
-        .to.emit(vault, 'SignedLoanRequestCancelled').withArgs(digest, borrower.address);
+        .to.emit(vault, 'SignedLoanRequestCancelled')
+        .withArgs(digest, borrower.address);
       const sig = await signLoanRequest(vault, borrower, req);
-      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n }))
-        .to.be.revertedWith('Signature already used');
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n })).to.be.revertedWith(
+        'Signature already used',
+      );
     });
 
     it('cancelSignedLoanRequest: reverts if caller is not borrower', async function () {
       const { vault, lender, borrower } = await deployFixture();
       const req = {
-        borrower: borrower.address, collateralToken: '0x0000000000000000000000000000000000000001',
-        collateralAmount: 1n, principalToken: ethers.ZeroAddress, principalAmount: 1n,
-        interestRateBps: RATE, durationSeconds: DURATION, maxLtvBps: LTV, nonce: 1n, deadline: 9999999999n,
+        borrower: borrower.address,
+        collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: 1n,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: 1n,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: LTV,
+        nonce: 1n,
+        deadline: 9999999999n,
       };
       await expect(vault.connect(lender).cancelSignedLoanRequest(req)).to.be.revertedWith('Not signer');
     });

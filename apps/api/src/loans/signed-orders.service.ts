@@ -29,6 +29,11 @@ export class SignedOrdersService {
     if (!valid) throw new BadRequestException('Invalid signature');
     if (dto.deadline * 1000 <= Date.now())
       throw new BadRequestException('Request expired');
+    if (
+      dto.collateralTokenAddress ===
+      '0x0000000000000000000000000000000000000000'
+    )
+      throw new BadRequestException('Collateral must be ERC20');
 
     const { error } = await this.supabaseService.client.rpc(
       'insert_signed_loan_request',
@@ -74,6 +79,10 @@ export class SignedOrdersService {
     if (!valid) throw new BadRequestException('Invalid signature');
     if (dto.deadline * 1000 <= Date.now())
       throw new BadRequestException('Offer expired');
+    if (
+      dto.principalTokenAddress === '0x0000000000000000000000000000000000000000'
+    )
+      throw new BadRequestException('Principal must be ERC20');
 
     const { error } = await this.supabaseService.client.rpc(
       'insert_signed_lend_offer',

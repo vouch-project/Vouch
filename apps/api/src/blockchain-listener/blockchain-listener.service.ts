@@ -1002,11 +1002,13 @@ export class BlockchainListenerService implements OnModuleInit {
       const transferLogs =
         receipt?.logs.filter((l) => l.topics[0] === transferTopic) ?? [];
       const collateralLogIndex =
-        transferLogs.find(
-          (l) =>
-            l.topics[2] ===
-            ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
-        )?.index ?? logIndex;
+        collateralToken === ethers.ZeroAddress
+          ? logIndex
+          : (transferLogs.find(
+              (l) =>
+                l.topics[2] ===
+                ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
+            )?.index ?? logIndex);
       const disbursementLogIndex =
         transferLogs.find(
           (l) =>
