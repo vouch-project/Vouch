@@ -19,7 +19,7 @@ const LTV_ATTESTATION_TYPES = {
     { name: 'expiry', type: 'uint256' },
     { name: 'nonce', type: 'uint256' },
   ],
-} as const;
+};
 
 const DEFAULT_VOLATILITY = 0.6;
 const ETH_VOLATILITY = 0.45;
@@ -180,14 +180,11 @@ export class ScoringService {
       const { data: tokenRows } = await this.supabaseService.client
         .from('tokens')
         .select('address, volatility')
-        .in('address', addresses);
+        .in('address', addresses.map(asAddress));
 
       if (tokenRows) {
         const byAddress = new Map(
-          tokenRows.map((r) => [
-            r.address.toLowerCase(),
-            r.volatility as number | null,
-          ]),
+          tokenRows.map((r) => [r.address.toLowerCase(), r.volatility]),
         );
         if (
           collateralTokenAddress &&
@@ -217,7 +214,7 @@ export class ScoringService {
     const domain = {
       name: 'VouchVault',
       version: '1',
-      chainId: Number(chainId),
+      chainId,
       verifyingContract,
     };
     const value = { borrower, maxLtvBps, expiry, nonce };
