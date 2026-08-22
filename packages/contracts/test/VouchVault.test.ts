@@ -619,7 +619,7 @@ describe('VouchVault', function () {
 
       await expect(
         vault.connect(lender).fundLoan(0, { value: ethers.parseEther('1.0') }),
-      ).to.be.revertedWithCustomError(vault, 'PrincipalTokenMismatch');
+      ).to.be.revertedWithCustomError(vault, 'InvalidAmount');
     });
 
     it('reverts when funding after the fund window has passed', async function () {
