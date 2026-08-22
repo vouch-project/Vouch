@@ -1,5 +1,9 @@
 import { InjectRedis } from '@nestjs-modules/ioredis';
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import { SupabaseService } from '../supabase/supabase.service';
 import { PriceFeedService, priceKey } from '../tokens/price-feed.service';
@@ -51,7 +55,9 @@ export class StatsService {
 
     if (error || !data) {
       this.logger.error('Failed to fetch active loans for stats', error);
-      throw new InternalServerErrorException('Failed to compute protocol stats');
+      throw new InternalServerErrorException(
+        'Failed to compute protocol stats',
+      );
     }
 
     const prices = await this.priceFeedService.getPrices();
