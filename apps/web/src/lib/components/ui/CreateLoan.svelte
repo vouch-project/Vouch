@@ -5,7 +5,7 @@
   import { maxLtv } from '$lib/ltv';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
-  import { createLoan, getBorrowerNonce } from '$lib/wallet/vouchVault';
+  import { createLoan } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import CollateralBorrowFields from '../create-loan/CollateralBorrowFields.svelte';
   import LoanTermsFields from '../create-loan/LoanTermsFields.svelte';
@@ -148,14 +148,12 @@
     status = 'Fetching LTV attestation...';
 
     try {
-      const nonce = await getBorrowerNonce(wallet.address);
       const attestation = await fetchLtvAttestation(
         wallet.address,
         collateralToken.address,
         borrowToken.address,
         chainInfo.contractAddress,
         BigInt(wallet.networkId),
-        nonce,
       );
       const liquidationThresholdBps = Math.min(
         attestation.maxLtvBps,

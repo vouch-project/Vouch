@@ -154,13 +154,17 @@ export class ScoringService {
     contractAddress: string,
     chainId: bigint,
   ): Promise<bigint> {
-    const { data: chainRow } = await this.supabaseService.client
+    const { data: chainRow, error } = await this.supabaseService.client
       .from('chains')
       .select('rpcUrl')
       .eq('networkId', chainId.toString())
       .eq('contractAddress', asAddress(contractAddress))
       .single();
 
+    if (error) {
+      this.logger.error(`Failed to look up chain RPC URL: ${error.message}`);
+      throw new ServiceUnavailableException('Failed to look up chain RPC URL');
+    }
     if (!chainRow) {
       throw new BadRequestException('Unknown chain or contract address');
     }
