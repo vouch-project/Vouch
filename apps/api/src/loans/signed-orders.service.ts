@@ -107,6 +107,10 @@ export class SignedOrdersService {
       throw new BadRequestException('Invalid trustedRatioBps');
     if (dto.maxLtvBps <= 0 || dto.maxLtvBps > 10000)
       throw new BadRequestException('Invalid maxLtvBps');
+    const minRatioBps =
+      dto.trustedRatioBps > 0 ? dto.trustedRatioBps : dto.collateralRatioBps;
+    if (dto.maxLtvBps * minRatioBps < 10000 * 10000)
+      throw new BadRequestException('maxLtvBps below ratio-implied LTV');
     if (dto.interestRateBps > 10000)
       throw new BadRequestException('Interest rate cannot exceed 100%');
 

@@ -20,14 +20,14 @@ This is the inverse/companion of the existing **on-chain** `LendOffer` flow
 
 ## Scope & Key Decisions
 
-| Decision | Choice | Rationale |
-| --- | --- | --- |
-| Both marketplace sides | Yes — signed `LoanRequest` **and** signed `LendOffer` | Symmetric UX; shared EIP-712 infra |
-| Signer's committed asset | **ERC20 only** (one-time `approve`) | ETH cannot be pulled from a signature (no `approve`/`transferFrom` for native ETH) |
-| Native ETH | Stays on the **existing on-chain** path | Avoids pre-deposit/WETH complexity for now |
-| EIP-712 domain on live UUPS proxy | **Computed in-contract** (override `_EIP712Name`/`_EIP712Version`) | No reinitializer ceremony; safe on already-initialized proxy |
-| Replay protection | **Hash-based consumption + deadline + nonce/salt** | Standard order-signature pattern; supports multiple parallel outstanding orders |
-| Stack coverage | **Full stack** — contract + DB + API + frontend + listener | Mirrors existing `lend_offers` architecture |
+| Decision                          | Choice                                                             | Rationale                                                                          |
+| --------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Both marketplace sides            | Yes — signed `LoanRequest` **and** signed `LendOffer`              | Symmetric UX; shared EIP-712 infra                                                 |
+| Signer's committed asset          | **ERC20 only** (one-time `approve`)                                | ETH cannot be pulled from a signature (no `approve`/`transferFrom` for native ETH) |
+| Native ETH                        | Stays on the **existing on-chain** path                            | Avoids pre-deposit/WETH complexity for now                                         |
+| EIP-712 domain on live UUPS proxy | **Computed in-contract** (override `_EIP712Name`/`_EIP712Version`) | No reinitializer ceremony; safe on already-initialized proxy                       |
+| Replay protection                 | **Hash-based consumption + deadline + nonce/salt**                 | Standard order-signature pattern; supports multiple parallel outstanding orders    |
+| Stack coverage                    | **Full stack** — contract + DB + API + frontend + listener         | Mirrors existing `lend_offers` architecture                                        |
 
 ### The ERC20/ETH asymmetry (important)
 
@@ -40,7 +40,7 @@ ERC20**, because the filler sends a live transaction and can attach `msg.value`.
 - `LendOffer`: lender commits **principal** → principal must be ERC20. Collateral
   (supplied by the borrower/filler) may be ETH or ERC20.
 
-Native-ETH collateral or native-ETH principal on the *committed* side continues to use
+Native-ETH collateral or native-ETH principal on the _committed_ side continues to use
 the existing on-chain functions (`createLendOffer` / `acceptLendOffer`).
 
 ## Architecture & Flow
@@ -55,7 +55,7 @@ Marketplace:
   4. Fillers browse open signed orders (DB read via API)
 
 Filler (pays gas at settlement):
-  5. fillLoanRequest(req, sig)  /  fillLendOffer(offer, sig)   { value or ERC20 }
+  5. fillLoanRequest(req, sig)  /  fillLendOffer(offer, collateralToken, collateralAmount, sig)   { value or ERC20 }
        → vault verifies EIP-712 sig recovers to the signer
        → vault pulls committed ERC20 from signer (safeTransferFrom)
        → filler supplies their side (msg.value for ETH, or safeTransferFrom for ERC20)
@@ -103,7 +103,7 @@ struct SignedLendOffer {     // lender signs; borrower fills
     address lender;
     address principalToken;    // ERC20, must != address(0)
     uint256 principalAmount;
-    address collateralToken;   // ETH (address(0)) or ERC20 — supplied by borrower at fill
+    // collateralToken is NOT signed — borrower supplies it as a separate fillLendOffer() param
     uint16  collateralRatioBps;
     uint16  trustedRatioBps;
     uint16  scoreThreshold;
@@ -120,7 +120,7 @@ Type strings (used verbatim in `TYPEHASH` and by API/frontend):
 ```
 LoanRequest(address borrower,address collateralToken,uint256 collateralAmount,address principalToken,uint256 principalAmount,uint16 interestRateBps,uint256 durationSeconds,uint16 maxLtvBps,uint256 nonce,uint256 deadline)
 
-LendOffer(address lender,address principalToken,uint256 principalAmount,address collateralToken,uint16 collateralRatioBps,uint16 trustedRatioBps,uint16 scoreThreshold,uint16 maxLtvBps,uint16 interestRateBps,uint256 durationSeconds,uint256 nonce,uint256 deadline)
+LendOffer(address lender,address principalToken,uint256 principalAmount,uint16 collateralRatioBps,uint16 trustedRatioBps,uint16 scoreThreshold,uint16 maxLtvBps,uint16 interestRateBps,uint256 durationSeconds,uint256 nonce,uint256 deadline)
 ```
 
 ### Storage (appended — upgrade-safe)
@@ -179,6 +179,7 @@ event LendOfferCancelled(bytes32 indexed digest, address indexed lender);
 ### Hardhat tests
 
 For **both** fill directions:
+
 - Happy path: ERC20 committed side + ETH filler side, and ERC20 + ERC20.
 - Revert: signature/​signer mismatch.
 - Revert: expired deadline.
@@ -226,6 +227,7 @@ signed_lend_offers                         -- lender-signed
 ### RPC functions (SECURITY DEFINER, `service_role` only)
 
 Mirror the existing `*_with_transaction` functions:
+
 - `insert_signed_loan_request(...)` / `insert_signed_lend_offer(...)` — resolve
   chain/token ids, insert with `status='open'`, `ON CONFLICT (digest) DO NOTHING`.
 - `fill_signed_order_with_transaction(...)` — called by the listener on a fill event:
@@ -239,6 +241,7 @@ New `signed-orders.service.ts` (kept separate from the 390-line `loans.service.t
 clarity) + DTOs in `apps/api/src/loans/dto/`.
 
 Endpoints:
+
 - `POST /loans/signed-requests` — body validated by `CreateSignedLoanRequestDto`.
   **Server-side signature verification before storing:** recompute the EIP-712 digest
   (`ethers.TypedDataEncoder.hash(domain, types, value)`), call `ethers.verifyTypedData(...)`,
@@ -271,6 +274,7 @@ const domain = { name: 'Vouch', version: '1', chainId, verifyingContract: vaultA
 ```
 
 Functions:
+
 - `signLoanRequest(request)` → `{ signature, digest }` (borrower; requires prior
   collateral `approve()` — reuse the accept flow's approval helper).
 - `signLendOffer(offer)` → `{ signature, digest }` (lender; prior principal `approve()`).
@@ -280,6 +284,7 @@ Functions:
 - Full TypeScript types for both structs (issue explicitly requests typings).
 
 UI wiring:
+
 - Borrow route: "Create gasless request" — approve (if needed) → sign →
   `POST /loans/signed-requests`. Clear error reporting (rejected signature, insufficient
   allowance, expired, API validation errors).
@@ -294,6 +299,7 @@ API verifier exactly. Centralize it in one shared constant so contract override,
 ## Blockchain Listener (`apps/api/src/blockchain-listener`)
 
 Add handlers following existing `LendOfferAccepted` / `LendOfferCreated` handling:
+
 - `LoanRequestFilled` / `LendOfferFilled` → `fill_signed_order_with_transaction`.
 - `LoanRequestCancelled` / `LendOfferCancelled` → `cancel_signed_order(digest)`.
 
