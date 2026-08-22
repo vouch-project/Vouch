@@ -10,7 +10,10 @@ contract VouchVaultLens {
     uint256 private constant ACCRUAL_PERIOD = 86400;
     uint256 private constant PERIODS_PER_YEAR = 365;
 
+    error InvalidAddress();
+
     constructor(address _vault) {
+        if (_vault == address(0)) revert InvalidAddress();
         vault = VouchVault(_vault);
     }
 

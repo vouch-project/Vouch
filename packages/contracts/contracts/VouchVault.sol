@@ -515,6 +515,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
             actualCollateral = msg.value;
             lockedEthCollateral[msg.sender] += msg.value;
         } else {
+            if (msg.value != 0) revert InvalidAmount();
             if (collateralAmount == 0) revert ZeroValue();
             actualCollateral = collateralAmount;
             uint256 balanceBefore = IERC20(collateralToken).balanceOf(address(this));
@@ -648,6 +649,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
             if (msg.value == 0) revert ZeroValue();
             actualAmount = msg.value;
         } else {
+            if (msg.value != 0) revert InvalidAmount();
             if (principalAmount == 0) revert InvalidAmount();
             actualAmount = principalAmount;
             uint256 balanceBefore = IERC20(principalToken).balanceOf(address(this));
@@ -993,7 +995,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         uint256 collateralPrice = _getPrice(collateralToken);
         uint256 normalizedCollateral = _normalizeAmount(collateralToken, collateralAmount);
         uint256 collateralUsd = normalizedCollateral.mulDiv(collateralPrice, 1e18);
-        require(collateralUsd >= minCollateralUsd, "Collateral value below required ratio");
+        if (collateralUsd < minCollateralUsd) revert LoanIsUndercollateralized();
     }
 
     /// @notice Accept a lend offer by posting ETH or an ERC20 token as collateral.
@@ -1021,6 +1023,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
             if (msg.value == 0) revert ZeroValue();
             actualCollateral = msg.value;
         } else {
+            if (msg.value != 0) revert InvalidAmount();
             if (collateralAmount == 0) revert ZeroValue();
             actualCollateral = collateralAmount;
         }
@@ -1162,6 +1165,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         if (msg.sender != loan.borrower) revert OnlyBorrower();
 
         bool isEth = loan.requestedPrincipalToken == address(0);
+        if (!isEth && msg.value != 0) revert InvalidAmount();
         uint256 payment = isEth ? msg.value : amount;
         if (payment == 0) revert ZeroValue();
 
@@ -1370,6 +1374,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
      */
     function liquidate(uint256 loanId, uint256 maxAmount, address collateralRecipient) external payable nonReentrant {
         Loan storage loan = loans[loanId];
+        if (loan.requestedPrincipalToken != address(0) && msg.value != 0) revert InvalidAmount();
         uint256 pay = loan.requestedPrincipalToken == address(0) ? msg.value : maxAmount;
         _liquidate(loan, loanId, pay, collateralRecipient == address(0) ? msg.sender : collateralRecipient);
     }

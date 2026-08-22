@@ -16,8 +16,7 @@ export const getVouchVaultContract = async (): Promise<VouchVault> => {
   return VouchVault__factory.connect(chainInfo.contractAddress, signer);
 };
 
-export const isNativeTokenAddress = (address: string): boolean =>
-  !address || address === ethers.ZeroAddress;
+export const isNativeTokenAddress = (address: string): boolean => !address || address === ethers.ZeroAddress;
 
 const isNativeToken = (token: Token): boolean => isNativeTokenAddress(token.address);
 
@@ -183,7 +182,8 @@ export const getRepaymentDetails = async (onChainLoanId: bigint): Promise<Repaym
   if (loan.funded && loan.durationSeconds > 0n) {
     const from = loan.lastAccrualAt === 0n ? loan.fundedAt : loan.lastAccrualAt;
     const dueAt = loan.fundedAt + loan.durationSeconds;
-    const nowSec = BigInt(Math.floor(Date.now() / 1000));
+    const latestBlock = await (contract.runner as ethers.JsonRpcSigner).provider?.getBlock('latest');
+    const nowSec = BigInt(latestBlock?.timestamp ?? Math.floor(Date.now() / 1000));
     const cappedNow = nowSec < dueAt ? nowSec : dueAt;
     if (cappedNow > from) {
       const periods = (cappedNow - from) / ACCRUAL_PERIOD;
