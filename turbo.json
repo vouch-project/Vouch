@@ -24,12 +24,12 @@
       "persistent": true
     },
     "@vouch/api#dev": {
-      "dependsOn": ["supabase#start", "@vouch/database-types#build"],
+      "dependsOn": ["supabase#start", "@vouch/database-types#build", "@vouch/contracts#build"],
       "persistent": true,
       "cache": false
     },
     "@vouch/web#dev": {
-      "dependsOn": ["supabase#start", "@vouch/database-types#build"],
+      "dependsOn": ["supabase#start", "@vouch/database-types#build", "@vouch/contracts#build"],
       "persistent": true,
       "cache": false
     },

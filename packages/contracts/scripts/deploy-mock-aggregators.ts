@@ -1,10 +1,21 @@
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { ethers } from 'hardhat';
-import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import { Client } from 'pg';
 
 // Local Hardhat's networkId, matching supabase/seed.js's chains row for "Local Hardhat".
 const LOCAL_NETWORK_ID = '1337';
+
+function setEnvVar(envPath: string, key: string, value: string): void {
+  let content = readFileSync(envPath, 'utf-8');
+  const re = new RegExp(`^${key}=.*$`, 'm');
+  if (re.test(content)) {
+    content = content.replace(re, `${key}=${value}`);
+  } else {
+    content += `\n${key}=${value}`;
+  }
+  writeFileSync(envPath, content, 'utf-8');
+}
 
 // The tokens table row for a given (chain, address) is created by the API's
 // TokensService on startup (it syncs the RouteScan token list into Postgres). This
@@ -75,19 +86,25 @@ async function main() {
   try {
     const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
 
-    // ETH/USD: $3200, 8 decimals
-    const ethFeed = await MockAgg.deploy(8, 3200n * 10n ** 8n);
+    const ethRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
+    const ethData = (await ethRes.json()) as { ethereum?: { usd?: number } };
+    const ethPriceUsd = ethData?.ethereum?.usd;
+    if (!ethPriceUsd || ethPriceUsd <= 0) throw new Error('Failed to fetch ETH price from CoinGecko');
+    console.log(`ETH/USD price from CoinGecko: $${ethPriceUsd}`);
+
+    const ethFeed = await MockAgg.deploy(8, BigInt(Math.round(ethPriceUsd)) * 10n ** 8n);
     await ethFeed.waitForDeployment();
     const ethFeedAddress = await ethFeed.getAddress();
     console.log(`ETH/USD MockAggregator deployed to: ${ethFeedAddress}`);
 
-    const VouchVaultAbi = [
-      'function setPriceFeed(address token, address feed, uint8 decimals_) external',
-    ];
+    const VouchVaultAbi = ['function setPriceFeed(address token, address feed, uint8 decimals_) external'];
     const vault = new ethers.Contract(vaultAddress, VouchVaultAbi, deployer);
 
     await vault.setPriceFeed(ethers.ZeroAddress, ethFeedAddress, 18);
     console.log('ETH price feed registered on-chain');
+
+    setEnvVar(envPath, 'LOCAL_ETH_FEED_ADDRESS', ethFeedAddress);
+    console.log('LOCAL_ETH_FEED_ADDRESS written to .env');
 
     // Mirror the same feed address into Postgres so PriceFeedService (the API-side
     // poller that powers the frontend's LTV preview) knows to poll it too — the
@@ -96,14 +113,18 @@ async function main() {
     console.log('ETH price feed address mirrored to Postgres');
 
     if (mockErc20Address) {
-      // MOCK/USD: $1000, 8 decimals
-      const mockFeed = await MockAgg.deploy(8, 1000n * 10n ** 8n);
+      // MOCK/USD: $1, 8 decimals — matches the API's ZeroAddress fallback price so
+      // frontend-computed collateral stays consistent with the on-chain oracle.
+      const mockFeed = await MockAgg.deploy(8, 1n * 10n ** 8n);
       await mockFeed.waitForDeployment();
       const mockFeedAddress = await mockFeed.getAddress();
       console.log(`MOCK/USD MockAggregator deployed to: ${mockFeedAddress}`);
 
       await vault.setPriceFeed(mockErc20Address, mockFeedAddress, 18);
       console.log('MOCK price feed registered on-chain');
+
+      setEnvVar(envPath, 'LOCAL_MOCK_FEED_ADDRESS', mockFeedAddress);
+      console.log('LOCAL_MOCK_FEED_ADDRESS written to .env');
 
       await updatePriceFeedAddress(db, LOCAL_NETWORK_ID, mockErc20Address, mockFeedAddress);
       console.log('MOCK price feed address mirrored to Postgres');
@@ -113,4 +134,7 @@ async function main() {
   }
 }
 
-main().catch((e) => { console.error(e); process.exitCode = 1; });
+main().catch((e) => {
+  console.error(e);
+  process.exitCode = 1;
+});

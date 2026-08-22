@@ -206,6 +206,8 @@ export type Database = {
           principalTokenId: string | null;
           purpose: string | null;
           repaidAt: string | null;
+          signedLendOfferId: string | null;
+          signedLoanRequestId: string | null;
           startAt: string | null;
           status: Database['public']['Enums']['loanStatus'];
           updatedAt: string;
@@ -236,6 +238,8 @@ export type Database = {
           principalTokenId?: string | null;
           purpose?: string | null;
           repaidAt?: string | null;
+          signedLendOfferId?: string | null;
+          signedLoanRequestId?: string | null;
           startAt?: string | null;
           status?: Database['public']['Enums']['loanStatus'];
           updatedAt?: string;
@@ -266,6 +270,8 @@ export type Database = {
           principalTokenId?: string | null;
           purpose?: string | null;
           repaidAt?: string | null;
+          signedLendOfferId?: string | null;
+          signedLoanRequestId?: string | null;
           startAt?: string | null;
           status?: Database['public']['Enums']['loanStatus'];
           updatedAt?: string;
@@ -297,6 +303,20 @@ export type Database = {
             columns: ['principalTokenId'];
             isOneToOne: false;
             referencedRelation: 'tokens';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'loans_signedLendOfferId_fkey';
+            columns: ['signedLendOfferId'];
+            isOneToOne: false;
+            referencedRelation: 'signed_lend_offers';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'loans_signedLoanRequestId_fkey';
+            columns: ['signedLoanRequestId'];
+            isOneToOne: false;
+            referencedRelation: 'signed_loan_requests';
             referencedColumns: ['id'];
           },
         ];
@@ -368,6 +388,196 @@ export type Database = {
             columns: ['loanId'];
             isOneToOne: false;
             referencedRelation: 'loans';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      signed_lend_offers: {
+        Row: {
+          chainId: string;
+          collateralRatioBps: number;
+          collateralTokenId: string | null;
+          createdAt: string;
+          deadline: string;
+          digest: string;
+          duration: string;
+          filledLoanId: string | null;
+          id: string;
+          interestRateBps: number;
+          lenderAddress: string;
+          maxLtvBps: number;
+          nonce: string;
+          principalAmount: string;
+          principalTokenId: string;
+          scoreThreshold: number;
+          signature: string;
+          status: Database['public']['Enums']['signedOrderStatus'];
+          trustedRatioBps: number;
+          updatedAt: string;
+        };
+        Insert: {
+          chainId: string;
+          collateralRatioBps?: number;
+          collateralTokenId?: string | null;
+          createdAt?: string;
+          deadline: string;
+          digest: string;
+          duration: string;
+          filledLoanId?: string | null;
+          id?: string;
+          interestRateBps: number;
+          lenderAddress: string;
+          maxLtvBps: number;
+          nonce: string;
+          principalAmount: string;
+          principalTokenId: string;
+          scoreThreshold?: number;
+          signature: string;
+          status?: Database['public']['Enums']['signedOrderStatus'];
+          trustedRatioBps?: number;
+          updatedAt?: string;
+        };
+        Update: {
+          chainId?: string;
+          collateralRatioBps?: number;
+          collateralTokenId?: string | null;
+          createdAt?: string;
+          deadline?: string;
+          digest?: string;
+          duration?: string;
+          filledLoanId?: string | null;
+          id?: string;
+          interestRateBps?: number;
+          lenderAddress?: string;
+          maxLtvBps?: number;
+          nonce?: string;
+          principalAmount?: string;
+          principalTokenId?: string;
+          scoreThreshold?: number;
+          signature?: string;
+          status?: Database['public']['Enums']['signedOrderStatus'];
+          trustedRatioBps?: number;
+          updatedAt?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'signed_lend_offers_chainId_fkey';
+            columns: ['chainId'];
+            isOneToOne: false;
+            referencedRelation: 'chains';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'signed_lend_offers_collateralTokenId_fkey';
+            columns: ['collateralTokenId'];
+            isOneToOne: false;
+            referencedRelation: 'tokens';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'signed_lend_offers_filledLoanId_fkey';
+            columns: ['filledLoanId'];
+            isOneToOne: false;
+            referencedRelation: 'loans';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'signed_lend_offers_principalTokenId_fkey';
+            columns: ['principalTokenId'];
+            isOneToOne: false;
+            referencedRelation: 'tokens';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      signed_loan_requests: {
+        Row: {
+          borrowerAddress: string;
+          chainId: string;
+          collateralAmount: string;
+          collateralTokenId: string;
+          createdAt: string;
+          deadline: string;
+          digest: string;
+          duration: string;
+          filledLoanId: string | null;
+          id: string;
+          interestRateBps: number;
+          maxLtvBps: number;
+          nonce: string;
+          principalAmount: string;
+          principalTokenId: string;
+          signature: string;
+          status: Database['public']['Enums']['signedOrderStatus'];
+          updatedAt: string;
+        };
+        Insert: {
+          borrowerAddress: string;
+          chainId: string;
+          collateralAmount: string;
+          collateralTokenId: string;
+          createdAt?: string;
+          deadline: string;
+          digest: string;
+          duration: string;
+          filledLoanId?: string | null;
+          id?: string;
+          interestRateBps: number;
+          maxLtvBps: number;
+          nonce: string;
+          principalAmount: string;
+          principalTokenId: string;
+          signature: string;
+          status?: Database['public']['Enums']['signedOrderStatus'];
+          updatedAt?: string;
+        };
+        Update: {
+          borrowerAddress?: string;
+          chainId?: string;
+          collateralAmount?: string;
+          collateralTokenId?: string;
+          createdAt?: string;
+          deadline?: string;
+          digest?: string;
+          duration?: string;
+          filledLoanId?: string | null;
+          id?: string;
+          interestRateBps?: number;
+          maxLtvBps?: number;
+          nonce?: string;
+          principalAmount?: string;
+          principalTokenId?: string;
+          signature?: string;
+          status?: Database['public']['Enums']['signedOrderStatus'];
+          updatedAt?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'signed_loan_requests_chainId_fkey';
+            columns: ['chainId'];
+            isOneToOne: false;
+            referencedRelation: 'chains';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'signed_loan_requests_collateralTokenId_fkey';
+            columns: ['collateralTokenId'];
+            isOneToOne: false;
+            referencedRelation: 'tokens';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'signed_loan_requests_filledLoanId_fkey';
+            columns: ['filledLoanId'];
+            isOneToOne: false;
+            referencedRelation: 'loans';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'signed_loan_requests_principalTokenId_fkey';
+            columns: ['principalTokenId'];
+            isOneToOne: false;
+            referencedRelation: 'tokens';
             referencedColumns: ['id'];
           },
         ];
@@ -662,6 +872,14 @@ export type Database = {
         };
         Returns: undefined;
       };
+      cancel_signed_order: {
+        Args: {
+          p_contract_address: unknown;
+          p_digest: string;
+          p_network_id: string;
+        };
+        Returns: undefined;
+      };
       create_lend_offer_with_transaction: {
         Args: {
           p_accept_deadline: string;
@@ -730,6 +948,25 @@ export type Database = {
         };
         Returns: undefined;
       };
+      fill_signed_order_with_transaction: {
+        Args: {
+          p_block_hash: string;
+          p_block_number: unknown;
+          p_collateral_amount: string;
+          p_collateral_log_index: unknown;
+          p_collateral_token_address: unknown;
+          p_contract_address: unknown;
+          p_digest: string;
+          p_disbursement_log_index: unknown;
+          p_filled_at: string;
+          p_filler_address: unknown;
+          p_network_id: string;
+          p_on_chain_loan_id: unknown;
+          p_order_kind: string;
+          p_tx_hash: string;
+        };
+        Returns: undefined;
+      };
       fund_loan_with_transaction: {
         Args: {
           p_block_hash: string;
@@ -743,6 +980,46 @@ export type Database = {
           p_on_chain_loan_id: unknown;
           p_principal_amount: string;
           p_tx_hash: string;
+        };
+        Returns: undefined;
+      };
+      insert_signed_lend_offer: {
+        Args: {
+          p_collateral_ratio_bps: number;
+          p_collateral_token_address: unknown;
+          p_contract_address: unknown;
+          p_deadline: string;
+          p_digest: string;
+          p_duration_seconds: number;
+          p_interest_rate_bps: number;
+          p_lender_address: unknown;
+          p_max_ltv_bps: number;
+          p_network_id: string;
+          p_nonce: string;
+          p_principal_amount: string;
+          p_principal_token_address: unknown;
+          p_score_threshold: number;
+          p_signature: string;
+          p_trusted_ratio_bps: number;
+        };
+        Returns: undefined;
+      };
+      insert_signed_loan_request: {
+        Args: {
+          p_borrower_address: unknown;
+          p_collateral_amount: string;
+          p_collateral_token_address: unknown;
+          p_contract_address: unknown;
+          p_deadline: string;
+          p_digest: string;
+          p_duration_seconds: number;
+          p_interest_rate_bps: number;
+          p_max_ltv_bps: number;
+          p_network_id: string;
+          p_nonce: string;
+          p_principal_amount: string;
+          p_principal_token_address: unknown;
+          p_signature: string;
         };
         Returns: undefined;
       };
@@ -810,6 +1087,7 @@ export type Database = {
         | 'loan_due_soon'
         | 'credit_score_updated'
         | 'system';
+      signedOrderStatus: 'open' | 'filled' | 'cancelled' | 'expired';
       transactionStatus: 'pending' | 'confirmed' | 'failed';
       transactionType:
         | 'collateral_deposit'
@@ -951,6 +1229,7 @@ export const Constants = {
         'credit_score_updated',
         'system',
       ],
+      signedOrderStatus: ['open', 'filled', 'cancelled', 'expired'],
       transactionStatus: ['pending', 'confirmed', 'failed'],
       transactionType: [
         'collateral_deposit',

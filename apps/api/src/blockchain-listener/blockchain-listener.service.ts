@@ -316,6 +316,104 @@ export class BlockchainListenerService implements OnModuleInit {
         );
       },
     );
+
+    void contract.on(
+      contract.getEvent('SignedLoanRequestFilled'),
+      (
+        loanId,
+        digest,
+        borrower,
+        lender,
+        collateralToken,
+        collateralAmount,
+        principalToken,
+        principalAmount,
+        timestamp,
+        event,
+      ) => {
+        this.enqueue(queueKey, () =>
+          this.handleSignedLoanRequestFilled(
+            loanId,
+            digest,
+            borrower,
+            lender,
+            collateralToken,
+            collateralAmount,
+            principalToken,
+            principalAmount,
+            timestamp,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+            contract,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      contract.getEvent('SignedLendOfferFilled'),
+      (
+        loanId,
+        digest,
+        lender,
+        borrower,
+        principalToken,
+        principalAmount,
+        collateralToken,
+        collateralAmount,
+        timestamp,
+        event,
+      ) => {
+        this.enqueue(queueKey, () =>
+          this.handleSignedLendOfferFilled(
+            loanId,
+            digest,
+            lender,
+            borrower,
+            principalToken,
+            principalAmount,
+            collateralToken,
+            collateralAmount,
+            timestamp,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+            contract,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      contract.getEvent('SignedLoanRequestCancelled'),
+      (digest, borrower, event) => {
+        this.enqueue(queueKey, () =>
+          this.handleSignedLoanRequestCancelled(
+            digest,
+            borrower,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      contract.getEvent('SignedLendOfferCancelled'),
+      (digest, lender, event) => {
+        this.enqueue(queueKey, () =>
+          this.handleSignedLendOfferCancelled(
+            digest,
+            lender,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+          ),
+        );
+      },
+    );
   }
 
   protected async handleLoanCreated(
@@ -800,6 +898,189 @@ export class BlockchainListenerService implements OnModuleInit {
       this.logger.log(`LendOffer ${offerId.toString()} expired`);
     } catch (error) {
       this.logger.error('Failed to expire lend offer in DB', error);
+    }
+  }
+
+  protected async handleSignedLoanRequestFilled(
+    loanId: bigint,
+    digest: string,
+    _borrower: string,
+    lender: string,
+    collateralToken: string,
+    collateralAmount: bigint,
+    _principalToken: string,
+    _principalAmount: bigint,
+    timestamp: bigint,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+    contract: VouchVault,
+  ) {
+    try {
+      const runner = contract.runner;
+      const provider: ethers.Provider | null =
+        runner &&
+        typeof (runner as Partial<ethers.Provider>).getBlock === 'function'
+          ? (runner as ethers.Provider)
+          : (runner?.provider ?? null);
+
+      const receipt = await (provider
+        ? provider.getTransactionReceipt(transactionHash)
+        : Promise.resolve(null));
+
+      const transferTopic = ethers.id('Transfer(address,address,uint256)');
+      const transferLogs =
+        receipt?.logs.filter((l) => l.topics[0] === transferTopic) ?? [];
+      const collateralLogIndex =
+        transferLogs.find(
+          (l) =>
+            l.topics[2] ===
+            ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
+        )?.index ?? logIndex;
+      const disbursementLogIndex =
+        transferLogs.find(
+          (l) =>
+            l.topics[1] ===
+            ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
+        )?.index ?? (receipt?.logs?.at(-1)?.index ?? logIndex) + 1;
+
+      await this.loanService.fillSignedOrder({
+        orderKind: 'request',
+        digest,
+        loanId,
+        fillerAddress: lender,
+        collateralTokenAddress: collateralToken,
+        collateralAmount,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        txHash: transactionHash,
+        blockNumber: BigInt(blockNumber),
+        blockHash,
+        collateralLogIndex: BigInt(collateralLogIndex),
+        disbursementLogIndex: BigInt(disbursementLogIndex),
+        filledAt: new Date(Number(timestamp) * 1000),
+      });
+      this.logger.log(
+        `SignedLoanRequest filled → loan ${loanId.toString()} (digest ${digest})`,
+      );
+    } catch (error) {
+      this.logger.error(
+        'Failed to record SignedLoanRequestFilled in DB',
+        error,
+      );
+    }
+  }
+
+  protected async handleSignedLendOfferFilled(
+    loanId: bigint,
+    digest: string,
+    _lender: string,
+    borrower: string,
+    _principalToken: string,
+    _principalAmount: bigint,
+    collateralToken: string,
+    collateralAmount: bigint,
+    timestamp: bigint,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+    contract: VouchVault,
+  ) {
+    try {
+      const runner = contract.runner;
+      const provider: ethers.Provider | null =
+        runner &&
+        typeof (runner as Partial<ethers.Provider>).getBlock === 'function'
+          ? (runner as ethers.Provider)
+          : (runner?.provider ?? null);
+
+      const receipt = await (provider
+        ? provider.getTransactionReceipt(transactionHash)
+        : Promise.resolve(null));
+
+      const transferTopic = ethers.id('Transfer(address,address,uint256)');
+      const transferLogs =
+        receipt?.logs.filter((l) => l.topics[0] === transferTopic) ?? [];
+      const collateralLogIndex =
+        collateralToken === ethers.ZeroAddress
+          ? logIndex
+          : (transferLogs.find(
+              (l) =>
+                l.topics[2] ===
+                ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
+            )?.index ?? logIndex);
+      const disbursementLogIndex =
+        transferLogs.find(
+          (l) =>
+            l.topics[1] ===
+            ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
+        )?.index ?? (receipt?.logs?.at(-1)?.index ?? logIndex) + 1;
+
+      await this.loanService.fillSignedOrder({
+        orderKind: 'offer',
+        digest,
+        loanId,
+        fillerAddress: borrower,
+        collateralTokenAddress: collateralToken,
+        collateralAmount,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        txHash: transactionHash,
+        blockNumber: BigInt(blockNumber),
+        blockHash,
+        collateralLogIndex: BigInt(collateralLogIndex),
+        disbursementLogIndex: BigInt(disbursementLogIndex),
+        filledAt: new Date(Number(timestamp) * 1000),
+      });
+      this.logger.log(
+        `SignedLendOffer filled → loan ${loanId.toString()} (digest ${digest})`,
+      );
+    } catch (error) {
+      this.logger.error('Failed to record SignedLendOfferFilled in DB', error);
+    }
+  }
+
+  protected async handleSignedLoanRequestCancelled(
+    digest: string,
+    _borrower: string,
+    _log: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+  ) {
+    try {
+      await this.loanService.cancelSignedOrder({
+        digest,
+        networkId: network.chainId.toString(),
+        contractAddress,
+      });
+      this.logger.log(`SignedLoanRequest cancelled (digest ${digest})`);
+    } catch (error) {
+      this.logger.error(
+        'Failed to record SignedLoanRequestCancelled in DB',
+        error,
+      );
+    }
+  }
+
+  protected async handleSignedLendOfferCancelled(
+    digest: string,
+    _lender: string,
+    _log: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+  ) {
+    try {
+      await this.loanService.cancelSignedOrder({
+        digest,
+        networkId: network.chainId.toString(),
+        contractAddress,
+      });
+      this.logger.log(`SignedLendOffer cancelled (digest ${digest})`);
+    } catch (error) {
+      this.logger.error(
+        'Failed to record SignedLendOfferCancelled in DB',
+        error,
+      );
     }
   }
 

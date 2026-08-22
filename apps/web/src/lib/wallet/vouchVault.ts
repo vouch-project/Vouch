@@ -16,7 +16,10 @@ export const getVouchVaultContract = async (): Promise<VouchVault> => {
   return VouchVault__factory.connect(chainInfo.contractAddress, signer);
 };
 
-const isNativeToken = (token: Token): boolean => !token.address || token.address === ethers.ZeroAddress;
+export const isNativeTokenAddress = (address: string): boolean =>
+  !address || address === ethers.ZeroAddress;
+
+const isNativeToken = (token: Token): boolean => isNativeTokenAddress(token.address);
 
 const createEthLoan = async (
   contract: VouchVault,
@@ -46,7 +49,7 @@ const createEthLoan = async (
   );
 };
 
-const ERC20_ABI = [
+export const ERC20_ABI = [
   'function approve(address spender, uint256 amount) returns (bool)',
   'function allowance(address owner, address spender) view returns (uint256)',
 ];

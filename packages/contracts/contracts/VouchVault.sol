@@ -10,10 +10,11 @@ import "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.so
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 
 /// @title VouchVault (Upgradeable)
 /// @notice Lending vault contract for the Vouch protocol supporting collateralized loans
-contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
+contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP712Upgradeable {
     using SafeERC20 for IERC20;
     using Math for uint256;
     using ECDSA for bytes32;
@@ -66,6 +67,35 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 acceptedLoanId;
     }
 
+    // --- EIP-712 Signed Order Structs ---
+
+    struct SignedLoanRequest {
+        address borrower;
+        address collateralToken;
+        uint256 collateralAmount;
+        address principalToken;
+        uint256 principalAmount;
+        uint16  interestRateBps;
+        uint256 durationSeconds;
+        uint16  maxLtvBps;
+        uint256 nonce;
+        uint256 deadline;
+    }
+
+    struct SignedLendOffer {
+        address lender;
+        address principalToken;
+        uint256 principalAmount;
+        uint16  collateralRatioBps;
+        uint16  trustedRatioBps;
+        uint16  scoreThreshold;
+        uint16  maxLtvBps;
+        uint16  interestRateBps;
+        uint256 durationSeconds;
+        uint256 nonce;
+        uint256 deadline;
+    }
+
     // --- State Variables ---
 
     mapping(address => uint256) public deposits;
@@ -102,6 +132,14 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     uint256 private constant _ENTERED = 2;
     uint256 private _reentrancyStatus;
 
+    // --- EIP-712 typehashes ---
+    bytes32 private constant LOAN_REQUEST_TYPEHASH = keccak256(
+        "LoanRequest(address borrower,address collateralToken,uint256 collateralAmount,address principalToken,uint256 principalAmount,uint16 interestRateBps,uint256 durationSeconds,uint16 maxLtvBps,uint256 nonce,uint256 deadline)"
+    );
+    bytes32 private constant LEND_OFFER_TYPEHASH = keccak256(
+        "LendOffer(address lender,address principalToken,uint256 principalAmount,uint16 collateralRatioBps,uint16 trustedRatioBps,uint16 scoreThreshold,uint16 maxLtvBps,uint16 interestRateBps,uint256 durationSeconds,uint256 nonce,uint256 deadline)"
+    );
+
     // --- Minimum interest floor ---
     // Interest accrues on the OUTSTANDING principal (principal - principalRepaid), so a
     // borrower who repays early pays proportionally less interest. To stop an instant repayment
@@ -129,6 +167,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     // --- Lend offers ---
     mapping(uint256 => LendOffer) public lendOffers;
     uint256 public nextLendOfferId;
+
+    // --- Signed orders ---
+    mapping(bytes32 => bool) public consumedSignatures;
 
     // --- Score attestation ---
     // The protocol backend signs (borrower, score, expiry) with this key.
@@ -231,6 +272,19 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     event LendOfferCancelled(uint256 indexed offerId, address indexed lender);
     event LendOfferExpired(uint256 indexed offerId);
 
+    event SignedLoanRequestFilled(
+        uint256 indexed loanId, bytes32 indexed digest, address indexed borrower, address lender,
+        address collateralToken, uint256 collateralAmount, address principalToken, uint256 principalAmount, uint256 timestamp
+    );
+
+    event SignedLendOfferFilled(
+        uint256 indexed loanId, bytes32 indexed digest, address indexed lender, address borrower,
+        address principalToken, uint256 principalAmount, address collateralToken, uint256 collateralAmount, uint256 timestamp
+    );
+
+    event SignedLoanRequestCancelled(bytes32 indexed digest, address indexed borrower);
+    event SignedLendOfferCancelled(bytes32 indexed digest, address indexed lender);
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         // Prevents the implementation contract from being initialized directly
@@ -244,6 +298,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     function initialize(address initialOwner) public initializer {
         __Ownable_init(initialOwner);
         // __UUPSUpgradeable_init() removed: not required in latest OpenZeppelin
+        // __EIP712_init is called here to satisfy the OZ upgrades validator; the stored
+        // name/version are never read because _EIP712Name()/_EIP712Version() are pure overrides.
+        __EIP712_init("Vouch", "1");
         _reentrancyStatus = _NOT_ENTERED;
         nextLendOfferId = 1; // reserve 0 as the sentinel for "no lend offer" on Loan.lendOfferId
         protocolTreasury = initialOwner; // default treasury; owner can change later
@@ -737,6 +794,211 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         nextLoanId++;
     }
 
+    /// @dev Internal helper: create a Loan record from an EIP-712 signed loan request.
+    ///      The loan starts funded (lender already set, collateral and principal settled).
+    function _createLoanFromSignedRequest(
+        SignedLoanRequest calldata req,
+        address lender
+    ) internal returns (uint256 loanId) {
+        loanId = nextLoanId;
+        loans[loanId] = Loan({
+            borrower: req.borrower,
+            collateralToken: req.collateralToken,
+            collateralAmount: req.collateralAmount,
+            collateralLocked: true,
+            collateralReleased: 0,
+            createdAt: block.timestamp,
+            active: true,
+            funded: true,
+            repaid: false,
+            fundDeadline: block.timestamp,         // already funded; deadline irrelevant
+            lender: lender,
+            requestedPrincipalToken: req.principalToken,
+            requestedPrincipalAmount: req.principalAmount,
+            principalAmount: req.principalAmount,
+            fundedAt: block.timestamp,
+            interestRateBps: req.interestRateBps,
+            durationSeconds: req.durationSeconds,
+            amountRepaid: 0,
+            principalRepaid: 0,
+            interestAccrued: 0,
+            lastAccrualAt: block.timestamp,
+            liquidationThresholdBps: req.maxLtvBps,
+            lendOfferId: 0
+        });
+        nextLoanId++;
+    }
+
+    /// @notice A lender fills a borrower's EIP-712 signed loan request.
+    /// @dev    Verifies the borrower's signature, pulls ERC20 collateral from the borrower,
+    ///         the lender supplies principal (ETH or ERC20), a funded loan is created,
+    ///         and the signature digest is consumed to prevent replay.
+    function fillLoanRequest(SignedLoanRequest calldata req, bytes calldata sig) external payable nonReentrant {
+        require(req.collateralToken != address(0), "Collateral must be ERC20");
+        require(req.collateralAmount > 0, "Collateral must be > 0");
+        require(req.principalAmount > 0, "Principal must be > 0");
+        require(req.maxLtvBps > 0 && req.maxLtvBps <= 10000, "Invalid maxLtvBps");
+        require(req.interestRateBps <= 10000, "Interest rate cannot exceed 100%");
+        require(block.timestamp <= req.deadline, "Request expired");
+
+        bytes32 digest = hashLoanRequest(req);
+        require(!consumedSignatures[digest], "Signature already used");
+        require(ECDSA.recover(digest, sig) == req.borrower, "Invalid signature");
+
+        // Checks-effects-interactions: mark consumed before any external call.
+        consumedSignatures[digest] = true;
+
+        // Pull ERC20 collateral from borrower (fee-on-transfer guard).
+        uint256 balBefore = IERC20(req.collateralToken).balanceOf(address(this));
+        IERC20(req.collateralToken).safeTransferFrom(req.borrower, address(this), req.collateralAmount);
+        uint256 received = IERC20(req.collateralToken).balanceOf(address(this)) - balBefore;
+        require(received == req.collateralAmount, "Fee-on-transfer collateral not supported");
+
+        // Convert the LTV (<=10000) into an implied collateral ratio (>=10000):
+        // impliedRatioBps = 10000 * 10000 / maxLtvBps
+        // e.g. maxLtvBps=6500 -> 10000^2/6500 ~= 15384 bps ~= 153.84% collateralization.
+        // The require above ensures maxLtvBps > 0, so division is safe.
+        uint256 impliedRatioBps = Math.mulDiv(10000, 10000, req.maxLtvBps);
+        _checkCollateralValueRaw(req.principalToken, req.principalAmount, req.collateralToken, req.collateralAmount, impliedRatioBps);
+
+        uint256 loanId = _createLoanFromSignedRequest(req, msg.sender);
+
+        // Lender (msg.sender) supplies principal to borrower.
+        if (req.principalToken == address(0)) {
+            require(msg.value == req.principalAmount, "Incorrect ETH principal");
+            _payoutEth(req.borrower, req.principalAmount);
+        } else {
+            require(msg.value == 0, "Unexpected ETH");
+            uint256 pBefore = IERC20(req.principalToken).balanceOf(address(this));
+            IERC20(req.principalToken).safeTransferFrom(msg.sender, address(this), req.principalAmount);
+            require(IERC20(req.principalToken).balanceOf(address(this)) - pBefore == req.principalAmount, "Fee-on-transfer principal not supported");
+            _payoutToken(req.principalToken, req.borrower, req.principalAmount);
+        }
+
+        emit SignedLoanRequestFilled(loanId, digest, req.borrower, msg.sender, req.collateralToken, req.collateralAmount, req.principalToken, req.principalAmount, block.timestamp);
+    }
+
+    /// @dev Internal helper: create a Loan record from an EIP-712 signed lend offer.
+    ///      The loan starts funded (lender + principal already set by fillLendOffer).
+    function _createLoanFromSignedOffer(
+        SignedLendOffer calldata offer,
+        address borrower,
+        address collateralToken,
+        uint256 collateralAmount
+    ) internal returns (uint256 loanId) {
+        loanId = nextLoanId;
+        loans[loanId] = Loan({
+            borrower: borrower,
+            collateralToken: collateralToken,
+            collateralAmount: collateralAmount,
+            collateralLocked: true,
+            collateralReleased: 0,
+            createdAt: block.timestamp,
+            active: true,
+            funded: true,
+            repaid: false,
+            fundDeadline: block.timestamp,         // already funded; deadline irrelevant
+            lender: offer.lender,
+            requestedPrincipalToken: offer.principalToken,
+            requestedPrincipalAmount: offer.principalAmount,
+            principalAmount: offer.principalAmount,
+            fundedAt: block.timestamp,
+            interestRateBps: offer.interestRateBps,
+            durationSeconds: offer.durationSeconds,
+            amountRepaid: 0,
+            principalRepaid: 0,
+            interestAccrued: 0,
+            lastAccrualAt: block.timestamp,
+            liquidationThresholdBps: offer.maxLtvBps,
+            lendOfferId: 0
+        });
+        nextLoanId++;
+    }
+
+    /// @notice A borrower fills a lender's EIP-712 signed lend offer.
+    /// @dev    Verifies the lender's EIP-712 signature, pulls ERC20 principal from the lender,
+    ///         the borrower supplies collateral (ETH via msg.value OR ERC20 via approve),
+    ///         a funded loan is created, principal is disbursed to the borrower,
+    ///         and the signature digest is consumed to prevent replay.
+    /// @param offer            The signed lend offer struct.
+    /// @param collateralToken  Collateral token provided by the borrower at fill time (address(0) = native ETH).
+    /// @param collateralAmount Amount of ERC20 collateral to pull when collateralToken != address(0). Ignored for ETH collateral (uses msg.value).
+    /// @param sig              EIP-712 signature from offer.lender over the offer hash.
+    function fillLendOffer(SignedLendOffer calldata offer, address collateralToken, uint256 collateralAmount, bytes calldata sig) external payable nonReentrant {
+        require(offer.principalToken != address(0), "Principal must be ERC20");
+        require(offer.principalAmount > 0, "Principal must be > 0");
+        require(offer.collateralRatioBps >= 10000, "Collateral ratio must be >= 100%");
+        require(offer.trustedRatioBps == 0 || (offer.trustedRatioBps >= 10000 && offer.trustedRatioBps <= offer.collateralRatioBps), "Invalid trustedRatioBps");
+        require(offer.maxLtvBps > 0 && offer.maxLtvBps <= 10000, "Invalid maxLtvBps");
+        require(offer.interestRateBps <= 10000, "Interest rate cannot exceed 100%");
+        require(block.timestamp <= offer.deadline, "Offer expired");
+
+        bytes32 digest = hashLendOffer(offer);
+        require(!consumedSignatures[digest], "Signature already used");
+        require(ECDSA.recover(digest, sig) == offer.lender, "Invalid signature");
+
+        // Checks-effects-interactions: mark consumed before any external call.
+        consumedSignatures[digest] = true;
+
+        // The borrower chooses the collateral token at fill time (collateralToken parameter).
+        // address(0) means native ETH (send via msg.value); any other address is an ERC20.
+        address _collateralToken;
+        uint256 _collateralAmount;
+        if (collateralToken == address(0)) {
+            // ETH collateral path
+            require(msg.value > 0, "Collateral required");
+            _collateralToken = address(0);
+            _collateralAmount = msg.value;
+            lockedEthCollateral[msg.sender] += msg.value;
+        } else {
+            // ERC20 collateral path
+            require(msg.value == 0, "Unexpected ETH");
+            require(collateralAmount > 0, "Collateral required");
+            _collateralToken = collateralToken;
+            _collateralAmount = collateralAmount;
+            uint256 balBefore = IERC20(_collateralToken).balanceOf(address(this));
+            IERC20(_collateralToken).safeTransferFrom(msg.sender, address(this), _collateralAmount);
+            uint256 received = IERC20(_collateralToken).balanceOf(address(this)) - balBefore;
+            require(received == _collateralAmount, "Fee-on-transfer collateral not supported");
+        }
+
+        // Signed offers fill at the base collateralRatioBps (no score attestation at fill time).
+        // collateralRatioBps is already a ratio in bps (>= 10000), pass it directly.
+        _checkCollateralValueRaw(offer.principalToken, offer.principalAmount, _collateralToken, _collateralAmount, offer.collateralRatioBps);
+
+        // Pull ERC20 principal from lender (fee-on-transfer guard), then disburse to borrower.
+        uint256 pBefore = IERC20(offer.principalToken).balanceOf(address(this));
+        IERC20(offer.principalToken).safeTransferFrom(offer.lender, address(this), offer.principalAmount);
+        require(IERC20(offer.principalToken).balanceOf(address(this)) - pBefore == offer.principalAmount, "Fee-on-transfer principal not supported");
+
+        uint256 loanId = _createLoanFromSignedOffer(offer, msg.sender, _collateralToken, _collateralAmount);
+        _payoutToken(offer.principalToken, msg.sender, offer.principalAmount);
+
+        emit SignedLendOfferFilled(loanId, digest, offer.lender, msg.sender, offer.principalToken, offer.principalAmount, _collateralToken, _collateralAmount, block.timestamp);
+    }
+
+    /// @notice Cancel a signed loan request to prevent it from being filled.
+    /// @dev    Only the borrower may cancel. Marks the digest as consumed to prevent any future fill.
+    /// @param req The loan request to cancel.
+    function cancelSignedLoanRequest(SignedLoanRequest calldata req) external {
+        require(msg.sender == req.borrower, "Not signer");
+        bytes32 digest = hashLoanRequest(req);
+        require(!consumedSignatures[digest], "Signature already used");
+        consumedSignatures[digest] = true;
+        emit SignedLoanRequestCancelled(digest, req.borrower);
+    }
+
+    /// @notice Cancel a signed lend offer to prevent it from being filled.
+    /// @dev    Only the lender may cancel. Marks the digest as consumed to prevent any future fill.
+    /// @param offer The lend offer to cancel.
+    function cancelSignedLendOffer(SignedLendOffer calldata offer) external {
+        require(msg.sender == offer.lender, "Not signer");
+        bytes32 digest = hashLendOffer(offer);
+        require(!consumedSignatures[digest], "Signature already used");
+        consumedSignatures[digest] = true;
+        emit SignedLendOfferCancelled(digest, offer.lender);
+    }
+
     /// @dev Recover the signer of a score attestation.
     ///      Message: keccak256(abi.encodePacked(borrower, score, expiry, address(this), block.chainid))
     function _recoverScoreSigner(
@@ -790,6 +1052,29 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 normalizedCollateral = _normalizeAmount(collateralToken, collateralAmount);
         uint256 collateralUsd = normalizedCollateral.mulDiv(collateralPrice, 1e18);
         require(collateralUsd >= _minCollateralUsd(offer, ratioBps), "Collateral value below required ratio");
+    }
+
+    /// @dev Ratio-agnostic collateral check: requires collateralUsd >= principalUsd * ratioBps / 10000.
+    ///      `ratioBps` is a collateral RATIO in basis points (>= 10000, e.g. 15384 = 153.84%),
+    ///      matching the convention of `_minCollateralUsd`/`_checkCollateralValue`.
+    ///      Used by fillLoanRequest (which converts maxLtvBps to an implied ratio first) and
+    ///      fillLendOffer (which passes collateralRatioBps directly).
+    function _checkCollateralValueRaw(
+        address principalToken,
+        uint256 principalAmount,
+        address collateralToken,
+        uint256 collateralAmount,
+        uint256 ratioBps
+    ) internal view {
+        uint256 principalPrice = _getPrice(principalToken);
+        uint256 normalizedPrincipal = _normalizeAmount(principalToken, principalAmount);
+        uint256 principalUsd = normalizedPrincipal.mulDiv(principalPrice, 1e18);
+        uint256 minCollateralUsd = principalUsd.mulDiv(ratioBps, 10000);
+
+        uint256 collateralPrice = _getPrice(collateralToken);
+        uint256 normalizedCollateral = _normalizeAmount(collateralToken, collateralAmount);
+        uint256 collateralUsd = normalizedCollateral.mulDiv(collateralPrice, 1e18);
+        require(collateralUsd >= minCollateralUsd, "Collateral value below required ratio");
     }
 
     /// @notice Accept a lend offer by posting ETH as collateral.
@@ -1637,5 +1922,28 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     ) {
         Loan memory loan = loans[loanId];
         return (loan.lender, loan.principalAmount, loan.funded, loan.fundedAt);
+    }
+
+    // --- EIP-712 domain ---
+
+    function _EIP712Name() internal pure override returns (string memory) { return "Vouch"; }
+    function _EIP712Version() internal pure override returns (string memory) { return "1"; }
+
+    // --- Signed order hash functions ---
+
+    function hashLoanRequest(SignedLoanRequest calldata req) public view returns (bytes32) {
+        return _hashTypedDataV4(keccak256(abi.encode(
+            LOAN_REQUEST_TYPEHASH, req.borrower, req.collateralToken, req.collateralAmount,
+            req.principalToken, req.principalAmount, req.interestRateBps, req.durationSeconds,
+            req.maxLtvBps, req.nonce, req.deadline
+        )));
+    }
+
+    function hashLendOffer(SignedLendOffer calldata offer) public view returns (bytes32) {
+        return _hashTypedDataV4(keccak256(abi.encode(
+            LEND_OFFER_TYPEHASH, offer.lender, offer.principalToken, offer.principalAmount,
+            offer.collateralRatioBps, offer.trustedRatioBps, offer.scoreThreshold,
+            offer.maxLtvBps, offer.interestRateBps, offer.durationSeconds, offer.nonce, offer.deadline
+        )));
     }
 }
