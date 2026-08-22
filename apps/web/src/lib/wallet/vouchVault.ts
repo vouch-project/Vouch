@@ -97,7 +97,11 @@ export type CreateLoanResult = {
 };
 
 export const getBorrowerNonce = async (borrowerAddress: string): Promise<bigint> => {
-  const contract = await getVouchVaultContract();
+  if (!window.ethereum) throw new Error('No wallet found');
+  if (!chainInfo.contractAddress) throw new Error('No contract address found for current chain');
+  if (!ethers.isAddress(chainInfo.contractAddress)) throw new Error('Invalid contract address');
+  const provider = new ethers.BrowserProvider(window.ethereum as unknown as ethers.Eip1193Provider);
+  const contract = VouchVault__factory.connect(chainInfo.contractAddress, provider);
   return contract.nonces(borrowerAddress);
 };
 

@@ -71,6 +71,11 @@ export class ScoringController {
     } catch {
       throw new BadRequestException('chainId and nonce must be integers');
     }
+    if (chainIdBigInt <= 0n || nonceBigInt < 0n) {
+      throw new BadRequestException(
+        'chainId must be a positive integer and nonce must be a non-negative integer',
+      );
+    }
     return this.scoringService.getLtvAttestation(
       address,
       collateralToken,
