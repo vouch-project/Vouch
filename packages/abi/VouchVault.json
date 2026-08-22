@@ -536,6 +536,25 @@
     "anonymous": false,
     "inputs": [
       {
+        "indexed": true,
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "nonce",
+        "type": "uint256"
+      }
+    ],
+    "name": "LtvAttestationUsed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
         "indexed": false,
         "internalType": "uint256",
         "name": "minInterestBps",
@@ -1013,6 +1032,21 @@
         "internalType": "uint16",
         "name": "liquidationThresholdBps",
         "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "maxLtvBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "expiry",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "sig",
+        "type": "bytes"
       }
     ],
     "name": "createLoan",
@@ -1061,6 +1095,21 @@
         "internalType": "uint16",
         "name": "liquidationThresholdBps",
         "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "maxLtvBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "expiry",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "sig",
+        "type": "bytes"
       }
     ],
     "name": "createLoanWithERC20",
@@ -1687,6 +1736,25 @@
   {
     "inputs": [],
     "name": "nextLoanId",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "nonces",
     "outputs": [
       {
         "internalType": "uint256",

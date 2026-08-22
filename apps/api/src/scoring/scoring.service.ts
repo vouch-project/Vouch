@@ -12,6 +12,18 @@ import { firstValueFrom } from 'rxjs';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreditScoreResponseDto } from './dto/credit-score-response.dto';
 
+const LTV_ATTESTATION_TYPES = {
+  LtvAttestation: [
+    { name: 'borrower', type: 'address' },
+    { name: 'maxLtvBps', type: 'uint16' },
+    { name: 'expiry', type: 'uint256' },
+    { name: 'nonce', type: 'uint256' },
+  ],
+} as const;
+
+const DEFAULT_VOLATILITY = 0.6;
+const ETH_VOLATILITY = 0.45;
+
 const ATTESTATION_TTL_S = 5 * 60; // 5 minutes
 
 const SCORE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -133,6 +145,91 @@ export class ScoringService {
       explanation: mlData.explanation,
       computedAt,
     };
+  }
+
+  async getLtvAttestation(
+    walletAddress: string,
+    collateralTokenAddress: string,
+    borrowTokenAddress: string,
+    contractAddress: string,
+    chainId: bigint,
+    nonce: bigint,
+  ): Promise<{ maxLtvBps: number; expiry: number; sig: string }> {
+    const privateKey = this.configService.get<string>(
+      'SCORE_SIGNER_PRIVATE_KEY',
+    );
+    if (!privateKey) {
+      throw new ServiceUnavailableException('Score attestation not configured');
+    }
+    if (!ethers.isAddress(contractAddress)) {
+      throw new BadRequestException('Invalid contractAddress');
+    }
+
+    const { score, address: borrower } =
+      await this.getCreditScore(walletAddress);
+
+    // Fetch volatility for the two tokens (case-insensitive address lookup).
+    const addresses = [collateralTokenAddress, borrowTokenAddress]
+      .filter((a) => a && a !== ethers.ZeroAddress)
+      .map((a) => ethers.getAddress(a));
+
+    let collateralVolatility = ETH_VOLATILITY;
+    let borrowVolatility = ETH_VOLATILITY;
+
+    if (addresses.length > 0) {
+      const { data: tokenRows } = await this.supabaseService.client
+        .from('tokens')
+        .select('address, volatility')
+        .in('address', addresses);
+
+      if (tokenRows) {
+        const byAddress = new Map(
+          tokenRows.map((r) => [
+            r.address.toLowerCase(),
+            r.volatility as number | null,
+          ]),
+        );
+        if (
+          collateralTokenAddress &&
+          collateralTokenAddress !== ethers.ZeroAddress
+        ) {
+          collateralVolatility =
+            byAddress.get(collateralTokenAddress.toLowerCase()) ??
+            DEFAULT_VOLATILITY;
+        }
+        if (borrowTokenAddress && borrowTokenAddress !== ethers.ZeroAddress) {
+          borrowVolatility =
+            byAddress.get(borrowTokenAddress.toLowerCase()) ??
+            DEFAULT_VOLATILITY;
+        }
+      }
+    }
+
+    const v = Math.max(collateralVolatility, borrowVolatility);
+    const base = 90 - v * 40;
+    const clamped = Math.max(300, Math.min(850, score));
+    const mult = 0.5 + ((clamped - 300) / 550) * 0.6;
+    const maxLtvBps = Math.floor(base * mult * 100);
+
+    const expiry = Math.floor(Date.now() / 1000) + ATTESTATION_TTL_S;
+    const verifyingContract = ethers.getAddress(contractAddress);
+
+    const domain = {
+      name: 'VouchVault',
+      version: '1',
+      chainId: Number(chainId),
+      verifyingContract,
+    };
+    const value = { borrower, maxLtvBps, expiry, nonce };
+
+    const wallet = new ethers.Wallet(privateKey);
+    const sig = await wallet.signTypedData(
+      domain,
+      LTV_ATTESTATION_TYPES,
+      value,
+    );
+
+    return { maxLtvBps, expiry, sig };
   }
 
   async getAttestation(

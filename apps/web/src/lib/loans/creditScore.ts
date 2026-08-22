@@ -9,6 +9,12 @@ export type CreditScore = {
   explanation: string | null;
 };
 
+export type LtvAttestation = {
+  maxLtvBps: number;
+  expiry: number;
+  sig: string;
+};
+
 export type RiskLevel = {
   label: string;
   color: string;
@@ -28,4 +34,26 @@ export const fetchCreditScore = async (address: string): Promise<CreditScore | n
   } catch {
     return null;
   }
+};
+
+/** Fetch a backend-signed LTV attestation for a borrow. */
+export const fetchLtvAttestation = async (
+  borrowerAddress: string,
+  collateralToken: string,
+  borrowToken: string,
+  contractAddress: string,
+  chainId: bigint,
+  nonce: bigint,
+): Promise<LtvAttestation> => {
+  const params = new URLSearchParams({
+    collateralToken,
+    borrowToken,
+    contractAddress,
+    chainId: chainId.toString(),
+    nonce: nonce.toString(),
+  });
+  const { data } = await axiosApi.get<LtvAttestation>(
+    `/scoring/${encodeURIComponent(borrowerAddress)}/ltv-attestation?${params}`,
+  );
+  return data;
 };

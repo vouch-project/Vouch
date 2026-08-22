@@ -1,10 +1,11 @@
 <script lang="ts">
   import { axiosApi } from '$api/axiosApi';
+  import { fetchLtvAttestation } from '$lib/loans/creditScore';
   import { calculateHealthFactor } from '$lib/loans/loanMath';
   import { maxLtv } from '$lib/ltv';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
-  import { createLoan } from '$lib/wallet/vouchVault';
+  import { createLoan, getBorrowerNonce } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import CollateralBorrowFields from '../create-loan/CollateralBorrowFields.svelte';
   import LoanTermsFields from '../create-loan/LoanTermsFields.svelte';
@@ -123,8 +124,6 @@
       return;
     }
 
-    status = 'Waiting for wallet confirmation...';
-
     const collateralToken = chainInfo.tokens.find((t) => t.symbol === selectedCollateralToken);
     if (!collateralToken) {
       status = 'Collateral token not found';
@@ -137,8 +136,32 @@
       return;
     }
 
+    if (!wallet.address) {
+      status = 'Wallet not connected';
+      return;
+    }
+    if (!chainInfo.contractAddress || !wallet.networkId) {
+      status = 'Chain not configured';
+      return;
+    }
+
+    status = 'Fetching LTV attestation...';
+
     try {
       const liquidationThresholdBps = Math.max(1, Math.min(10000, Math.round(computedMaxLtv * 100)));
+
+      const nonce = await getBorrowerNonce(wallet.address);
+      const attestation = await fetchLtvAttestation(
+        wallet.address,
+        collateralToken.address,
+        borrowToken.address,
+        chainInfo.contractAddress,
+        BigInt(wallet.networkId),
+        nonce,
+      );
+
+      status = 'Waiting for wallet confirmation...';
+
       await createLoan(
         collateralAmount,
         collateralToken,
@@ -148,6 +171,7 @@
         durationSeconds,
         fundWindowSeconds,
         liquidationThresholdBps,
+        attestation,
       );
       status = 'Loan created!';
     } catch (e: unknown) {
