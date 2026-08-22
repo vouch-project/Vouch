@@ -6,7 +6,7 @@
   import * as Card from '$lib/components/ui/card';
   import * as Table from '$lib/components/ui/table';
   import { formatUint256 } from '$lib/formatUint256';
-  import { formatLoanTerm, intervalToSeconds } from '$lib/loans/loanMath';
+  import { calculateHealthFactor, formatLoanTerm, intervalToSeconds, type HealthFactorResult } from '$lib/loans/loanMath';
   import { maxLtv } from '$lib/ltv';
   import { navLinksMap } from '$lib/navLinks';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
@@ -83,7 +83,6 @@
     signedError = null;
     try {
       await fillLoanRequest(req, row.signature);
-      signedRequests = signedRequests.filter((r) => r.digest !== row.digest);
     } catch (e) {
       signedError = getErrorMessage(e);
     } finally {
@@ -91,10 +90,11 @@
     }
   };
 
-  const getRiskLevel = (score: number) => {
-    if (score > 800) return { label: 'Low', color: 'bg-green-100 text-green-700 border-green-200' };
-    if (score > 720) return { label: 'Medium', color: 'bg-blue-100 text-blue-700 border-blue-200' };
-    return { label: 'High', color: 'bg-orange-100 text-orange-700 border-orange-200' };
+  const getRiskLevel = (hf: HealthFactorResult | null) => {
+    if (!hf) return null;
+    if (hf.riskStatus === 'Safe') return { label: 'Safe', color: 'bg-green-100 text-green-700 border-green-200' };
+    if (hf.riskStatus === 'Warning') return { label: 'Warning', color: 'bg-amber-100 text-amber-700 border-amber-200' };
+    return { label: 'High Risk', color: 'bg-red-100 text-red-700 border-red-200' };
   };
 
   const copyAddress = async (addr: string) => {
@@ -170,12 +170,15 @@
         {:else}
           {#each loans as loan (loan.id)}
             {@const score = scores[loan.borrowerAddress]}
-            {@const ltv = maxLtv(
-              tokenPrices.getTokenMeta(loan.collateralToken?.symbol),
-              tokenPrices.getTokenMeta(loan.principalToken?.symbol),
-              score,
-            )}
-            {@const risk = score !== undefined ? getRiskLevel(score) : null}
+            {@const colMeta = tokenPrices.getTokenMeta(loan.collateralToken?.symbol)}
+            {@const prinMeta = tokenPrices.getTokenMeta(loan.principalToken?.symbol)}
+            {@const collateralUsd = loan.collateralAmount ? parseFloat(ethers.formatUnits(BigInt(loan.collateralAmount), loan.collateralToken?.decimals ?? 18)) * colMeta.priceUsd : 0}
+            {@const borrowUsd = loan.principalAmount ? parseFloat(ethers.formatUnits(BigInt(loan.principalAmount), loan.principalToken?.decimals ?? 18)) * prinMeta.priceUsd : 0}
+            {@const currentLtv = collateralUsd > 0 ? (borrowUsd / collateralUsd) * 100 : 0}
+            {@const maxLtvVal = maxLtv(colMeta, prinMeta, score)}
+            {@const ltvUtilization = maxLtvVal > 0 ? Math.min(100, (currentLtv / maxLtvVal) * 100) : 0}
+            {@const hf = calculateHealthFactor(collateralUsd, borrowUsd, maxLtvVal)}
+            {@const risk = getRiskLevel(hf)}
             {@const isOwnLoan = wallet.address?.toLowerCase() === loan.borrowerAddress.toLowerCase()}
             {@const grossApr = Number(loan.interestRate ?? 0) / 100}
             {@const netApr = grossApr * (1 - chainInfo.protocolFeeBps / 10000)}
@@ -244,14 +247,20 @@
                   </span>
                 </div>
               </Table.Cell>
-              <Table.Cell
-                class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap text-[10px] sm:text-sm min-w-max"
-              >
-                <div class="flex items-center gap-1.5 sm:gap-3">
-                  <div class="w-12 sm:w-16 h-1.5 sm:h-2 bg-muted rounded-full overflow-hidden hidden lg:block">
-                    <div style:width="{ltv}%" class="h-full bg-green-500 transition-all"></div>
+              <Table.Cell class="px-1 sm:px-3 lg:px-6 py-3 text-left whitespace-nowrap min-w-max">
+                <div class="flex flex-col gap-0.5">
+                  <div class="flex items-center gap-1.5 sm:gap-2">
+                    <div class="w-10 sm:w-14 h-1.5 bg-muted rounded-full overflow-hidden hidden lg:block">
+                      <div
+                        style:width="{ltvUtilization}%"
+                        class={cn('h-full transition-all', ltvUtilization < 60 ? 'bg-green-500' : ltvUtilization < 85 ? 'bg-amber-500' : 'bg-red-500')}
+                      ></div>
+                    </div>
+                    <span class={cn('font-bold text-[10px] sm:text-sm', ltvUtilization < 60 ? 'text-green-600' : ltvUtilization < 85 ? 'text-amber-600' : 'text-red-600')}>
+                      {currentLtv.toFixed(1)}%
+                    </span>
                   </div>
-                  <span class="font-bold text-green-600">{ltv.toFixed(1)}%</span>
+                  <span class="text-[9px] text-muted-foreground hidden lg:block">max {maxLtvVal.toFixed(0)}%</span>
                 </div>
               </Table.Cell>
               <Table.Cell
@@ -265,14 +274,14 @@
                   {formatLoanTerm(loan.duration)}
                 </div>
               </Table.Cell>
-              <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left min-w-max">
-                {#if risk}
-                  <Badge
-                    class={cn('font-bold px-1 sm:px-2.5 py-0 text-[8px] sm:text-[10px]', risk.color)}
-                    variant="outline"
-                  >
-                    {risk.label}
-                  </Badge>
+              <Table.Cell class="px-1 sm:px-3 lg:px-6 py-3 text-left min-w-max">
+                {#if risk && hf}
+                  <div class="flex flex-col gap-0.5">
+                    <Badge class={cn('font-bold px-1 sm:px-2.5 py-0 text-[8px] sm:text-[10px]', risk.color)} variant="outline">
+                      {risk.label}
+                    </Badge>
+                    <span class="text-[9px] text-muted-foreground hidden lg:block">HF {hf.healthFactor.toFixed(2)}</span>
+                  </div>
                 {:else}
                   <div class="h-4 w-10 bg-muted animate-pulse rounded"></div>
                 {/if}
@@ -306,8 +315,15 @@
               {@const prinTok = findToken(row.principalTokenId)}
               {@const colTok = findToken(row.collateralTokenId)}
               {@const score = scores[row.borrowerAddress]}
-              {@const risk = score !== undefined ? getRiskLevel(score) : null}
-              {@const ltv = row.maxLtvBps / 100}
+              {@const colMeta = tokenPrices.getTokenMeta(colTok?.symbol)}
+              {@const prinMeta = tokenPrices.getTokenMeta(prinTok?.symbol)}
+              {@const collateralUsd = parseFloat(ethers.formatUnits(BigInt(row.collateralAmount), colTok?.decimals ?? 18)) * colMeta.priceUsd}
+              {@const borrowUsd = parseFloat(ethers.formatUnits(BigInt(row.principalAmount), prinTok?.decimals ?? 18)) * prinMeta.priceUsd}
+              {@const currentLtv = collateralUsd > 0 ? (borrowUsd / collateralUsd) * 100 : 0}
+              {@const maxLtvVal = maxLtv(colMeta, prinMeta, score)}
+              {@const ltvUtilization = maxLtvVal > 0 ? Math.min(100, (currentLtv / maxLtvVal) * 100) : 0}
+              {@const hf = calculateHealthFactor(collateralUsd, borrowUsd, maxLtvVal)}
+              {@const risk = getRiskLevel(hf)}
               {@const isOwn = wallet.address?.toLowerCase() === row.borrowerAddress.toLowerCase()}
               <Table.Row class="hover:bg-muted/10 transition-colors group">
                 <Table.Cell
@@ -373,14 +389,20 @@
                     <span>{formatUint256(row.collateralAmount, colTok?.decimals)} {colTok?.symbol ?? 'ETH'}</span>
                   </div>
                 </Table.Cell>
-                <Table.Cell
-                  class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap text-[10px] sm:text-sm min-w-max"
-                >
-                  <div class="flex items-center gap-1.5 sm:gap-3">
-                    <div class="w-12 sm:w-16 h-1.5 sm:h-2 bg-muted rounded-full overflow-hidden hidden lg:block">
-                      <div style:width="{ltv}%" class="h-full bg-green-500 transition-all"></div>
+                <Table.Cell class="px-1 sm:px-3 lg:px-6 py-3 text-left whitespace-nowrap min-w-max">
+                  <div class="flex flex-col gap-0.5">
+                    <div class="flex items-center gap-1.5 sm:gap-2">
+                      <div class="w-10 sm:w-14 h-1.5 bg-muted rounded-full overflow-hidden hidden lg:block">
+                        <div
+                          style:width="{ltvUtilization}%"
+                          class={cn('h-full transition-all', ltvUtilization < 60 ? 'bg-green-500' : ltvUtilization < 85 ? 'bg-amber-500' : 'bg-red-500')}
+                        ></div>
+                      </div>
+                      <span class={cn('font-bold text-[10px] sm:text-sm', ltvUtilization < 60 ? 'text-green-600' : ltvUtilization < 85 ? 'text-amber-600' : 'text-red-600')}>
+                        {currentLtv.toFixed(1)}%
+                      </span>
                     </div>
-                    <span class="font-bold text-green-600">{ltv.toFixed(1)}%</span>
+                    <span class="text-[9px] text-muted-foreground hidden lg:block">max {maxLtvVal.toFixed(0)}%</span>
                   </div>
                 </Table.Cell>
                 <Table.Cell
@@ -396,14 +418,14 @@
                     {formatLoanTerm(row.duration)}
                   </div>
                 </Table.Cell>
-                <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left min-w-max">
-                  {#if risk}
-                    <Badge
-                      class={cn('font-bold px-1 sm:px-2.5 py-0 text-[8px] sm:text-[10px]', risk.color)}
-                      variant="outline"
-                    >
-                      {risk.label}
-                    </Badge>
+                <Table.Cell class="px-1 sm:px-3 lg:px-6 py-3 text-left min-w-max">
+                  {#if risk && hf}
+                    <div class="flex flex-col gap-0.5">
+                      <Badge class={cn('font-bold px-1 sm:px-2.5 py-0 text-[8px] sm:text-[10px]', risk.color)} variant="outline">
+                        {risk.label}
+                      </Badge>
+                      <span class="text-[9px] text-muted-foreground hidden lg:block">HF {hf.healthFactor.toFixed(2)}</span>
+                    </div>
                   {:else}
                     <div class="h-4 w-10 bg-muted animate-pulse rounded"></div>
                   {/if}
