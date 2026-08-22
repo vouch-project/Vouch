@@ -13,6 +13,7 @@ import { BlockchainListenerModule } from './blockchain-listener/blockchain-liste
 import { ChainsModule } from './chains/chains.module';
 import { LoansModule } from './loans/loans.module';
 import { ScoringModule } from './scoring/scoring.module';
+import { StatsModule } from './stats/stats.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { TokensModule } from './tokens/tokens.module';
 
@@ -82,6 +83,7 @@ import { TokensModule } from './tokens/tokens.module';
     ChainsModule,
     LoansModule,
     ScoringModule,
+    StatsModule,
     SupabaseModule,
     TokensModule,
   ],

@@ -33,3 +33,57 @@ def test_compat_register_idempotent():
     assert "vouch_ml_training.pipelines.train_xgboost" in sys.modules
     mod = sys.modules["vouch_ml_training.pipelines.train_xgboost"]
     assert mod.CalibratedPipeline is CalibratedPipeline
+
+
+def test_compat_predict_proba_platt_scaling():
+    import numpy as np
+
+    from src.compat import CalibratedPipeline
+
+    class _FakePipeline:
+        def predict_proba(self, x):
+            n = x.shape[0]
+            return np.column_stack([np.full(n, 0.3), np.full(n, 0.7)])
+
+    class _PlattCalibrator:
+        def __init__(self):
+            self.last_input_shape = None
+
+        def predict_proba(self, x):
+            self.last_input_shape = x.shape
+            n = x.shape[0]
+            return np.column_stack([np.full(n, 0.2), np.full(n, 0.8)])
+
+    cal = _PlattCalibrator()
+    cp = CalibratedPipeline(_FakePipeline(), cal)
+    x = np.zeros((5, 3))
+    out = cp.predict_proba(x)
+
+    assert cal.last_input_shape == (5, 1), "calibrator must receive 2D (n, 1) input"
+    assert out.shape == (5, 2)
+    np.testing.assert_allclose(out[:, 0], 0.2)
+    np.testing.assert_allclose(out[:, 1], 0.8)
+
+
+def test_compat_predict_proba_isotonic_fallback():
+    import numpy as np
+
+    from src.compat import CalibratedPipeline
+
+    class _FakePipeline:
+        def predict_proba(self, x):
+            n = x.shape[0]
+            return np.column_stack([np.full(n, 0.4), np.full(n, 0.6)])
+
+    class _IsotonicCalibrator:
+        def predict(self, x):
+            assert x.ndim == 1, "legacy calibrator must receive 1D input"
+            return x * 0.9
+
+    cp = CalibratedPipeline(_FakePipeline(), _IsotonicCalibrator())
+    x = np.zeros((4, 3))
+    out = cp.predict_proba(x)
+
+    assert out.shape == (4, 2)
+    np.testing.assert_allclose(out[:, 1], 0.6 * 0.9)
+    np.testing.assert_allclose(out[:, 0], 1 - 0.6 * 0.9)

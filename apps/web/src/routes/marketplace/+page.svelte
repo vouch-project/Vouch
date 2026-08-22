@@ -1,8 +1,6 @@
 <script lang="ts">
-  import * as Card from '$lib/components/ui/card';
   import * as Tabs from '$lib/components/ui/tabs';
-  import { cn } from '$lib/utils';
-  import { ShieldCheck, TrendingUp, Zap } from '@lucide/svelte';
+  import { ShieldCheck } from '@lucide/svelte';
   import BorrowTab from './BorrowTab.svelte';
   import LendTab from './LendTab.svelte';
 
@@ -21,9 +19,7 @@
     >
       Marketplace
     </h1>
-    <p class="text-xl text-muted-foreground font-medium">
-      Secure peer-to-peer lending with collateralized protection.
-    </p>
+    <p class="text-xl text-muted-foreground font-medium">Secure peer-to-peer lending with collateralized protection.</p>
   </div>
 
   <Tabs.Root class="w-full" bind:value={activeTab}>
@@ -47,25 +43,4 @@
       <LendTab />
     </Tabs.Content>
   </Tabs.Root>
-
-  <!-- Ecosystem Stats Footer -->
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-8">
-    {#each [
-      { label: 'Total Value Locked', value: '$1.2M', icon: ShieldCheck, color: 'text-green-500' },
-      { label: 'Avg. Market APY', value: '12.4%', icon: TrendingUp, color: 'text-blue-500' },
-      { label: 'Loans Protected', value: '142', icon: Zap, color: 'text-amber-500' },
-    ] as stat (stat.label)}
-      <Card.Root class="bg-muted/10 border-none shadow-none p-4 flex items-center gap-4">
-        <div
-          class="h-10 w-10 rounded-xl bg-background flex items-center justify-center shadow-sm border border-border/20"
-        >
-          <stat.icon class={cn('h-5 w-5', stat.color)} />
-        </div>
-        <div>
-          <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">{stat.label}</p>
-          <p class="text-lg font-black text-foreground">{stat.value}</p>
-        </div>
-      </Card.Root>
-    {/each}
-  </div>
 </div>
