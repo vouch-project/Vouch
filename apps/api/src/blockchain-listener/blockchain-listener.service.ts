@@ -730,7 +730,7 @@ export class BlockchainListenerService implements OnModuleInit {
           (l) =>
             l.topics[1] ===
             ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
-        )?.index ?? ((receipt?.logs?.at(-1)?.index ?? logIndex) + 1);
+        )?.index ?? (receipt?.logs?.at(-1)?.index ?? logIndex) + 1;
 
       await this.loanService.acceptLendOffer({
         offerId,

@@ -42,4 +42,35 @@ export class ScoringController {
       chainIdBigInt,
     );
   }
+
+  @Get(':address/ltv-attestation')
+  getLtvAttestation(
+    @Param('address') address: string,
+    @Query('collateralToken') collateralToken: string,
+    @Query('borrowToken') borrowToken: string,
+    @Query('contractAddress') contractAddress: string,
+    @Query('chainId') chainId: string,
+  ): Promise<{ maxLtvBps: number; expiry: number; sig: string }> {
+    if (!collateralToken || !borrowToken || !contractAddress || !chainId) {
+      throw new BadRequestException(
+        'collateralToken, borrowToken, contractAddress, and chainId query params are required',
+      );
+    }
+    let chainIdBigInt: bigint;
+    try {
+      chainIdBigInt = BigInt(chainId);
+    } catch {
+      throw new BadRequestException('chainId must be an integer');
+    }
+    if (chainIdBigInt <= 0n) {
+      throw new BadRequestException('chainId must be a positive integer');
+    }
+    return this.scoringService.getLtvAttestation(
+      address,
+      collateralToken,
+      borrowToken,
+      contractAddress,
+      chainIdBigInt,
+    );
+  }
 }
