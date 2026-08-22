@@ -50,31 +50,20 @@ export class ScoringController {
     @Query('borrowToken') borrowToken: string,
     @Query('contractAddress') contractAddress: string,
     @Query('chainId') chainId: string,
-    @Query('nonce') nonce: string,
   ): Promise<{ maxLtvBps: number; expiry: number; sig: string }> {
-    if (
-      !collateralToken ||
-      !borrowToken ||
-      !contractAddress ||
-      !chainId ||
-      nonce === undefined
-    ) {
+    if (!collateralToken || !borrowToken || !contractAddress || !chainId) {
       throw new BadRequestException(
-        'collateralToken, borrowToken, contractAddress, chainId, and nonce query params are required',
+        'collateralToken, borrowToken, contractAddress, and chainId query params are required',
       );
     }
     let chainIdBigInt: bigint;
-    let nonceBigInt: bigint;
     try {
       chainIdBigInt = BigInt(chainId);
-      nonceBigInt = BigInt(nonce);
     } catch {
-      throw new BadRequestException('chainId and nonce must be integers');
+      throw new BadRequestException('chainId must be an integer');
     }
-    if (chainIdBigInt <= 0n || nonceBigInt < 0n) {
-      throw new BadRequestException(
-        'chainId must be a positive integer and nonce must be a non-negative integer',
-      );
+    if (chainIdBigInt <= 0n) {
+      throw new BadRequestException('chainId must be a positive integer');
     }
     return this.scoringService.getLtvAttestation(
       address,
@@ -82,7 +71,6 @@ export class ScoringController {
       borrowToken,
       contractAddress,
       chainIdBigInt,
-      nonceBigInt,
     );
   }
 }

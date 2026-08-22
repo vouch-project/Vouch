@@ -149,13 +149,43 @@ export class ScoringService {
     };
   }
 
+  private async getBorrowerNonce(
+    borrower: string,
+    contractAddress: string,
+    chainId: bigint,
+  ): Promise<bigint> {
+    const { data: chainRow } = await this.supabaseService.client
+      .from('chains')
+      .select('rpcUrl')
+      .eq('networkId', chainId.toString())
+      .eq('contractAddress', asAddress(contractAddress))
+      .single();
+
+    if (!chainRow) {
+      throw new BadRequestException('Unknown chain or contract address');
+    }
+
+    const provider = new ethers.JsonRpcProvider(chainRow.rpcUrl);
+    const iface = new ethers.Interface([
+      'function nonces(address) view returns (uint256)',
+    ]);
+    const contract = new ethers.Contract(contractAddress, iface, provider);
+    try {
+      return (await contract.nonces(borrower)) as bigint;
+    } catch (err) {
+      this.logger.error(
+        `Failed to read on-chain nonce for ${borrower}: ${String(err)}`,
+      );
+      throw new ServiceUnavailableException('Failed to read on-chain nonce');
+    }
+  }
+
   async getLtvAttestation(
     walletAddress: string,
     collateralTokenAddress: string,
     borrowTokenAddress: string,
     contractAddress: string,
     chainId: bigint,
-    nonce: bigint,
   ): Promise<{ maxLtvBps: number; expiry: number; sig: string }> {
     const privateKey = this.configService.get<string>(
       'SCORE_SIGNER_PRIVATE_KEY',
@@ -230,14 +260,24 @@ export class ScoringService {
     const expiry = Math.floor(Date.now() / 1000) + ATTESTATION_TTL_S;
     const verifyingContract = ethers.getAddress(contractAddress);
 
+    const nonce = await this.getBorrowerNonce(
+      borrower,
+      verifyingContract,
+      chainId,
+    );
+
     const domain = {
       name: 'VouchVault',
       version: '1',
       chainId,
       verifyingContract,
     };
-    const collateralToken = collateralTokenAddress ?? ethers.ZeroAddress;
-    const borrowToken = borrowTokenAddress ?? ethers.ZeroAddress;
+    const collateralToken = ethers.getAddress(
+      collateralTokenAddress ?? ethers.ZeroAddress,
+    );
+    const borrowToken = ethers.getAddress(
+      borrowTokenAddress ?? ethers.ZeroAddress,
+    );
     const value = {
       borrower,
       collateralToken,

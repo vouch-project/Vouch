@@ -173,7 +173,6 @@ describe('ScoringService', () => {
     const COLLATERAL_ADDRESS = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
     const BORROW_ADDRESS = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC';
     const CHAIN_ID = 31337n;
-    const NONCE = 0n;
     const PRIVATE_KEY =
       '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
 
@@ -189,6 +188,7 @@ describe('ScoringService', () => {
         explanation: null,
         computedAt: new Date().toISOString(),
       });
+      jest.spyOn(service as any, 'getBorrowerNonce').mockResolvedValue(0n);
       supabaseService.client.from = jest.fn(() => ({
         select: jest.fn().mockReturnValue({
           in: jest.fn().mockResolvedValue({ data: [], error: null }),
@@ -204,7 +204,6 @@ describe('ScoringService', () => {
           BORROW_ADDRESS,
           CONTRACT_ADDRESS,
           CHAIN_ID,
-          NONCE,
         ),
       ).rejects.toThrow(ServiceUnavailableException);
     });
@@ -218,7 +217,6 @@ describe('ScoringService', () => {
           BORROW_ADDRESS,
           CONTRACT_ADDRESS,
           CHAIN_ID,
-          NONCE,
         ),
       ).rejects.toThrow(BadRequestException);
     });
@@ -245,7 +243,6 @@ describe('ScoringService', () => {
         BORROW_ADDRESS,
         CONTRACT_ADDRESS,
         CHAIN_ID,
-        NONCE,
       );
       expect(maxLtvBps).toBeGreaterThanOrEqual(1);
       expect(maxLtvBps).toBeLessThanOrEqual(10000);
@@ -267,7 +264,6 @@ describe('ScoringService', () => {
         BORROW_ADDRESS,
         CONTRACT_ADDRESS,
         CHAIN_ID,
-        NONCE,
       );
 
       // With DEFAULT_VOLATILITY (0.6), base = 90 - 0.6*40 = 66.
@@ -293,7 +289,6 @@ describe('ScoringService', () => {
         BORROW_ADDRESS,
         CONTRACT_ADDRESS,
         CHAIN_ID,
-        NONCE,
       );
       expect(ltvOnError).toBeLessThanOrEqual(ltvEthVolatility);
     });
@@ -306,7 +301,6 @@ describe('ScoringService', () => {
         BORROW_ADDRESS,
         CONTRACT_ADDRESS,
         CHAIN_ID,
-        NONCE,
       );
       const domain = {
         name: 'VouchVault',
@@ -333,7 +327,7 @@ describe('ScoringService', () => {
           borrowToken: ethers.getAddress(BORROW_ADDRESS),
           maxLtvBps,
           expiry,
-          nonce: NONCE,
+          nonce: 0n, // getBorrowerNonce is mocked to return 0n
         },
         sig,
       );
