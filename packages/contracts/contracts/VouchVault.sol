@@ -176,6 +176,15 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     // The contract verifies the signature to grant the trusted collateral ratio.
     address public scoreSigner;
 
+    // --- LTV attestation ---
+    // The same backend key signs an EIP-712 LtvAttestation authorising a maximum
+    // liquidationThresholdBps for a specific borrower. createLoan / createLoanWithERC20
+    // verify this before accepting the caller-supplied liquidationThresholdBps.
+    mapping(address => uint256) public nonces;
+
+    bytes32 private constant LTV_ATTESTATION_TYPEHASH =
+        keccak256("LtvAttestation(address borrower,address collateralToken,address borrowToken,uint16 maxLtvBps,uint256 expiry,uint256 nonce)");
+
     // --- Events ---
     event Deposited(address indexed user, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);
@@ -247,6 +256,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     );
     event LiquidationBonusUpdated(uint256 bonusBps);
     event ScoreSignerUpdated(address indexed signer);
+    event LtvAttestationUsed(address indexed borrower, uint256 nonce);
 
     event LendOfferCreated(
         uint256 indexed offerId,
@@ -422,6 +432,43 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         emit Deposited(msg.sender, msg.value);
     }
 
+    /// @dev EIP-712 domain separator, recomputed per-call so it stays valid across chain forks.
+    function _domainSeparator() internal view returns (bytes32) {
+        return keccak256(abi.encode(
+            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+            keccak256(bytes("VouchVault")),
+            keccak256(bytes("1")),
+            block.chainid,
+            address(this)
+        ));
+    }
+
+    /// @dev Verify an LtvAttestation EIP-712 signature, then consume the nonce.
+    function _verifyLtvAttestation(
+        address borrower,
+        address collateralToken,
+        address borrowToken,
+        uint16 maxLtvBps,
+        uint256 expiry,
+        bytes calldata sig
+    ) internal {
+        require(scoreSigner != address(0), "LTV attestation not configured");
+        require(block.timestamp <= expiry, "Attestation expired");
+        bytes32 structHash = keccak256(abi.encode(
+            LTV_ATTESTATION_TYPEHASH,
+            borrower,
+            collateralToken,
+            borrowToken,
+            maxLtvBps,
+            expiry,
+            nonces[borrower]
+        ));
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _domainSeparator(), structHash));
+        require(ECDSA.recover(digest, sig) == scoreSigner, "Invalid attestation");
+        emit LtvAttestationUsed(borrower, nonces[borrower]);
+        nonces[borrower]++;
+    }
+
     /// @notice Create a new loan by depositing ETH collateral
     /// @param principalToken          The token the borrower wants to receive (address(0) = native ETH)
     /// @param principalAmount         The amount the borrower wants to receive
@@ -429,19 +476,27 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     /// @param durationSeconds         Loan term in seconds; caps interest accrual; 0 = no deadline / no time-based interest
     /// @param fundWindowSeconds       Seconds from creation during which the loan may be funded (must be > 0)
     /// @param liquidationThresholdBps Maximum LTV (debt/collateral) in basis points; the loan becomes liquidatable once the actual ratio exceeds this (e.g. 8000 = 80% max LTV)
+    /// @param maxLtvBps               Backend-attested LTV ceiling for this borrower; liquidationThresholdBps must not exceed this
+    /// @param expiry                  Attestation expiry timestamp (unix seconds)
+    /// @param sig                     EIP-712 signature over LtvAttestation from scoreSigner
     function createLoan(
         address principalToken,
         uint256 principalAmount,
         uint16 interestRateBps,
         uint256 durationSeconds,
         uint256 fundWindowSeconds,
-        uint16 liquidationThresholdBps
+        uint16 liquidationThresholdBps,
+        uint16 maxLtvBps,
+        uint256 expiry,
+        bytes calldata sig
     ) external payable {
         require(msg.value > 0, "Collateral must be > 0");
         require(principalAmount > 0, "Principal amount must be > 0");
         require(fundWindowSeconds > 0, "Fund window must be > 0");
         require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
         require(liquidationThresholdBps > 0 && liquidationThresholdBps <= 10000, "Invalid liquidation threshold");
+        require(liquidationThresholdBps <= maxLtvBps, "Exceeds attested LTV");
+        _verifyLtvAttestation(msg.sender, address(0), principalToken, maxLtvBps, expiry, sig);
 
         // Collateral is tracked separately from withdrawable deposits.
         lockedEthCollateral[msg.sender] += msg.value;
@@ -485,6 +540,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     /// @param durationSeconds         Loan term in seconds; caps interest accrual; 0 = no deadline / no time-based interest
     /// @param fundWindowSeconds       Seconds from creation during which the loan may be funded (must be > 0)
     /// @param liquidationThresholdBps Maximum LTV (debt/collateral) in basis points; the loan becomes liquidatable once the actual ratio exceeds this (e.g. 8000 = 80% max LTV)
+    /// @param maxLtvBps               Backend-attested LTV ceiling for this borrower; liquidationThresholdBps must not exceed this
+    /// @param expiry                  Attestation expiry timestamp (unix seconds)
+    /// @param sig                     EIP-712 signature over LtvAttestation from scoreSigner
     function createLoanWithERC20(
         address token,
         uint256 amount,
@@ -493,7 +551,10 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         uint16 interestRateBps,
         uint256 durationSeconds,
         uint256 fundWindowSeconds,
-        uint16 liquidationThresholdBps
+        uint16 liquidationThresholdBps,
+        uint16 maxLtvBps,
+        uint256 expiry,
+        bytes calldata sig
     ) external {
         require(amount > 0, "Collateral must be > 0");
         require(token != address(0), "Invalid token address");
@@ -501,6 +562,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         require(fundWindowSeconds > 0, "Fund window must be > 0");
         require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
         require(liquidationThresholdBps > 0 && liquidationThresholdBps <= 10000, "Invalid liquidation threshold");
+        require(liquidationThresholdBps <= maxLtvBps, "Exceeds attested LTV");
+        _verifyLtvAttestation(msg.sender, token, principalToken, maxLtvBps, expiry, sig);
 
         // Transfer tokens from user to this vault (SafeERC20 handles non-compliant tokens).
         // Reject fee-on-transfer collateral tokens: collateralAmount is recorded as `amount`

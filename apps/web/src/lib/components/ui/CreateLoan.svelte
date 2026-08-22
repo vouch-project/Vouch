@@ -2,6 +2,7 @@
   import { axiosApi } from '$api/axiosApi';
   import type { Token } from '$api/chain';
   import { postSignedRequest } from '$api/signedOrders';
+  import { fetchLtvAttestation } from '$lib/loans/creditScore';
   import { calculateHealthFactor } from '$lib/loans/loanMath';
   import { maxLtv } from '$lib/ltv';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
@@ -242,8 +243,20 @@
         status = orderErrorMessage(err, 'Failed to publish loan request.');
       }
     } else {
-      status = 'Waiting for wallet confirmation...';
+      if (!wallet.address || wallet.networkId == null || !chainInfo.contractAddress) {
+        status = 'Connect your wallet to create a loan request.';
+        return;
+      }
+      status = 'Fetching LTV attestation...';
       try {
+        const attestation = await fetchLtvAttestation(
+          wallet.address,
+          terms.collateralToken.address,
+          terms.borrowToken.address,
+          chainInfo.contractAddress,
+          BigInt(wallet.networkId),
+        );
+        status = 'Waiting for wallet confirmation...';
         await createLoan(
           collateralAmount,
           terms.collateralToken,
@@ -253,6 +266,7 @@
           terms.durationSeconds,
           terms.fundWindowSeconds,
           terms.liquidationThresholdBps,
+          attestation,
         );
         status = 'Loan created!';
       } catch (err) {
@@ -262,7 +276,9 @@
   };
 
   const isSubmitting = $derived(
-    status === 'Waiting for wallet confirmation...' || status === 'Waiting for wallet signature...',
+    status === 'Waiting for wallet confirmation...' ||
+      status === 'Waiting for wallet signature...' ||
+      status === 'Fetching LTV attestation...',
   );
   const statusIsSuccess = $derived(status === 'Loan created!' || status === 'Loan request published!');
 
@@ -293,10 +309,10 @@
   <LtvIndicator {computedMaxLtv} {creditScore} {currentLtv} {ltvExceeded} {projectedHf} />
 
   <RepaymentSummary
+    empty={totalRepayment === null}
     interest={totalRepayment?.interest ?? 0}
     tokenSymbol={selectedBorrowToken}
     total={totalRepayment?.total ?? 0}
-    empty={totalRepayment === null}
   />
 
   <button

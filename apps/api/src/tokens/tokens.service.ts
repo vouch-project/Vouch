@@ -2,7 +2,7 @@ import { InjectRedis } from '@nestjs-modules/ioredis';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { Tables, validAddress } from '@vouch/database-types';
+import { asAddress, Tables, validAddress } from '@vouch/database-types';
 import type { UUID } from 'crypto';
 import { ethers } from 'ethers';
 import type { Redis } from 'ioredis';
@@ -311,27 +311,38 @@ export class TokensService implements OnModuleInit {
 
         // With ignoreDuplicates the response only contains newly inserted rows.
         // Fetch the already-existing rows so the rest of the pipeline sees them.
+        // Group by chainId because a single batch can span multiple chains
+        // (e.g. local + Sepolia mock tokens).
         if (ignoreDuplicates && inserted.length < batch.length) {
           const insertedAddrs = new Set(
             inserted.map((t) => t.address.toLowerCase()),
           );
-          const existingAddrs = batch
-            .filter((t) => !insertedAddrs.has(t.address.toLowerCase()))
-            .map((t) => t.address);
+          const existingTokens = batch.filter(
+            (t) => !insertedAddrs.has(t.address.toLowerCase()),
+          );
 
-          const { data: existing, error: fetchErr } =
-            await this.supabaseService.client
-              .from('tokens')
-              .select('*')
-              .eq('chainId', batch[0].chainId)
-              .in('address', existingAddrs);
+          const byChainId = new Map<string, string[]>();
+          for (const t of existingTokens) {
+            const chainId = t.chainId as string;
+            if (!byChainId.has(chainId)) byChainId.set(chainId, []);
+            byChainId.get(chainId)!.push(t.address);
+          }
 
-          if (fetchErr) {
-            this.logger.warn(
-              `Failed to fetch existing tokens: ${fetchErr.message}`,
-            );
-          } else {
-            results.push(...(existing as Token[]));
+          for (const [chainId, addrs] of byChainId) {
+            const { data: existing, error: fetchErr } =
+              await this.supabaseService.client
+                .from('tokens')
+                .select('*')
+                .eq('chainId', chainId as UUID)
+                .in('address', addrs.map(asAddress));
+
+            if (fetchErr) {
+              this.logger.warn(
+                `Failed to fetch existing tokens for chain ${chainId}: ${fetchErr.message}`,
+              );
+            } else {
+              results.push(...(existing as Token[]));
+            }
           }
         }
 
