@@ -169,9 +169,17 @@ export class ScoringService {
       await this.getCreditScore(walletAddress);
 
     // Fetch volatility for the two tokens (case-insensitive address lookup).
-    const addresses = [collateralTokenAddress, borrowTokenAddress]
-      .filter((a) => a && a !== ethers.ZeroAddress)
-      .map((a) => ethers.getAddress(a));
+    const rawTokenAddresses = [
+      collateralTokenAddress,
+      borrowTokenAddress,
+    ].filter((a): a is string => !!a && a !== ethers.ZeroAddress);
+    const invalidAddress = rawTokenAddresses.find(
+      (a): boolean => !ethers.isAddress(a),
+    );
+    if (invalidAddress !== undefined) {
+      throw new BadRequestException(`Invalid token address: ${invalidAddress}`);
+    }
+    const addresses = rawTokenAddresses.map((a) => ethers.getAddress(a));
 
     let collateralVolatility = ETH_VOLATILITY;
     let borrowVolatility = ETH_VOLATILITY;
@@ -206,7 +214,10 @@ export class ScoringService {
     const base = 90 - v * 40;
     const clamped = Math.max(300, Math.min(850, score));
     const mult = 0.5 + ((clamped - 300) / 550) * 0.6;
-    const maxLtvBps = Math.floor(base * mult * 100);
+    const maxLtvBps = Math.max(
+      1,
+      Math.min(10000, Math.floor(base * mult * 100)),
+    );
 
     const expiry = Math.floor(Date.now() / 1000) + ATTESTATION_TTL_S;
     const verifyingContract = ethers.getAddress(contractAddress);

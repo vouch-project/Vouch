@@ -148,8 +148,6 @@
     status = 'Fetching LTV attestation...';
 
     try {
-      const liquidationThresholdBps = Math.max(1, Math.min(10000, Math.round(computedMaxLtv * 100)));
-
       const nonce = await getBorrowerNonce(wallet.address);
       const attestation = await fetchLtvAttestation(
         wallet.address,
@@ -158,6 +156,10 @@
         chainInfo.contractAddress,
         BigInt(wallet.networkId),
         nonce,
+      );
+      const liquidationThresholdBps = Math.min(
+        attestation.maxLtvBps,
+        Math.max(1, Math.min(10000, Math.floor(computedMaxLtv * 100))),
       );
 
       status = 'Waiting for wallet confirmation...';
