@@ -1,179 +1,53 @@
 <script lang="ts">
-  import { axiosApi } from '$api/axiosApi';
-  import { getSignedRequests, type SignedRequestRow } from '$api/signedOrders';
+  import { type SignedRequestRow } from '$api/signedOrders';
   import { resolve } from '$app/paths';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import * as Card from '$lib/components/ui/card';
   import * as Table from '$lib/components/ui/table';
   import { formatUint256 } from '$lib/formatUint256';
-  import { formatLoanTerm, intervalToSeconds } from '$lib/loans/loanMath';
+  import { calculateHealthFactor, formatLoanTerm, intervalToSeconds, type HealthFactorResult } from '$lib/loans/loanMath';
   import { maxLtv } from '$lib/ltv';
   import { navLinksMap } from '$lib/navLinks';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
-  import { supabase } from '$lib/supabase';
   import type { LoanWithTokens } from '$lib/types';
   import { cn } from '$lib/utils';
   import { fillLoanRequest, type SignedLoanRequest } from '$lib/wallet/signedOrders';
   import { fundLoan } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Check, Clock, Copy, Info, RefreshCw, TrendingUp, Zap } from '@lucide/svelte';
-  import type { RealtimeChannel } from '@supabase/supabase-js';
-  import type { Address } from '@vouch/database-types';
   import { ethers } from 'ethers';
-  import { onDestroy } from 'svelte';
-  import type { PageData } from './$types';
   import { deadlineSeconds, findToken, getErrorMessage, tokenAddress, truncateAddress } from './_utils';
 
-  let { data }: { data: PageData } = $props();
+  let { loans, scores, signedRequests, loading, errorMsg }: {
+    loans: LoanWithTokens[];
+    scores: Record<string, number>;
+    signedRequests: SignedRequestRow[];
+    loading: boolean;
+    errorMsg: string | null;
+  } = $props();
 
-  let loans: LoanWithTokens[] = $state([]);
-  let scores: Record<string, number> = $state({});
-  let loading = $state(true);
-  let refreshing = $state(false);
-  let errorMsg: string | null = $state(null);
-  let realtimeActive = $state(false);
-  let channel: RealtimeChannel | null = $state(null);
   let fundingLoanId: string | null = $state(null);
   let copiedAddress: string | null = $state(null);
 
-  let signedRequests: SignedRequestRow[] = $state([]);
+  let fundError: string | null = $state(null);
   let signedError: string | null = $state(null);
   let fillingDigest: string | null = $state(null);
 
-  $effect(() => {
-    const fetchStreamed = async () => {
-      try {
-        [loans, scores] = await Promise.all([data.streamed.loansPromise, data.streamed.scoresPromise]);
-      } catch (err) {
-        console.error(err);
-        errorMsg = getErrorMessage(err);
-      } finally {
-        loading = false;
-      }
-    };
-    void fetchStreamed();
-  });
-
-  const fetchScores = async (newLoans: LoanWithTokens[]) => {
-    const addresses = [...new Set(newLoans.map((l) => l.borrowerAddress))];
-    const results = await Promise.allSettled(
-      addresses.map((address) =>
-        axiosApi
-          .get<{ score: number }>(`/scoring/${encodeURIComponent(address)}`)
-          .then(({ data }) => ({ address, score: data.score })),
-      ),
-    );
-    scores = Object.fromEntries(
-      results
-        .filter((r): r is PromiseFulfilledResult<{ address: Address; score: number }> => r.status === 'fulfilled')
-        .map((r) => [r.value.address, r.value.score]),
-    );
-  };
-
-  const fetchLoans = async () => {
-    try {
-      errorMsg = null;
-      const { data: loansData, error } = await supabase
-        .from('loans')
-        .select(
-          `*, collateralToken:tokens!loans_collateralTokenId_fkey(*), principalToken:tokens!loans_principalTokenId_fkey(*)`,
-        )
-        .eq('status', 'pending')
-        .or(`fundDeadline.is.null,fundDeadline.gt.${new Date().toISOString()}`)
-        .order('createdAt', { ascending: false });
-      if (error) throw error;
-      loans = loansData || [];
-      await fetchScores(loans);
-    } catch (e) {
-      console.error('Fetch error:', e);
-      errorMsg = getErrorMessage(e);
-    }
-  };
-
-  const handleRefresh = async () => {
-    refreshing = true;
-    await fetchLoans();
-    refreshing = false;
-  };
-
-  const toggleRealtime = () => {
-    if (realtimeActive) {
-      if (channel) {
-        void supabase.removeChannel(channel);
-        channel = null;
-      }
-      realtimeActive = false;
-    } else {
-      channel = supabase
-        .channel('public:loans')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'loans' }, async () => {
-          await fetchLoans();
-        })
-        .subscribe((status) => {
-          if (status === 'SUBSCRIBED') console.log('Realtime subscribed to loans changes.');
-        });
-      realtimeActive = true;
-    }
-  };
-
-  onDestroy(() => {
-    if (channel) void supabase.removeChannel(channel);
-  });
-
-  $effect(() => {
-    void (async () => {
-      try {
-        signedError = null;
-        signedRequests = await getSignedRequests();
-      } catch (e) {
-        signedError = getErrorMessage(e);
-      }
-    })();
-  });
-
-  $effect(() => {
-    const missing = [...new Set(signedRequests.map((r) => r.borrowerAddress))].filter(
-      (addr) => scores[addr] === undefined,
-    );
-    if (missing.length === 0) return;
-    void Promise.allSettled(
-      missing.map((addr) =>
-        axiosApi
-          .get<{ score: number }>(`/scoring/${encodeURIComponent(addr)}`)
-          .then(({ data }) => ({ addr, score: data.score })),
-      ),
-    ).then((results) => {
-      const extra = Object.fromEntries(
-        results
-          .filter((r): r is PromiseFulfilledResult<{ addr: string; score: number }> => r.status === 'fulfilled')
-          .map((r) => [r.value.addr, r.value.score]),
-      );
-      scores = { ...scores, ...extra };
-    });
-  });
-
   const handleFundLoan = async (loan: LoanWithTokens) => {
-    if (loan.onChainLoanId == null) {
-      errorMsg = 'Loan is missing on-chain ID.';
-      return;
-    }
-    if (!loan.principalAmount) {
-      errorMsg = 'Loan is missing principal amount.';
-      return;
-    }
+    if (loan.onChainLoanId == null) return;
+    if (!loan.principalAmount) return;
     fundingLoanId = loan.id;
-    errorMsg = null;
+    fundError = null;
     try {
       await fundLoan(
         ethers.getBigInt(loan.onChainLoanId),
         ethers.getBigInt(loan.principalAmount),
         loan.principalToken?.address ?? ethers.ZeroAddress,
       );
-      loans = loans.filter((l) => l.id !== loan.id);
     } catch (e) {
-      errorMsg = getErrorMessage(e);
+      fundError = getErrorMessage(e);
     } finally {
       fundingLoanId = null;
     }
@@ -207,7 +81,6 @@
     signedError = null;
     try {
       await fillLoanRequest(req, row.signature);
-      signedRequests = signedRequests.filter((r) => r.digest !== row.digest);
     } catch (e) {
       signedError = getErrorMessage(e);
     } finally {
@@ -215,10 +88,11 @@
     }
   };
 
-  const getRiskLevel = (score: number) => {
-    if (score > 800) return { label: 'Low', color: 'bg-green-100 text-green-700 border-green-200' };
-    if (score > 720) return { label: 'Medium', color: 'bg-blue-100 text-blue-700 border-blue-200' };
-    return { label: 'High', color: 'bg-orange-100 text-orange-700 border-orange-200' };
+  const getRiskLevel = (hf: HealthFactorResult | null) => {
+    if (!hf) return null;
+    if (hf.riskStatus === 'Safe') return { label: 'Safe', color: 'bg-green-100 text-green-700 border-green-200' };
+    if (hf.riskStatus === 'Warning') return { label: 'Warning', color: 'bg-amber-100 text-amber-700 border-amber-200' };
+    return { label: 'High Risk', color: 'bg-red-100 text-red-700 border-red-200' };
   };
 
   const copyAddress = async (addr: string) => {
@@ -233,38 +107,6 @@
     }
   };
 </script>
-
-<div class="flex items-center justify-end gap-3 mb-4">
-  <Button
-    class="bg-background/50 backdrop-blur-sm"
-    disabled={realtimeActive || refreshing}
-    onclick={handleRefresh}
-    size="sm"
-    variant="outline"
-  >
-    <RefreshCw class={cn('mr-2 h-4 w-4', refreshing && 'animate-spin')} />
-    Refresh
-  </Button>
-
-  <Button
-    class={cn(
-      'backdrop-blur-sm w-[130px]',
-      realtimeActive && 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100',
-    )}
-    onclick={toggleRealtime}
-    size="sm"
-    variant={realtimeActive ? 'secondary' : 'outline'}
-  >
-    <div class="mr-2 flex h-2 w-2 items-center justify-center">
-      {#if realtimeActive}
-        <span class="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-green-400 opacity-75"></span>
-      {/if}
-      <span class={cn('relative inline-flex h-2 w-2 rounded-full', realtimeActive ? 'bg-green-500' : 'bg-gray-400')}
-      ></span>
-    </div>
-    {realtimeActive ? 'Live Updates' : 'Realtime Off'}
-  </Button>
-</div>
 
 <Card.Root class="border-border/50 shadow-xl dark:shadow-none overflow-hidden bg-card/80 backdrop-blur-md">
   <div class="overflow-x-auto">
@@ -326,12 +168,15 @@
         {:else}
           {#each loans as loan (loan.id)}
             {@const score = scores[loan.borrowerAddress]}
-            {@const ltv = maxLtv(
-              tokenPrices.getTokenMeta(loan.collateralToken?.symbol),
-              tokenPrices.getTokenMeta(loan.principalToken?.symbol),
-              score,
-            )}
-            {@const risk = score !== undefined ? getRiskLevel(score) : null}
+            {@const colMeta = tokenPrices.getTokenMeta(loan.collateralToken?.symbol)}
+            {@const prinMeta = tokenPrices.getTokenMeta(loan.principalToken?.symbol)}
+            {@const collateralUsd = loan.collateralAmount ? parseFloat(ethers.formatUnits(BigInt(loan.collateralAmount), loan.collateralToken?.decimals ?? 18)) * colMeta.priceUsd : 0}
+            {@const borrowUsd = loan.principalAmount ? parseFloat(ethers.formatUnits(BigInt(loan.principalAmount), loan.principalToken?.decimals ?? 18)) * prinMeta.priceUsd : 0}
+            {@const currentLtv = collateralUsd > 0 ? (borrowUsd / collateralUsd) * 100 : 0}
+            {@const maxLtvVal = maxLtv(colMeta, prinMeta, score)}
+            {@const ltvUtilization = maxLtvVal > 0 ? Math.min(100, (currentLtv / maxLtvVal) * 100) : 0}
+            {@const hf = calculateHealthFactor(collateralUsd, borrowUsd, maxLtvVal)}
+            {@const risk = getRiskLevel(hf)}
             {@const isOwnLoan = wallet.address?.toLowerCase() === loan.borrowerAddress.toLowerCase()}
             {@const grossApr = Number(loan.interestRate ?? 0) / 100}
             {@const netApr = grossApr * (1 - chainInfo.protocolFeeBps / 10000)}
@@ -400,14 +245,20 @@
                   </span>
                 </div>
               </Table.Cell>
-              <Table.Cell
-                class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap text-[10px] sm:text-sm min-w-max"
-              >
-                <div class="flex items-center gap-1.5 sm:gap-3">
-                  <div class="w-12 sm:w-16 h-1.5 sm:h-2 bg-muted rounded-full overflow-hidden hidden lg:block">
-                    <div style:width="{ltv}%" class="h-full bg-green-500 transition-all"></div>
+              <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
+                <div class="flex flex-col gap-0.5">
+                  <div class="flex items-center gap-1.5 sm:gap-2">
+                    <div class="w-10 sm:w-14 h-1.5 bg-muted rounded-full overflow-hidden hidden lg:block">
+                      <div
+                        style:width="{ltvUtilization}%"
+                        class={cn('h-full transition-all', ltvUtilization < 60 ? 'bg-green-500' : ltvUtilization < 85 ? 'bg-amber-500' : 'bg-red-500')}
+                      ></div>
+                    </div>
+                    <span class={cn('font-bold text-[10px] sm:text-sm', ltvUtilization < 60 ? 'text-green-600' : ltvUtilization < 85 ? 'text-amber-600' : 'text-red-600')}>
+                      {currentLtv.toFixed(1)}%
+                    </span>
                   </div>
-                  <span class="font-bold text-green-600">{ltv.toFixed(1)}%</span>
+                  <span class="text-[9px] text-muted-foreground hidden lg:block">max {maxLtvVal.toFixed(0)}%</span>
                 </div>
               </Table.Cell>
               <Table.Cell
@@ -422,13 +273,13 @@
                 </div>
               </Table.Cell>
               <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left min-w-max">
-                {#if risk}
-                  <Badge
-                    class={cn('font-bold px-1 sm:px-2.5 py-0 text-[8px] sm:text-[10px]', risk.color)}
-                    variant="outline"
-                  >
-                    {risk.label}
-                  </Badge>
+                {#if risk && hf}
+                  <div class="flex items-center gap-1.5">
+                    <Badge class={cn('font-bold px-1 sm:px-2.5 py-0 text-[8px] sm:text-[10px]', risk.color)} variant="outline">
+                      {risk.label}
+                    </Badge>
+                    <span class="text-[9px] text-muted-foreground hidden lg:inline">HF {hf.healthFactor.toFixed(2)}</span>
+                  </div>
                 {:else}
                   <div class="h-4 w-10 bg-muted animate-pulse rounded"></div>
                 {/if}
@@ -462,8 +313,15 @@
               {@const prinTok = findToken(row.principalTokenId)}
               {@const colTok = findToken(row.collateralTokenId)}
               {@const score = scores[row.borrowerAddress]}
-              {@const risk = score !== undefined ? getRiskLevel(score) : null}
-              {@const ltv = row.maxLtvBps / 100}
+              {@const colMeta = tokenPrices.getTokenMeta(colTok?.symbol)}
+              {@const prinMeta = tokenPrices.getTokenMeta(prinTok?.symbol)}
+              {@const collateralUsd = parseFloat(ethers.formatUnits(BigInt(row.collateralAmount), colTok?.decimals ?? 18)) * colMeta.priceUsd}
+              {@const borrowUsd = parseFloat(ethers.formatUnits(BigInt(row.principalAmount), prinTok?.decimals ?? 18)) * prinMeta.priceUsd}
+              {@const currentLtv = collateralUsd > 0 ? (borrowUsd / collateralUsd) * 100 : 0}
+              {@const maxLtvVal = maxLtv(colMeta, prinMeta, score)}
+              {@const ltvUtilization = maxLtvVal > 0 ? Math.min(100, (currentLtv / maxLtvVal) * 100) : 0}
+              {@const hf = calculateHealthFactor(collateralUsd, borrowUsd, maxLtvVal)}
+              {@const risk = getRiskLevel(hf)}
               {@const isOwn = wallet.address?.toLowerCase() === row.borrowerAddress.toLowerCase()}
               <Table.Row class="hover:bg-muted/10 transition-colors group">
                 <Table.Cell
@@ -529,14 +387,17 @@
                     <span>{formatUint256(row.collateralAmount, colTok?.decimals)} {colTok?.symbol ?? 'ETH'}</span>
                   </div>
                 </Table.Cell>
-                <Table.Cell
-                  class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap text-[10px] sm:text-sm min-w-max"
-                >
-                  <div class="flex items-center gap-1.5 sm:gap-3">
-                    <div class="w-12 sm:w-16 h-1.5 sm:h-2 bg-muted rounded-full overflow-hidden hidden lg:block">
-                      <div style:width="{ltv}%" class="h-full bg-green-500 transition-all"></div>
+                <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
+                  <div class="flex items-center gap-1.5 sm:gap-2" title="max {maxLtvVal.toFixed(0)}%">
+                    <div class="w-10 sm:w-14 h-1.5 bg-muted rounded-full overflow-hidden hidden lg:block">
+                      <div
+                        style:width="{ltvUtilization}%"
+                        class={cn('h-full transition-all', ltvUtilization < 60 ? 'bg-green-500' : ltvUtilization < 85 ? 'bg-amber-500' : 'bg-red-500')}
+                      ></div>
                     </div>
-                    <span class="font-bold text-green-600">{ltv.toFixed(1)}%</span>
+                    <span class={cn('font-bold text-[10px] sm:text-sm', ltvUtilization < 60 ? 'text-green-600' : ltvUtilization < 85 ? 'text-amber-600' : 'text-red-600')}>
+                      {currentLtv.toFixed(1)}%
+                    </span>
                   </div>
                 </Table.Cell>
                 <Table.Cell
@@ -553,13 +414,13 @@
                   </div>
                 </Table.Cell>
                 <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left min-w-max">
-                  {#if risk}
-                    <Badge
-                      class={cn('font-bold px-1 sm:px-2.5 py-0 text-[8px] sm:text-[10px]', risk.color)}
-                      variant="outline"
-                    >
-                      {risk.label}
-                    </Badge>
+                  {#if risk && hf}
+                    <div class="flex flex-col gap-0.5">
+                      <Badge class={cn('font-bold px-1 sm:px-2.5 py-0 text-[8px] sm:text-[10px]', risk.color)} variant="outline">
+                        {risk.label}
+                      </Badge>
+                      <span class="text-[9px] text-muted-foreground hidden lg:block">HF {hf.healthFactor.toFixed(2)}</span>
+                    </div>
                   {:else}
                     <div class="h-4 w-10 bg-muted animate-pulse rounded"></div>
                   {/if}
@@ -603,6 +464,15 @@
   >
     <Info class="h-5 w-5" />
     <p class="font-medium">{errorMsg}</p>
+  </div>
+{/if}
+
+{#if fundError}
+  <div
+    class="mt-3 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-destructive flex items-center gap-2"
+  >
+    <Info class="h-4 w-4" />
+    <p class="text-sm font-medium">{fundError}</p>
   </div>
 {/if}
 

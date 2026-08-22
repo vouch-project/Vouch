@@ -1,7 +1,7 @@
 <script lang="ts">
   import { axiosApi } from '$api/axiosApi';
   import type { Token } from '$api/chain';
-  import { getSignedOffers, type SignedOfferRow } from '$api/signedOrders';
+  import { type SignedOfferRow } from '$api/signedOrders';
   import { resolve } from '$app/paths';
   import { Button } from '$lib/components/ui/button';
   import * as Card from '$lib/components/ui/card';
@@ -11,36 +11,24 @@
   import { navLinksMap } from '$lib/navLinks';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
-  import { supabase } from '$lib/supabase';
   import { cn } from '$lib/utils';
   import { fillLendOffer, type SignedLendOffer } from '$lib/wallet/signedOrders';
   import { acceptLendOffer, isNativeTokenAddress, type ScoreAttestation } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Check, Clock, Copy, Info, RefreshCw, Zap } from '@lucide/svelte';
   import { ethers } from 'ethers';
-  import { COLLATERAL_BUFFER_BPS, deadlineSeconds, findToken, getErrorMessage, tokenAddress, truncateAddress } from './_utils';
+  import { COLLATERAL_BUFFER_BPS, deadlineSeconds, findToken, getErrorMessage, tokenAddress, truncateAddress, type LendOfferRow } from './_utils';
 
-  type LendOfferRow = {
-    id: string;
-    onChainOfferId: string;
-    lenderAddress: string;
-    principalAmount: string;
-    collateralRatioBps: number;
-    trustedRatioBps: number;
-    scoreThreshold: number;
-    maxLtvBps: number;
-    interestRateBps: number;
-    duration: string;
-    acceptDeadline: string;
-    status: string;
-    principalToken: { symbol: string; decimals: number; address: string } | null;
-  };
+  let { lendOffers, signedOffers, loading, error }: {
+    lendOffers: LendOfferRow[];
+    signedOffers: SignedOfferRow[];
+    loading: boolean;
+    error: string | null;
+  } = $props();
 
-  let lendOffers: LendOfferRow[] = $state([]);
-  let lendOffersLoading = $state(true);
-  let lendOffersError: string | null = $state(null);
   let acceptingOfferId: string | null = $state(null);
   let acceptCollateralSymbol: Record<string, string> = $state({});
+  let copiedAddress: string | null = $state(null);
 
   let attestations: Record<string, ScoreAttestation | null> = $state({});
   let attestationWallet = $state<string | undefined>(undefined);
@@ -52,42 +40,9 @@
     }
   });
 
-  let signedOffers: SignedOfferRow[] = $state([]);
   let signedError: string | null = $state(null);
   let fillingDigest: string | null = $state(null);
   let gaslessOfferCollateral: Record<string, string> = $state({});
-  let copiedAddress: string | null = $state(null);
-
-  $effect(() => {
-    void (async () => {
-      try {
-        lendOffersError = null;
-        const { data, error } = await supabase
-          .from('lend_offers')
-          .select(`*, principalToken:tokens!lend_offers_principalTokenId_fkey(*)`)
-          .eq('status', 'pending')
-          .gt('acceptDeadline', new Date().toISOString())
-          .order('createdAt', { ascending: false });
-        if (error) throw error;
-        lendOffers = (data as unknown as LendOfferRow[]) ?? [];
-      } catch (e) {
-        lendOffersError = e instanceof Error ? e.message : 'Failed to load offers';
-      } finally {
-        lendOffersLoading = false;
-      }
-    })();
-  });
-
-  $effect(() => {
-    void (async () => {
-      try {
-        signedError = null;
-        signedOffers = await getSignedOffers();
-      } catch (e) {
-        signedError = getErrorMessage(e);
-      }
-    })();
-  });
 
   const getEffectiveRatioBps = (offer: LendOfferRow): number => {
     const att = attestations[offer.id];
@@ -151,7 +106,6 @@
         colAmount,
         att ?? undefined,
       );
-      lendOffers = lendOffers.filter((o) => o.id !== offer.id);
     } catch (e) {
       console.error('Accept offer failed', e);
     } finally {
@@ -263,7 +217,7 @@
         </Table.Row>
       </Table.Header>
       <Table.Body>
-        {#if lendOffersLoading}
+        {#if loading}
           {#each Array(5) as _, i (i)}
             <Table.Row>
               {#each Array(8) as _, j (j)}
@@ -275,10 +229,10 @@
               {/each}
             </Table.Row>
           {/each}
-        {:else if lendOffersError}
+        {:else if error}
           <Table.Row>
             <Table.Cell class="h-64 text-center" colspan={8}>
-              <p class="text-sm text-destructive">{lendOffersError}</p>
+              <p class="text-sm text-destructive">{error}</p>
             </Table.Cell>
           </Table.Row>
         {:else if lendOffers.length === 0 && signedOffers.length === 0}
