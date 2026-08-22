@@ -126,13 +126,9 @@ describe('BlockchainListenerService', () => {
       const createdAt = 1700000000n;
       const fundDeadline = createdAt + 604800n; // +7 days
       const contract = {
-        getRepaymentDetails: jest.fn().mockResolvedValue({
+        loans: jest.fn().mockResolvedValue({
           interestRateBps: 500n,
           durationSeconds: 2592000n,
-          repaid: false,
-          totalDue: 0n,
-          amountRepaid: 0n,
-          remaining: 0n,
           fundDeadline,
         }),
       } as unknown as VouchVault;
@@ -151,7 +147,7 @@ describe('BlockchainListenerService', () => {
         contract, // NEW final arg
       );
 
-      expect(contract.getRepaymentDetails).toHaveBeenCalledWith(1n);
+      expect(contract.loans).toHaveBeenCalledWith(1n);
       expect(create).toHaveBeenCalledWith(
         expect.objectContaining({
           loanId: 1n,
@@ -199,9 +195,18 @@ describe('BlockchainListenerService', () => {
       const mockNetwork = { chainId: 1337n } as ethers.Network;
       const contractAddress = '0xContract';
 
-      const expireSpy = jest.spyOn(loanService, 'expire').mockResolvedValue(undefined);
+      const expireSpy = jest
+        .spyOn(loanService, 'expire')
+        .mockResolvedValue(undefined);
 
-      await service.callHandleLoanExpired(loanId, borrower, timestamp, mockLog, mockNetwork, contractAddress);
+      await service.callHandleLoanExpired(
+        loanId,
+        borrower,
+        timestamp,
+        mockLog,
+        mockNetwork,
+        contractAddress,
+      );
 
       expect(expireSpy).toHaveBeenCalledWith({
         onChainLoanId: loanId,

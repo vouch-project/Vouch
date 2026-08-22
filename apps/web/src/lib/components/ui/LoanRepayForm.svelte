@@ -3,8 +3,8 @@
   import { formatUint256 } from '$lib/formatUint256';
   import type { LoanFull } from '$lib/types';
   import { cn } from '$lib/utils';
-  import { getRepaymentDetails, repayLoan, repayLoanWithERC20, type RepaymentDetails } from '$lib/wallet/vouchVault';
   import { txExplorerUrl } from '$lib/wallet/explorer';
+  import { getRepaymentDetails, repayLoan, type RepaymentDetails } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { ExternalLink } from '@lucide/svelte';
   import { ethers } from 'ethers';
@@ -61,12 +61,8 @@
     txError = '';
 
     try {
-      if (isEthPrincipal) {
-        await repayLoan(BigInt(onChainLoanId), paymentRaw);
-      } else {
-        txStatus = 'approving';
-        await repayLoanWithERC20(BigInt(onChainLoanId), paymentRaw, principalTokenAddress!);
-      }
+      if (!isEthPrincipal) txStatus = 'approving';
+      await repayLoan(BigInt(onChainLoanId), paymentRaw, isEthPrincipal ? undefined : principalTokenAddress);
 
       txStatus = 'success';
       paymentInput = '';
@@ -161,7 +157,11 @@
         onclick={handleRepay}
         size="sm"
       >
-        {txStatus === 'approving' ? 'Approve + repay…' : txStatus === 'confirming' ? 'Confirming…' : 'Confirm Repayment'}
+        {txStatus === 'approving'
+          ? 'Approve + repay…'
+          : txStatus === 'confirming'
+            ? 'Confirming…'
+            : 'Confirm Repayment'}
       </Button>
       <Button
         class="font-medium text-muted-foreground hover:text-foreground"

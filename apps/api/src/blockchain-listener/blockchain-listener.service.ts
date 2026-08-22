@@ -335,27 +335,16 @@ export class BlockchainListenerService implements OnModuleInit {
     let durationSeconds = 0;
     let fundWindowSeconds = 0;
     try {
-      const details = await contract.getRepaymentDetails(loanId);
-      interestRateBps = Number(details.interestRateBps);
-      durationSeconds = Number(details.durationSeconds);
-      fundWindowSeconds = Number(details.fundDeadline - timestamp);
-    } catch (primaryError) {
+      const loan = await contract.loans(loanId);
+      interestRateBps = Number(loan.interestRateBps);
+      durationSeconds = Number(loan.durationSeconds);
+      fundWindowSeconds = Number(loan.fundDeadline - timestamp);
+    } catch (error) {
       this.logger.error(
-        'Failed to read loan terms from getRepaymentDetails; falling back to loans(loanId)',
-        primaryError,
+        'Failed to read loan terms from loans(); aborting handler',
+        error,
       );
-      try {
-        const loan = await contract.loans(loanId);
-        interestRateBps = Number(loan.interestRateBps);
-        durationSeconds = Number(loan.durationSeconds);
-        fundWindowSeconds = Number(loan.fundDeadline - timestamp);
-      } catch (fallbackError) {
-        this.logger.error(
-          'Failed to read loan terms from loans(); aborting handler',
-          fallbackError,
-        );
-        throw fallbackError;
-      }
+      throw error;
     }
 
     if (!Number.isSafeInteger(durationSeconds) || durationSeconds < 0) {
@@ -730,7 +719,7 @@ export class BlockchainListenerService implements OnModuleInit {
           (l) =>
             l.topics[1] ===
             ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
-        )?.index ?? ((receipt?.logs?.at(-1)?.index ?? logIndex) + 1);
+        )?.index ?? (receipt?.logs?.at(-1)?.index ?? logIndex) + 1;
 
       await this.loanService.acceptLendOffer({
         offerId,

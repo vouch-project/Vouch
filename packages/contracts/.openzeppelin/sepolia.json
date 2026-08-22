@@ -375,7 +375,7 @@
             "label": "loans",
             "offset": 0,
             "slot": "1",
-            "type": "t_mapping(t_uint256,t_struct(Loan)5935_storage)",
+            "type": "t_mapping(t_uint256,t_struct(Loan)7211_storage)",
             "contract": "VouchVault",
             "src": "contracts/VouchVault.sol:51"
           },
@@ -469,7 +469,7 @@
             "label": "bool",
             "numberOfBytes": "1"
           },
-          "t_struct(InitializableStorage)353_storage": {
+          "t_struct(InitializableStorage)400_storage": {
             "label": "struct Initializable.InitializableStorage",
             "members": [
               {
@@ -523,11 +523,11 @@
             "label": "mapping(address => uint8)",
             "numberOfBytes": "32"
           },
-          "t_mapping(t_uint256,t_struct(Loan)5935_storage)": {
+          "t_mapping(t_uint256,t_struct(Loan)7211_storage)": {
             "label": "mapping(uint256 => struct VouchVault.Loan)",
             "numberOfBytes": "32"
           },
-          "t_struct(Loan)5935_storage": {
+          "t_struct(Loan)7211_storage": {
             "label": "struct VouchVault.Loan",
             "members": [
               {
