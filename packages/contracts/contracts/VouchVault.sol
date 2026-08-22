@@ -1174,7 +1174,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
             (bool success, ) = payable(loan.borrower).call{value: loan.requestedPrincipalAmount}("");
             if (!success) revert EthTransferFailed();
         } else {
-            if (msg.value != 0) revert PrincipalTokenMismatch();
+            if (msg.value != 0) revert InvalidAmount();
             loan.principalAmount = loan.requestedPrincipalAmount;
             loan.interestAccrued = (loan.principalAmount * minInterestBps) / 10000;
             IERC20(loan.requestedPrincipalToken).safeTransferFrom(msg.sender, loan.borrower, loan.requestedPrincipalAmount);

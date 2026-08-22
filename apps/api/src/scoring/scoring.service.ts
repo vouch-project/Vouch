@@ -271,7 +271,7 @@ export class ScoringService {
     );
 
     const domain = {
-      name: 'VouchVault',
+      name: 'Vouch',
       version: '1',
       chainId,
       verifyingContract,
