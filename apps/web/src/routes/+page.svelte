@@ -80,11 +80,11 @@
   <section class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-[1100px] animate-in fade-in duration-1000 delay-300">
     {#await data.streamed.statsPromise}
       {#each Array(3) as _, i (i)}
-        <Card.Root class="bg-muted/10 border-none shadow-none p-4 flex items-center gap-4">
+        <Card.Root class="bg-muted/10 border-none shadow-none p-6 flex flex-col items-center justify-center gap-3">
           <div class="h-10 w-10 rounded-xl bg-background flex items-center justify-center shadow-sm border border-border/20">
             <div class="h-5 w-5 rounded bg-muted animate-pulse"></div>
           </div>
-          <div class="space-y-2">
+          <div class="space-y-2 flex flex-col items-center">
             <div class="h-3 w-20 bg-muted animate-pulse rounded"></div>
             <div class="h-5 w-16 bg-muted animate-pulse rounded"></div>
           </div>
@@ -92,13 +92,25 @@
       {/each}
     {:then stats}
       {#each statItems(stats) as stat (stat.label)}
-        <Card.Root class="bg-muted/10 border-none shadow-none p-4 flex items-center gap-4">
+        <Card.Root class="bg-muted/10 border-none shadow-none p-6 flex flex-col items-center justify-center gap-3 text-center">
           <div class="h-10 w-10 rounded-xl bg-background flex items-center justify-center shadow-sm border border-border/20">
             <stat.icon class="h-5 w-5 {stat.color}" />
           </div>
           <div>
             <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">{stat.label}</p>
             <p class="text-lg font-black text-foreground">{stat.value}</p>
+          </div>
+        </Card.Root>
+      {/each}
+    {:catch}
+      {#each Array(3) as _, i (i)}
+        <Card.Root class="bg-muted/10 border-none shadow-none p-6 flex flex-col items-center justify-center gap-3">
+          <div class="h-10 w-10 rounded-xl bg-background flex items-center justify-center shadow-sm border border-border/20">
+            <div class="h-5 w-5 rounded bg-destructive/20"></div>
+          </div>
+          <div class="space-y-2 flex flex-col items-center">
+            <div class="h-3 w-20 bg-muted rounded"></div>
+            <div class="h-5 w-16 bg-muted rounded"></div>
           </div>
         </Card.Root>
       {/each}
