@@ -162,11 +162,11 @@ export class ScoringService {
       .single();
 
     if (error) {
+      if (error.code === 'PGRST116') {
+        throw new BadRequestException('Unknown chain or contract address');
+      }
       this.logger.error(`Failed to look up chain RPC URL: ${error.message}`);
       throw new ServiceUnavailableException('Failed to look up chain RPC URL');
-    }
-    if (!chainRow) {
-      throw new BadRequestException('Unknown chain or contract address');
     }
 
     const provider = new ethers.JsonRpcProvider(chainRow.rpcUrl);
