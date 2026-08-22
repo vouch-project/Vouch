@@ -6,7 +6,22 @@
   import WalletStatus from '$lib/components/ui/WalletStatus.svelte';
   import { navLinksMap } from '$lib/navLinks';
   import { wallet } from '$lib/wallet/wallet.svelte';
-  import { ArrowRight, Globe, ShieldCheck, Zap } from '@lucide/svelte';
+  import { ArrowRight, ShieldCheck, TrendingUp, Zap } from '@lucide/svelte';
+  import type { ProtocolStats } from './+page';
+
+  let { data } = $props();
+
+  const formatUsd = (value: number): string => {
+    if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
+    if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
+    return `$${value.toFixed(2)}`;
+  };
+
+  const statItems = (stats: ProtocolStats) => [
+    { label: 'Total Value Locked', value: formatUsd(stats.tvlUsd), icon: ShieldCheck, color: 'text-green-500' },
+    { label: 'Total Borrowed', value: formatUsd(stats.totalBorrowedUsd), icon: TrendingUp, color: 'text-blue-500' },
+    { label: 'Active Loans', value: String(stats.activeLoansCount), icon: Zap, color: 'text-amber-500' },
+  ];
 </script>
 
 <svelte:head>
@@ -62,57 +77,31 @@
     </div>
   </section>
 
-  <section
-    class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-[1100px] animate-in fade-in duration-1000 delay-300"
-  >
-    <Card.Root
-      class="group bg-card/40 backdrop-blur-sm border-border/50 hover:border-primary/50 transition-all duration-300 hover:shadow-2xl hover:shadow-primary/5"
-    >
-      <Card.Header>
-        <div
-          class="h-12 w-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300"
-        >
-          <ShieldCheck class="h-6 w-6 text-indigo-500" />
-        </div>
-        <Card.Title class="text-xl font-bold">Non-Custodial</Card.Title>
-        <Card.Description class="text-base text-muted-foreground leading-relaxed">
-          Your keys, your coins. Vouch utilizes battle-tested smart contracts to ensure you remain in control of your
-          funds.
-        </Card.Description>
-      </Card.Header>
-    </Card.Root>
-
-    <Card.Root
-      class="group bg-card/40 backdrop-blur-sm border-border/50 hover:border-primary/50 transition-all duration-300 hover:shadow-2xl hover:shadow-primary/5"
-    >
-      <Card.Header>
-        <div
-          class="h-12 w-12 rounded-2xl bg-purple-500/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300"
-        >
-          <Zap class="h-6 w-6 text-purple-500" />
-        </div>
-        <Card.Title class="text-xl font-bold">On-Chain Credit</Card.Title>
-        <Card.Description class="text-base text-muted-foreground leading-relaxed">
-          Build your financial reputation. Credit scores are dynamically generated from your verifiable on-chain
-          history.
-        </Card.Description>
-      </Card.Header>
-    </Card.Root>
-
-    <Card.Root
-      class="group bg-card/40 backdrop-blur-sm border-border/50 hover:border-primary/50 transition-all duration-300 hover:shadow-2xl hover:shadow-primary/5"
-    >
-      <Card.Header>
-        <div
-          class="h-12 w-12 rounded-2xl bg-pink-500/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300"
-        >
-          <Globe class="h-6 w-6 text-pink-500" />
-        </div>
-        <Card.Title class="text-xl font-bold">Multi-Chain</Card.Title>
-        <Card.Description class="text-base text-muted-foreground leading-relaxed">
-          Access liquidity wherever you are. Seamless support for Ethereum, Polygon, and Arbitrum.
-        </Card.Description>
-      </Card.Header>
-    </Card.Root>
+  <section class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-[1100px] animate-in fade-in duration-1000 delay-300">
+    {#await data.streamed.statsPromise}
+      {#each Array(3) as _, i (i)}
+        <Card.Root class="bg-muted/10 border-none shadow-none p-4 flex items-center gap-4">
+          <div class="h-10 w-10 rounded-xl bg-background flex items-center justify-center shadow-sm border border-border/20">
+            <div class="h-5 w-5 rounded bg-muted animate-pulse"></div>
+          </div>
+          <div class="space-y-2">
+            <div class="h-3 w-20 bg-muted animate-pulse rounded"></div>
+            <div class="h-5 w-16 bg-muted animate-pulse rounded"></div>
+          </div>
+        </Card.Root>
+      {/each}
+    {:then stats}
+      {#each statItems(stats) as stat (stat.label)}
+        <Card.Root class="bg-muted/10 border-none shadow-none p-4 flex items-center gap-4">
+          <div class="h-10 w-10 rounded-xl bg-background flex items-center justify-center shadow-sm border border-border/20">
+            <stat.icon class="h-5 w-5 {stat.color}" />
+          </div>
+          <div>
+            <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">{stat.label}</p>
+            <p class="text-lg font-black text-foreground">{stat.value}</p>
+          </div>
+        </Card.Root>
+      {/each}
+    {/await}
   </section>
 </div>
