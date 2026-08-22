@@ -47,7 +47,12 @@ const verify = (
   domain: Domain,
   expectedSignerField: string,
 ): { valid: boolean; signer: string; digest: string } => {
-  const digest = ethers.TypedDataEncoder.hash(domain, types as never, value);
+  let digest = '';
+  try {
+    digest = ethers.TypedDataEncoder.hash(domain, types as never, value);
+  } catch {
+    return { valid: false, signer: '', digest: '' };
+  }
   let signer = '';
   try {
     signer = ethers.verifyTypedData(domain, types as never, value, signature);
