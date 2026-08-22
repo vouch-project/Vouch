@@ -1058,7 +1058,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     ///      `ratioBps` is a collateral RATIO in basis points (>= 10000, e.g. 15384 = 153.84%),
     ///      matching the convention of `_minCollateralUsd`/`_checkCollateralValue`.
     ///      Used by fillLoanRequest (which converts maxLtvBps to an implied ratio first) and
-    ///      will be reused by fillLendOffer (Task 3) which passes collateralRatioBps directly.
+    ///      fillLendOffer (which passes collateralRatioBps directly).
     function _checkCollateralValueRaw(
         address principalToken,
         uint256 principalAmount,
