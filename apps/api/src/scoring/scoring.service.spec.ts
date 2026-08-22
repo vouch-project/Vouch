@@ -251,6 +251,53 @@ describe('ScoringService', () => {
       expect(maxLtvBps).toBeLessThanOrEqual(10000);
     });
 
+    it('uses DEFAULT_VOLATILITY for non-ETH tokens when Supabase query fails', async () => {
+      jest.spyOn(service['configService'], 'get').mockReturnValue(PRIVATE_KEY);
+      // Simulate Supabase returning an error (data is null).
+      supabaseService.client.from = jest.fn(() => ({
+        select: jest.fn().mockReturnValue({
+          in: jest
+            .fn()
+            .mockResolvedValue({ data: null, error: { message: 'DB error' } }),
+        }),
+      }));
+      const { maxLtvBps: ltvOnError } = await service.getLtvAttestation(
+        MOCK_ADDRESS,
+        COLLATERAL_ADDRESS,
+        BORROW_ADDRESS,
+        CONTRACT_ADDRESS,
+        CHAIN_ID,
+        NONCE,
+      );
+
+      // With DEFAULT_VOLATILITY (0.6), base = 90 - 0.6*40 = 66.
+      // With ETH_VOLATILITY (0.45), base = 90 - 0.45*40 = 72.
+      // The error path must produce a result <= the ETH-volatility result, proving it used DEFAULT.
+      supabaseService.client.from = jest.fn(() => ({
+        select: jest.fn().mockReturnValue({
+          in: jest.fn().mockResolvedValue({
+            data: [
+              {
+                address: ethers.getAddress(COLLATERAL_ADDRESS),
+                volatility: 0.45,
+              },
+              { address: ethers.getAddress(BORROW_ADDRESS), volatility: 0.45 },
+            ],
+            error: null,
+          }),
+        }),
+      }));
+      const { maxLtvBps: ltvEthVolatility } = await service.getLtvAttestation(
+        MOCK_ADDRESS,
+        COLLATERAL_ADDRESS,
+        BORROW_ADDRESS,
+        CONTRACT_ADDRESS,
+        CHAIN_ID,
+        NONCE,
+      );
+      expect(ltvOnError).toBeLessThanOrEqual(ltvEthVolatility);
+    });
+
     it('returns a signature that recovers to the expected signer address', async () => {
       jest.spyOn(service['configService'], 'get').mockReturnValue(PRIVATE_KEY);
       const { maxLtvBps, expiry, sig } = await service.getLtvAttestation(
@@ -270,6 +317,8 @@ describe('ScoringService', () => {
       const types = {
         LtvAttestation: [
           { name: 'borrower', type: 'address' },
+          { name: 'collateralToken', type: 'address' },
+          { name: 'borrowToken', type: 'address' },
           { name: 'maxLtvBps', type: 'uint16' },
           { name: 'expiry', type: 'uint256' },
           { name: 'nonce', type: 'uint256' },
@@ -278,7 +327,14 @@ describe('ScoringService', () => {
       const recovered = ethers.verifyTypedData(
         domain,
         types,
-        { borrower: MOCK_ADDRESS, maxLtvBps, expiry, nonce: NONCE },
+        {
+          borrower: MOCK_ADDRESS,
+          collateralToken: ethers.getAddress(COLLATERAL_ADDRESS),
+          borrowToken: ethers.getAddress(BORROW_ADDRESS),
+          maxLtvBps,
+          expiry,
+          nonce: NONCE,
+        },
         sig,
       );
       expect(recovered).toBe(new ethers.Wallet(PRIVATE_KEY).address);

@@ -142,7 +142,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     mapping(address => uint256) public nonces;
 
     bytes32 private constant LTV_ATTESTATION_TYPEHASH =
-        keccak256("LtvAttestation(address borrower,uint16 maxLtvBps,uint256 expiry,uint256 nonce)");
+        keccak256("LtvAttestation(address borrower,address collateralToken,address borrowToken,uint16 maxLtvBps,uint256 expiry,uint256 nonce)");
 
     // --- Events ---
     event Deposited(address indexed user, uint256 amount);
@@ -389,6 +389,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @dev Verify an LtvAttestation EIP-712 signature, then consume the nonce.
     function _verifyLtvAttestation(
         address borrower,
+        address collateralToken,
+        address borrowToken,
         uint16 maxLtvBps,
         uint256 expiry,
         bytes calldata sig
@@ -398,6 +400,8 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         bytes32 structHash = keccak256(abi.encode(
             LTV_ATTESTATION_TYPEHASH,
             borrower,
+            collateralToken,
+            borrowToken,
             maxLtvBps,
             expiry,
             nonces[borrower]
@@ -435,7 +439,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
         require(liquidationThresholdBps > 0 && liquidationThresholdBps <= 10000, "Invalid liquidation threshold");
         require(liquidationThresholdBps <= maxLtvBps, "Exceeds attested LTV");
-        _verifyLtvAttestation(msg.sender, maxLtvBps, expiry, sig);
+        _verifyLtvAttestation(msg.sender, address(0), principalToken, maxLtvBps, expiry, sig);
 
         // Collateral is tracked separately from withdrawable deposits.
         lockedEthCollateral[msg.sender] += msg.value;
@@ -502,7 +506,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(interestRateBps <= 10000, "Interest rate cannot exceed 100%");
         require(liquidationThresholdBps > 0 && liquidationThresholdBps <= 10000, "Invalid liquidation threshold");
         require(liquidationThresholdBps <= maxLtvBps, "Exceeds attested LTV");
-        _verifyLtvAttestation(msg.sender, maxLtvBps, expiry, sig);
+        _verifyLtvAttestation(msg.sender, token, principalToken, maxLtvBps, expiry, sig);
 
         // Transfer tokens from user to this vault (SafeERC20 handles non-compliant tokens).
         // Reject fee-on-transfer collateral tokens: collateralAmount is recorded as `amount`

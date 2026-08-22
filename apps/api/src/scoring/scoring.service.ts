@@ -15,6 +15,8 @@ import { CreditScoreResponseDto } from './dto/credit-score-response.dto';
 const LTV_ATTESTATION_TYPES = {
   LtvAttestation: [
     { name: 'borrower', type: 'address' },
+    { name: 'collateralToken', type: 'address' },
+    { name: 'borrowToken', type: 'address' },
     { name: 'maxLtvBps', type: 'uint16' },
     { name: 'expiry', type: 'uint256' },
     { name: 'nonce', type: 'uint256' },
@@ -181,8 +183,14 @@ export class ScoringService {
     }
     const addresses = rawTokenAddresses.map((a) => ethers.getAddress(a));
 
-    let collateralVolatility = ETH_VOLATILITY;
-    let borrowVolatility = ETH_VOLATILITY;
+    let collateralVolatility =
+      !collateralTokenAddress || collateralTokenAddress === ethers.ZeroAddress
+        ? ETH_VOLATILITY
+        : DEFAULT_VOLATILITY;
+    let borrowVolatility =
+      !borrowTokenAddress || borrowTokenAddress === ethers.ZeroAddress
+        ? ETH_VOLATILITY
+        : DEFAULT_VOLATILITY;
 
     if (addresses.length > 0) {
       const { data: tokenRows } = await this.supabaseService.client
@@ -228,7 +236,16 @@ export class ScoringService {
       chainId,
       verifyingContract,
     };
-    const value = { borrower, maxLtvBps, expiry, nonce };
+    const collateralToken = collateralTokenAddress ?? ethers.ZeroAddress;
+    const borrowToken = borrowTokenAddress ?? ethers.ZeroAddress;
+    const value = {
+      borrower,
+      collateralToken,
+      borrowToken,
+      maxLtvBps,
+      expiry,
+      nonce,
+    };
 
     const wallet = new ethers.Wallet(privateKey);
     const sig = await wallet.signTypedData(
