@@ -6,6 +6,7 @@
   import WalletStatus from '$lib/components/ui/WalletStatus.svelte';
   import { navLinksMap } from '$lib/navLinks';
   import { wallet } from '$lib/wallet/wallet.svelte';
+  import { cn } from '$lib/utils';
   import { ArrowRight, ShieldCheck, TrendingUp, Zap } from '@lucide/svelte';
   import type { ProtocolStats } from './+page';
 
@@ -94,7 +95,7 @@
       {#each statItems(stats) as stat (stat.label)}
         <Card.Root class="bg-muted/10 border-none shadow-none p-6 flex flex-col items-center justify-center gap-3 text-center">
           <div class="h-10 w-10 rounded-xl bg-background flex items-center justify-center shadow-sm border border-border/20">
-            <stat.icon class="h-5 w-5 {stat.color}" />
+            <stat.icon class={cn('h-5 w-5', stat.color)} />
           </div>
           <div>
             <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">{stat.label}</p>

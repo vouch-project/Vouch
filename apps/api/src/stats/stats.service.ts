@@ -1,4 +1,6 @@
+import { InjectRedis } from '@nestjs-modules/ioredis';
 import { Injectable, Logger } from '@nestjs/common';
+import type { Redis } from 'ioredis';
 import { SupabaseService } from '../supabase/supabase.service';
 import { PriceFeedService, priceKey } from '../tokens/price-feed.service';
 
@@ -8,6 +10,9 @@ export type ProtocolStats = {
   totalBorrowedUsd: number;
 };
 
+const CACHE_KEY = 'stats:protocol';
+const CACHE_TTL_S = 60;
+
 @Injectable()
 export class StatsService {
   private readonly logger = new Logger(StatsService.name);
@@ -15,9 +20,19 @@ export class StatsService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly priceFeedService: PriceFeedService,
+    @InjectRedis() private readonly redis: Redis,
   ) {}
 
   async getProtocolStats(): Promise<ProtocolStats> {
+    const cached = await this.redis.get(CACHE_KEY);
+    if (cached) return JSON.parse(cached) as ProtocolStats;
+
+    const stats = await this.computeStats();
+    await this.redis.set(CACHE_KEY, JSON.stringify(stats), 'EX', CACHE_TTL_S);
+    return stats;
+  }
+
+  private async computeStats(): Promise<ProtocolStats> {
     const { data, error } = await this.supabaseService.client
       .from('loans')
       .select(
