@@ -94,7 +94,6 @@ ALTER TABLE loans
 ADD COLUMN IF NOT EXISTS "signedLendOfferId" uuid REFERENCES signed_lend_offers (id);
 
 -- ─── Functions ───────────────────────────────────────────────────────────────
-
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION insert_signed_loan_request (
     p_network_id text,
@@ -398,11 +397,11 @@ BEGIN
         RAISE EXCEPTION 'Collateral token not found: %', p_collateral_token_address;
     END IF;
 
-    -- Mark the order as filled (status guard: open only)
+    -- Mark the order as filled; chain events are source-of-truth so status is overwritten unconditionally
     IF p_order_kind = 'request' THEN
-        UPDATE public.signed_loan_requests SET status = 'filled' WHERE id = v_order_id AND status = 'open';
+        UPDATE public.signed_loan_requests SET status = 'filled' WHERE id = v_order_id;
     ELSE
-        UPDATE public.signed_lend_offers SET status = 'filled' WHERE id = v_order_id AND status = 'open';
+        UPDATE public.signed_lend_offers SET status = 'filled' WHERE id = v_order_id;
     END IF;
 
     INSERT INTO public.loans (
@@ -533,17 +532,9 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION cancel_signed_order (
-    text,
-    address,
-    text
-)
+REVOKE ALL ON FUNCTION cancel_signed_order (text, address, text)
 FROM
     PUBLIC;
 
 GRANT
-EXECUTE ON FUNCTION cancel_signed_order (
-    text,
-    address,
-    text
-) TO service_role;
+EXECUTE ON FUNCTION cancel_signed_order (text, address, text) TO service_role;

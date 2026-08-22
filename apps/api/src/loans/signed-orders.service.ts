@@ -34,6 +34,16 @@ export class SignedOrdersService {
       '0x0000000000000000000000000000000000000000'
     )
       throw new BadRequestException('Collateral must be ERC20');
+    if (dto.collateralAmount <= 0n)
+      throw new BadRequestException('Collateral amount must be > 0');
+    if (dto.principalAmount <= 0n)
+      throw new BadRequestException('Principal amount must be > 0');
+    if (dto.durationSeconds <= 0)
+      throw new BadRequestException('Duration must be > 0');
+    if (dto.interestRateBps > 10000)
+      throw new BadRequestException('Interest rate cannot exceed 100%');
+    if (dto.maxLtvBps <= 0 || dto.maxLtvBps > 10000)
+      throw new BadRequestException('Invalid maxLtvBps');
 
     const { error } = await this.supabaseService.client.rpc(
       'insert_signed_loan_request',
@@ -83,6 +93,22 @@ export class SignedOrdersService {
       dto.principalTokenAddress === '0x0000000000000000000000000000000000000000'
     )
       throw new BadRequestException('Principal must be ERC20');
+    if (dto.principalAmount <= 0n)
+      throw new BadRequestException('Principal amount must be > 0');
+    if (dto.durationSeconds <= 0)
+      throw new BadRequestException('Duration must be > 0');
+    if (dto.collateralRatioBps < 10000)
+      throw new BadRequestException('Collateral ratio must be >= 100%');
+    if (
+      dto.trustedRatioBps !== 0 &&
+      (dto.trustedRatioBps < 10000 ||
+        dto.trustedRatioBps > dto.collateralRatioBps)
+    )
+      throw new BadRequestException('Invalid trustedRatioBps');
+    if (dto.maxLtvBps <= 0 || dto.maxLtvBps > 10000)
+      throw new BadRequestException('Invalid maxLtvBps');
+    if (dto.interestRateBps > 10000)
+      throw new BadRequestException('Interest rate cannot exceed 100%');
 
     const { error } = await this.supabaseService.client.rpc(
       'insert_signed_lend_offer',

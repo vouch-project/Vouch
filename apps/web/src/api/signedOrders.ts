@@ -72,7 +72,7 @@ export type SignedOfferRow = {
   lenderAddress: string;
   principalTokenId: string;
   principalAmount: string;
-  collateralTokenId: string | null; // null → ETH collateral
+  collateralTokenId: string | null; // null → collateral chosen by borrower at fill time
   collateralRatioBps: number;
   trustedRatioBps: number;
   scoreThreshold: number;

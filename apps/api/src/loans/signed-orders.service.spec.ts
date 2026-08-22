@@ -168,7 +168,7 @@ describe('SignedOrdersService', () => {
     const wallet = ethers.Wallet.createRandom();
     const base = {
       lenderAddress: wallet.address,
-      principalTokenAddress: ethers.ZeroAddress,
+      principalTokenAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
       principalAmount: 500n,
       collateralRatioBps: 15000,
       trustedRatioBps: 12000,
