@@ -12,115 +12,31 @@
   import { navLinksMap } from '$lib/navLinks';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
-  import { supabase } from '$lib/supabase';
   import type { LoanWithTokens } from '$lib/types';
   import { cn } from '$lib/utils';
   import { fillLoanRequest, type SignedLoanRequest } from '$lib/wallet/signedOrders';
   import { fundLoan } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Check, Clock, Copy, Info, RefreshCw, TrendingUp, Zap } from '@lucide/svelte';
-  import type { RealtimeChannel } from '@supabase/supabase-js';
   import type { Address } from '@vouch/database-types';
   import { ethers } from 'ethers';
-  import { onDestroy } from 'svelte';
-  import type { PageData } from './$types';
   import { deadlineSeconds, findToken, getErrorMessage, tokenAddress, truncateAddress } from './_utils';
 
-  let { data }: { data: PageData } = $props();
+  let { loans, scores, loading, errorMsg }: {
+    loans: LoanWithTokens[];
+    scores: Record<string, number>;
+    loading: boolean;
+    errorMsg: string | null;
+  } = $props();
 
-  let loans: LoanWithTokens[] = $state([]);
-  let scores: Record<string, number> = $state({});
-  let loading = $state(true);
-  let refreshing = $state(false);
-  let errorMsg: string | null = $state(null);
-  let realtimeActive = $state(false);
-  let channel: RealtimeChannel | null = $state(null);
   let fundingLoanId: string | null = $state(null);
   let copiedAddress: string | null = $state(null);
 
   let signedRequests: SignedRequestRow[] = $state([]);
   let signedError: string | null = $state(null);
   let fillingDigest: string | null = $state(null);
-
-  $effect(() => {
-    const fetchStreamed = async () => {
-      try {
-        [loans, scores] = await Promise.all([data.streamed.loansPromise, data.streamed.scoresPromise]);
-      } catch (err) {
-        console.error(err);
-        errorMsg = getErrorMessage(err);
-      } finally {
-        loading = false;
-      }
-    };
-    void fetchStreamed();
-  });
-
-  const fetchScores = async (newLoans: LoanWithTokens[]) => {
-    const addresses = [...new Set(newLoans.map((l) => l.borrowerAddress))];
-    const results = await Promise.allSettled(
-      addresses.map((address) =>
-        axiosApi
-          .get<{ score: number }>(`/scoring/${encodeURIComponent(address)}`)
-          .then(({ data }) => ({ address, score: data.score })),
-      ),
-    );
-    scores = Object.fromEntries(
-      results
-        .filter((r): r is PromiseFulfilledResult<{ address: Address; score: number }> => r.status === 'fulfilled')
-        .map((r) => [r.value.address, r.value.score]),
-    );
-  };
-
-  const fetchLoans = async () => {
-    try {
-      errorMsg = null;
-      const { data: loansData, error } = await supabase
-        .from('loans')
-        .select(
-          `*, collateralToken:tokens!loans_collateralTokenId_fkey(*), principalToken:tokens!loans_principalTokenId_fkey(*)`,
-        )
-        .eq('status', 'pending')
-        .or(`fundDeadline.is.null,fundDeadline.gt.${new Date().toISOString()}`)
-        .order('createdAt', { ascending: false });
-      if (error) throw error;
-      loans = loansData || [];
-      await fetchScores(loans);
-    } catch (e) {
-      console.error('Fetch error:', e);
-      errorMsg = getErrorMessage(e);
-    }
-  };
-
-  const handleRefresh = async () => {
-    refreshing = true;
-    await fetchLoans();
-    refreshing = false;
-  };
-
-  const toggleRealtime = () => {
-    if (realtimeActive) {
-      if (channel) {
-        void supabase.removeChannel(channel);
-        channel = null;
-      }
-      realtimeActive = false;
-    } else {
-      channel = supabase
-        .channel('public:loans')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'loans' }, async () => {
-          await fetchLoans();
-        })
-        .subscribe((status) => {
-          if (status === 'SUBSCRIBED') console.log('Realtime subscribed to loans changes.');
-        });
-      realtimeActive = true;
-    }
-  };
-
-  onDestroy(() => {
-    if (channel) void supabase.removeChannel(channel);
-  });
+  // Scores for signed-request addresses not already in the parent scores map.
+  let extraScores: Record<string, number> = $state({});
 
   $effect(() => {
     void (async () => {
@@ -135,7 +51,7 @@
 
   $effect(() => {
     const missing = [...new Set(signedRequests.map((r) => r.borrowerAddress))].filter(
-      (addr) => scores[addr] === undefined,
+      (addr) => scores[addr] === undefined && extraScores[addr] === undefined,
     );
     if (missing.length === 0) return;
     void Promise.allSettled(
@@ -150,30 +66,28 @@
           .filter((r): r is PromiseFulfilledResult<{ addr: string; score: number }> => r.status === 'fulfilled')
           .map((r) => [r.value.addr, r.value.score]),
       );
-      scores = { ...scores, ...extra };
+      extraScores = { ...extraScores, ...extra };
     });
   });
 
+  const allScores = $derived({ ...scores, ...extraScores });
+
   const handleFundLoan = async (loan: LoanWithTokens) => {
     if (loan.onChainLoanId == null) {
-      errorMsg = 'Loan is missing on-chain ID.';
       return;
     }
     if (!loan.principalAmount) {
-      errorMsg = 'Loan is missing principal amount.';
       return;
     }
     fundingLoanId = loan.id;
-    errorMsg = null;
     try {
       await fundLoan(
         ethers.getBigInt(loan.onChainLoanId),
         ethers.getBigInt(loan.principalAmount),
         loan.principalToken?.address ?? ethers.ZeroAddress,
       );
-      loans = loans.filter((l) => l.id !== loan.id);
     } catch (e) {
-      errorMsg = getErrorMessage(e);
+      console.error(getErrorMessage(e));
     } finally {
       fundingLoanId = null;
     }
@@ -234,38 +148,6 @@
   };
 </script>
 
-<div class="flex items-center justify-end gap-3 mb-4">
-  <Button
-    class="bg-background/50 backdrop-blur-sm"
-    disabled={realtimeActive || refreshing}
-    onclick={handleRefresh}
-    size="sm"
-    variant="outline"
-  >
-    <RefreshCw class={cn('mr-2 h-4 w-4', refreshing && 'animate-spin')} />
-    Refresh
-  </Button>
-
-  <Button
-    class={cn(
-      'backdrop-blur-sm w-[130px]',
-      realtimeActive && 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100',
-    )}
-    onclick={toggleRealtime}
-    size="sm"
-    variant={realtimeActive ? 'secondary' : 'outline'}
-  >
-    <div class="mr-2 flex h-2 w-2 items-center justify-center">
-      {#if realtimeActive}
-        <span class="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-green-400 opacity-75"></span>
-      {/if}
-      <span class={cn('relative inline-flex h-2 w-2 rounded-full', realtimeActive ? 'bg-green-500' : 'bg-gray-400')}
-      ></span>
-    </div>
-    {realtimeActive ? 'Live Updates' : 'Realtime Off'}
-  </Button>
-</div>
-
 <Card.Root class="border-border/50 shadow-xl dark:shadow-none overflow-hidden bg-card/80 backdrop-blur-md">
   <div class="overflow-x-auto">
     <Table.Root>
@@ -325,7 +207,7 @@
           </Table.Row>
         {:else}
           {#each loans as loan (loan.id)}
-            {@const score = scores[loan.borrowerAddress]}
+            {@const score = allScores[loan.borrowerAddress]}
             {@const ltv = maxLtv(
               tokenPrices.getTokenMeta(loan.collateralToken?.symbol),
               tokenPrices.getTokenMeta(loan.principalToken?.symbol),
@@ -461,7 +343,7 @@
             {#each signedRequests as row (row.digest)}
               {@const prinTok = findToken(row.principalTokenId)}
               {@const colTok = findToken(row.collateralTokenId)}
-              {@const score = scores[row.borrowerAddress]}
+              {@const score = allScores[row.borrowerAddress]}
               {@const risk = score !== undefined ? getRiskLevel(score) : null}
               {@const ltv = row.maxLtvBps / 100}
               {@const isOwn = wallet.address?.toLowerCase() === row.borrowerAddress.toLowerCase()}

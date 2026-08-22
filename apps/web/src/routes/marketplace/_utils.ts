@@ -35,3 +35,19 @@ export const deadlineSeconds = (iso: string): bigint =>
 // 50 bps (0.5%) overshoot on collateral calculations to absorb Chainlink vs
 // cached-price divergence and avoid "Collateral value below required ratio" reverts.
 export const COLLATERAL_BUFFER_BPS = 50n;
+
+export type LendOfferRow = {
+  id: string;
+  onChainOfferId: string;
+  lenderAddress: string;
+  principalAmount: string;
+  collateralRatioBps: number;
+  trustedRatioBps: number;
+  scoreThreshold: number;
+  maxLtvBps: number;
+  interestRateBps: number;
+  duration: string;
+  acceptDeadline: string;
+  status: string;
+  principalToken: { symbol: string; decimals: number; address: string } | null;
+};
