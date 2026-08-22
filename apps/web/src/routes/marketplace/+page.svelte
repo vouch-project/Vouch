@@ -173,8 +173,6 @@
         .channel('public:marketplace')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'loans' }, () => void fetchLoans())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'lend_offers' }, () => void fetchLendOffers())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'signed_loan_requests' }, () => void fetchSignedRequests())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'signed_lend_offers' }, () => void fetchSignedOffers())
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') console.log('Realtime subscribed to marketplace changes.');
         });
