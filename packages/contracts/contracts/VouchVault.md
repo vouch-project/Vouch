@@ -123,6 +123,83 @@ struct Loan {
 
 ---
 
+## Signed Orders (EIP-712)
+
+Gasless, off-chain orders let a borrower or lender **sign** their side of a loan without a transaction; the counterparty submits a single on-chain `fill*` call that verifies the signature and settles the loan. The signer commits their asset by pre-approving the vault (ERC20 `approve`) — so the committed asset **must be an ERC20**, never native ETH. The counterparty supplies the other leg (ETH or ERC20) at fill time.
+
+### EIP-712 Domain
+
+- **name:** `Vouch`
+- **version:** `1`
+- **chainId / verifyingContract:** the connected chain id and the vault (proxy) address.
+
+### Structs
+
+The typed-data field order is significant — it must match the on-chain typehashes exactly.
+
+```solidity
+struct SignedLoanRequest {
+    address borrower;
+    address collateralToken;   // ERC20 only (signer's committed asset)
+    uint256 collateralAmount;
+    address principalToken;    // ETH (address(0)) or ERC20 (supplied by lender at fill)
+    uint256 principalAmount;
+    uint16  interestRateBps;
+    uint256 durationSeconds;
+    uint16  maxLtvBps;
+    uint256 nonce;             // random uint256 for digest uniqueness
+    uint256 deadline;          // unix seconds; fill reverts once past
+}
+
+struct SignedLendOffer {
+    address lender;
+    address principalToken;    // ERC20 only (signer's committed asset)
+    uint256 principalAmount;
+    address collateralToken;   // ETH (address(0)) or ERC20 (supplied by borrower at fill)
+    uint16  collateralRatioBps;
+    uint16  trustedRatioBps;
+    uint16  scoreThreshold;
+    uint16  maxLtvBps;
+    uint16  interestRateBps;
+    uint256 durationSeconds;
+    uint256 nonce;
+    uint256 deadline;
+}
+```
+
+### Functions
+
+#### hashLoanRequest(SignedLoanRequest req) → bytes32 / hashLendOffer(SignedLendOffer offer) → bytes32
+
+- Returns the EIP-712 digest (the same value produced by `TypedDataEncoder.hash(domain, types, value)`). Used off-chain to key/track an order and on-chain as the consumed-order marker.
+
+#### fillLoanRequest(SignedLoanRequest req, bytes sig) — payable
+
+- Called by the **lender**. Recovers the signer from `sig`, requires `signer == req.borrower`, checks `deadline`, verifies the digest was not already consumed, and enforces the collateral ratio against `maxLtvBps`.
+- Pulls the borrower's ERC20 collateral (pre-approved at sign time) and the lender's principal — ETH via `msg.value` when `principalToken == address(0)`, otherwise ERC20 `transferFrom`. Creates the loan and emits `SignedLoanRequestFilled`.
+- Reverts on: ETH collateral (`collateralToken == address(0)`), zero `principalAmount`, wrong signer, expired deadline, already-consumed digest, or collateral below the required ratio.
+
+#### fillLendOffer(SignedLendOffer offer, uint256 collateralAmount, bytes sig) — payable
+
+- Called by the **borrower**, who chooses `collateralAmount` (must satisfy `collateralRatioBps` at current prices). Recovers the signer, requires `signer == offer.lender`, checks `deadline` and the consumed marker.
+- Pulls the lender's ERC20 principal (pre-approved) and the borrower's collateral — ETH via `msg.value` when `collateralToken == address(0)`, otherwise ERC20. Creates the loan and emits `SignedLendOfferFilled`.
+- Reverts on: ETH principal (`principalToken == address(0)`), wrong signer, expired deadline, already-consumed digest, or insufficient collateral. Signed offers fill at the base `collateralRatioBps` (no score attestation is passed at fill).
+
+#### cancelSignedLoanRequest(SignedLoanRequest req) / cancelSignedLendOffer(SignedLendOffer offer)
+
+- The signer (borrower / lender respectively) marks their own order's digest consumed so it can never be filled. Reverts if `msg.sender` is not the signer. Emits `SignedLoanRequestCancelled` / `SignedLendOfferCancelled`.
+
+### Events
+
+- **`SignedLoanRequestFilled(uint256 indexed loanId, bytes32 indexed digest, address indexed borrower, address lender, address collateralToken, uint256 collateralAmount, address principalToken, uint256 principalAmount, uint256 timestamp)`**
+- **`SignedLendOfferFilled(uint256 indexed loanId, bytes32 indexed digest, address indexed lender, address borrower, address principalToken, uint256 principalAmount, address collateralToken, uint256 collateralAmount, uint256 timestamp)`**
+- **`SignedLoanRequestCancelled(bytes32 indexed digest, address indexed borrower)`**
+- **`SignedLendOfferCancelled(bytes32 indexed digest, address indexed lender)`**
+
+> All four signed-order events carry a `Signed` prefix to avoid colliding with the pre-existing `LendOfferCancelled(uint256,address)` event.
+
+---
+
 ## Usage Guidelines
 
 - Always check event logs for confirmation of deposits, withdrawals, and loan creation.
