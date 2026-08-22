@@ -173,7 +173,7 @@ describe('SignedOrdersService', () => {
       collateralRatioBps: 15000,
       trustedRatioBps: 12000,
       scoreThreshold: 700,
-      maxLtvBps: 6500,
+      maxLtvBps: 8500,
       interestRateBps: 800,
       durationSeconds: 2592000,
       nonce: 1n,
