@@ -8,6 +8,8 @@ import type { LendOfferRow } from './_utils';
 
 export type { SignedOfferRow, SignedRequestRow } from '$api/signedOrders';
 
+export const ssr = false;
+
 export const load: PageLoad = () => {
   const loansPromise: PromiseLike<LoanWithTokens[]> = supabase
     .from('loans')
@@ -22,7 +24,6 @@ export const load: PageLoad = () => {
       return data ?? [];
     });
 
-  // Chained off loansPromise so it runs client-side only (axiosApi reads localStorage).
   const scoresPromise: PromiseLike<Record<Address, number>> = loansPromise.then(async (loans) => {
     const addresses = [...new Set(loans.map((l) => l.borrowerAddress))];
     const results = await Promise.allSettled(
