@@ -1,15 +1,17 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { asAddress } from '@vouch/database-types';
-import { buildDomain, verifyLendOffer, verifyLoanRequest } from './eip712';
+import { SupabaseService } from '../supabase/supabase.service';
 import { CreateSignedLendOfferDto } from './dto/create-signed-lend-offer.dto';
 import { CreateSignedLoanRequestDto } from './dto/create-signed-loan-request.dto';
-import { SupabaseService } from '../supabase/supabase.service';
+import { buildDomain, verifyLendOffer, verifyLoanRequest } from './eip712';
 
 @Injectable()
 export class SignedOrdersService {
   constructor(private readonly supabaseService: SupabaseService) {}
 
-  async createLoanRequest(dto: CreateSignedLoanRequestDto): Promise<{ digest: string }> {
+  async createLoanRequest(
+    dto: CreateSignedLoanRequestDto,
+  ): Promise<{ digest: string }> {
     const domain = buildDomain(BigInt(dto.networkId), dto.contractAddress);
     const value = {
       borrower: dto.borrowerAddress,
@@ -25,7 +27,8 @@ export class SignedOrdersService {
     };
     const { valid, digest } = verifyLoanRequest(value, dto.signature, domain);
     if (!valid) throw new BadRequestException('Invalid signature');
-    if (dto.deadline * 1000 <= Date.now()) throw new BadRequestException('Request expired');
+    if (dto.deadline * 1000 <= Date.now())
+      throw new BadRequestException('Request expired');
 
     const { error } = await this.supabaseService.client.rpc(
       'insert_signed_loan_request',
@@ -50,7 +53,9 @@ export class SignedOrdersService {
     return { digest };
   }
 
-  async createLendOffer(dto: CreateSignedLendOfferDto): Promise<{ digest: string }> {
+  async createLendOffer(
+    dto: CreateSignedLendOfferDto,
+  ): Promise<{ digest: string }> {
     const domain = buildDomain(BigInt(dto.networkId), dto.contractAddress);
     const value = {
       lender: dto.lenderAddress,
@@ -68,7 +73,8 @@ export class SignedOrdersService {
     };
     const { valid, digest } = verifyLendOffer(value, dto.signature, domain);
     if (!valid) throw new BadRequestException('Invalid signature');
-    if (dto.deadline * 1000 <= Date.now()) throw new BadRequestException('Offer expired');
+    if (dto.deadline * 1000 <= Date.now())
+      throw new BadRequestException('Offer expired');
 
     const { error } = await this.supabaseService.client.rpc(
       'insert_signed_lend_offer',

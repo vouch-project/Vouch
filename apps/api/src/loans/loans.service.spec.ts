@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SupabaseService } from '../supabase/supabase.service';
-import { LoansService } from './loans.service';
+import { CancelSignedOrderDto } from './dto/cancel-signed-order.dto';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { FillSignedOrderDto } from './dto/fill-signed-order.dto';
-import { CancelSignedOrderDto } from './dto/cancel-signed-order.dto';
+import { LoansService } from './loans.service';
 
 describe('LoansService', () => {
   let service: LoansService;
@@ -76,11 +76,9 @@ describe('LoansService', () => {
 
     expect(rpc).toHaveBeenCalledWith('cancel_loan_with_transaction', {
       p_network_id: '31337',
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      p_contract_address: expect.any(String),
+      p_contract_address: '0x4444444444444444444444444444444444444444',
       p_on_chain_loan_id: '3',
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      p_borrower_address: expect.any(String),
+      p_borrower_address: '0x1111111111111111111111111111111111111111',
       p_tx_hash: '0xhash',
       p_block_number: '12',
       p_block_hash: '0xblock',
@@ -116,11 +114,12 @@ describe('LoansService', () => {
         p_order_kind: 'request',
         p_digest: '0xabc',
         p_on_chain_loan_id: '5',
-        p_filler_address: expect.any(String),
-        p_collateral_token_address: expect.any(String),
+        p_filler_address: '0x00000000000000000000000000000000000000a0',
+        p_collateral_token_address:
+          '0x0000000000000000000000000000000000000002',
         p_collateral_amount: '1000',
         p_network_id: '31337',
-        p_contract_address: expect.any(String),
+        p_contract_address: '0x1111111111111111111111111111111111111111',
         p_tx_hash: '0xtx',
         p_block_number: '1',
         p_block_hash: '0xbh',
@@ -145,7 +144,7 @@ describe('LoansService', () => {
       expect.objectContaining({
         p_digest: '0xdeadbeef',
         p_network_id: '31337',
-        p_contract_address: expect.any(String),
+        p_contract_address: '0x1111111111111111111111111111111111111111',
       }),
     );
   });

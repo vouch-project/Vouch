@@ -828,7 +828,7 @@ export class BlockchainListenerService implements OnModuleInit {
           (l) =>
             l.topics[1] ===
             ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
-        )?.index ?? ((receipt?.logs?.at(-1)?.index ?? logIndex) + 1);
+        )?.index ?? (receipt?.logs?.at(-1)?.index ?? logIndex) + 1;
 
       await this.loanService.acceptLendOffer({
         offerId,
@@ -911,12 +911,7 @@ export class BlockchainListenerService implements OnModuleInit {
     _principalToken: string,
     _principalAmount: bigint,
     timestamp: bigint,
-    {
-      transactionHash,
-      blockNumber,
-      blockHash,
-      index: logIndex,
-    }: ethers.Log,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
     network: ethers.Network,
     contractAddress: string,
     contract: VouchVault,
@@ -947,7 +942,7 @@ export class BlockchainListenerService implements OnModuleInit {
           (l) =>
             l.topics[1] ===
             ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
-        )?.index ?? ((receipt?.logs?.at(-1)?.index ?? logIndex) + 1);
+        )?.index ?? (receipt?.logs?.at(-1)?.index ?? logIndex) + 1;
 
       await this.loanService.fillSignedOrder({
         orderKind: 'request',
@@ -969,7 +964,10 @@ export class BlockchainListenerService implements OnModuleInit {
         `SignedLoanRequest filled → loan ${loanId.toString()} (digest ${digest})`,
       );
     } catch (error) {
-      this.logger.error('Failed to record SignedLoanRequestFilled in DB', error);
+      this.logger.error(
+        'Failed to record SignedLoanRequestFilled in DB',
+        error,
+      );
     }
   }
 
@@ -983,12 +981,7 @@ export class BlockchainListenerService implements OnModuleInit {
     collateralToken: string,
     collateralAmount: bigint,
     timestamp: bigint,
-    {
-      transactionHash,
-      blockNumber,
-      blockHash,
-      index: logIndex,
-    }: ethers.Log,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
     network: ethers.Network,
     contractAddress: string,
     contract: VouchVault,
@@ -1019,7 +1012,7 @@ export class BlockchainListenerService implements OnModuleInit {
           (l) =>
             l.topics[1] ===
             ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
-        )?.index ?? ((receipt?.logs?.at(-1)?.index ?? logIndex) + 1);
+        )?.index ?? (receipt?.logs?.at(-1)?.index ?? logIndex) + 1;
 
       await this.loanService.fillSignedOrder({
         orderKind: 'offer',

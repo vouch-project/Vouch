@@ -425,14 +425,22 @@ export class TokensService implements OnModuleInit {
     );
 
     // First pass: enrich from cache, collect misses
-    const misses: Array<{ token: ResponseToken; feedAddress: string; rpcUrl: string }> = [];
+    const misses: Array<{
+      token: ResponseToken;
+      feedAddress: string;
+      rpcUrl: string;
+    }> = [];
 
     const enriched = tokens.map((t) => {
       const db = dbByAddress.get(t.address.toLowerCase());
       const cachedPrice = prices[priceKey(dbChainId, t.address)] ?? null;
 
       if (cachedPrice === null && db?.priceFeedAddress && db.rpcUrl) {
-        misses.push({ token: t, feedAddress: db.priceFeedAddress, rpcUrl: db.rpcUrl });
+        misses.push({
+          token: t,
+          feedAddress: db.priceFeedAddress,
+          rpcUrl: db.rpcUrl,
+        });
       }
 
       return {
@@ -450,15 +458,21 @@ export class TokensService implements OnModuleInit {
           this.priceFeedService
             .getPriceForToken(dbChainId, token.address, feedAddress, rpcUrl)
             .then((price) => ({ address: token.address.toLowerCase(), price }))
-            .catch(() => ({ address: token.address.toLowerCase(), price: null })),
+            .catch(() => ({
+              address: token.address.toLowerCase(),
+              price: null,
+            })),
         ),
       );
 
-      const fetchedByAddress = new Map(fetchedPrices.map((r) => [r.address, r.price]));
+      const fetchedByAddress = new Map(
+        fetchedPrices.map((r) => [r.address, r.price]),
+      );
 
       return enriched.map((t) => ({
         ...t,
-        priceUsd: t.priceUsd ?? fetchedByAddress.get(t.address.toLowerCase()) ?? null,
+        priceUsd:
+          t.priceUsd ?? fetchedByAddress.get(t.address.toLowerCase()) ?? null,
       }));
     }
 

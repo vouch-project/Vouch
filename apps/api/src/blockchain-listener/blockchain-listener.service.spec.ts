@@ -34,25 +34,33 @@ class TestableListener extends BlockchainListenerService {
   }
 
   callHandleSignedLoanRequestFilled(
-    ...args: Parameters<BlockchainListenerService['handleSignedLoanRequestFilled']>
+    ...args: Parameters<
+      BlockchainListenerService['handleSignedLoanRequestFilled']
+    >
   ) {
     return this.handleSignedLoanRequestFilled(...args);
   }
 
   callHandleSignedLendOfferFilled(
-    ...args: Parameters<BlockchainListenerService['handleSignedLendOfferFilled']>
+    ...args: Parameters<
+      BlockchainListenerService['handleSignedLendOfferFilled']
+    >
   ) {
     return this.handleSignedLendOfferFilled(...args);
   }
 
   callHandleSignedLoanRequestCancelled(
-    ...args: Parameters<BlockchainListenerService['handleSignedLoanRequestCancelled']>
+    ...args: Parameters<
+      BlockchainListenerService['handleSignedLoanRequestCancelled']
+    >
   ) {
     return this.handleSignedLoanRequestCancelled(...args);
   }
 
   callHandleSignedLendOfferCancelled(
-    ...args: Parameters<BlockchainListenerService['handleSignedLendOfferCancelled']>
+    ...args: Parameters<
+      BlockchainListenerService['handleSignedLendOfferCancelled']
+    >
   ) {
     return this.handleSignedLendOfferCancelled(...args);
   }
@@ -234,9 +242,18 @@ describe('BlockchainListenerService', () => {
       const mockNetwork = { chainId: 1337n } as ethers.Network;
       const contractAddress = '0xContract';
 
-      const expireSpy = jest.spyOn(loanService, 'expire').mockResolvedValue(undefined);
+      const expireSpy = jest
+        .spyOn(loanService, 'expire')
+        .mockResolvedValue(undefined);
 
-      await service.callHandleLoanExpired(loanId, borrower, timestamp, mockLog, mockNetwork, contractAddress);
+      await service.callHandleLoanExpired(
+        loanId,
+        borrower,
+        timestamp,
+        mockLog,
+        mockNetwork,
+        contractAddress,
+      );
 
       expect(expireSpy).toHaveBeenCalledWith({
         onChainLoanId: loanId,
@@ -258,7 +275,10 @@ describe('BlockchainListenerService', () => {
     const transferTopic = ethers.id('Transfer(address,address,uint256)');
     const contractAddress = '0x1234567890123456789012345678901234567890';
     // Pad the contract address to a 32-byte topic (as ethers does in logs)
-    const contractPadded = ethers.zeroPadValue(contractAddress.toLowerCase(), 32);
+    const contractPadded = ethers.zeroPadValue(
+      contractAddress.toLowerCase(),
+      32,
+    );
 
     const collateralTransferLog = {
       topics: [transferTopic, '0xsender', contractPadded],
@@ -291,15 +311,15 @@ describe('BlockchainListenerService', () => {
 
     it('calls loanService.fillSignedOrder with orderKind request and correct filler/log indices', async () => {
       await service.callHandleSignedLoanRequestFilled(
-        1n,               // loanId
-        '0xdigest',       // digest
+        1n, // loanId
+        '0xdigest', // digest
         '0xaaBBccDDeeFF0011223344556677889900aAbBcC', // borrower (signed the request)
         '0xaaBBccDDeeFF0011223344556677889900aAbBcD', // lender (the filler)
         '0xaaBBccDDeeFF0011223344556677889900aAbBcE', // collateralToken
-        1000n,            // collateralAmount
+        1000n, // collateralAmount
         '0xaaBBccDDeeFF0011223344556677889900aAbBcF', // principalToken
-        500n,             // principalAmount
-        1700000000n,      // timestamp
+        500n, // principalAmount
+        1700000000n, // timestamp
         filledLog,
         fillNetwork,
         contractAddress,
@@ -362,7 +382,10 @@ describe('BlockchainListenerService', () => {
   describe('handleSignedLendOfferFilled', () => {
     const transferTopic = ethers.id('Transfer(address,address,uint256)');
     const contractAddress = '0x1234567890123456789012345678901234567890';
-    const contractPadded = ethers.zeroPadValue(contractAddress.toLowerCase(), 32);
+    const contractPadded = ethers.zeroPadValue(
+      contractAddress.toLowerCase(),
+      32,
+    );
 
     const collateralTransferLog = {
       topics: [transferTopic, '0xsender', contractPadded],
@@ -395,15 +418,15 @@ describe('BlockchainListenerService', () => {
 
     it('calls loanService.fillSignedOrder with orderKind offer and fillerAddress=borrower', async () => {
       await service.callHandleSignedLendOfferFilled(
-        10n,              // loanId
-        '0xdigest3',      // digest
+        10n, // loanId
+        '0xdigest3', // digest
         '0xaaBBccDDeeFF0011223344556677889900aAbBcD', // lender (signed the offer)
         '0xaaBBccDDeeFF0011223344556677889900aAbBcC', // borrower (the filler)
         '0xaaBBccDDeeFF0011223344556677889900aAbBcF', // principalToken
-        800n,             // principalAmount
+        800n, // principalAmount
         '0xaaBBccDDeeFF0011223344556677889900aAbBcE', // collateralToken
-        2000n,            // collateralAmount
-        1700000002n,      // timestamp
+        2000n, // collateralAmount
+        1700000002n, // timestamp
         filledLog,
         fillNetwork,
         contractAddress,

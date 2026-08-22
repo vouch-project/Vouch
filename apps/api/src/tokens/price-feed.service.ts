@@ -268,7 +268,7 @@ export class PriceFeedService implements OnModuleInit, OnModuleDestroy {
           const price = await this.fetchPriceFromFeed(
             token.chainId,
             token.symbol,
-            token.price_feed_address!,
+            token.price_feed_address,
             getProvider(token.chainId, rpcUrl),
             threshold,
           );
