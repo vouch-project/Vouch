@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { axiosApi } from '$api/axiosApi';
-  import { getSignedRequests, type SignedRequestRow } from '$api/signedOrders';
+  import { type SignedRequestRow } from '$api/signedOrders';
   import { resolve } from '$app/paths';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
@@ -18,13 +17,13 @@
   import { fundLoan } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Check, Clock, Copy, Info, RefreshCw, TrendingUp, Zap } from '@lucide/svelte';
-  import type { Address } from '@vouch/database-types';
   import { ethers } from 'ethers';
   import { deadlineSeconds, findToken, getErrorMessage, tokenAddress, truncateAddress } from './_utils';
 
-  let { loans, scores, loading, errorMsg }: {
+  let { loans, scores, signedRequests, loading, errorMsg }: {
     loans: LoanWithTokens[];
     scores: Record<string, number>;
+    signedRequests: SignedRequestRow[];
     loading: boolean;
     errorMsg: string | null;
   } = $props();
@@ -32,45 +31,8 @@
   let fundingLoanId: string | null = $state(null);
   let copiedAddress: string | null = $state(null);
 
-  let signedRequests: SignedRequestRow[] = $state([]);
   let signedError: string | null = $state(null);
   let fillingDigest: string | null = $state(null);
-  // Scores for signed-request addresses not already in the parent scores map.
-  let extraScores: Record<string, number> = $state({});
-
-  $effect(() => {
-    void (async () => {
-      try {
-        signedError = null;
-        signedRequests = await getSignedRequests();
-      } catch (e) {
-        signedError = getErrorMessage(e);
-      }
-    })();
-  });
-
-  $effect(() => {
-    const missing = [...new Set(signedRequests.map((r) => r.borrowerAddress))].filter(
-      (addr) => scores[addr] === undefined && extraScores[addr] === undefined,
-    );
-    if (missing.length === 0) return;
-    void Promise.allSettled(
-      missing.map((addr) =>
-        axiosApi
-          .get<{ score: number }>(`/scoring/${encodeURIComponent(addr)}`)
-          .then(({ data }) => ({ addr, score: data.score })),
-      ),
-    ).then((results) => {
-      const extra = Object.fromEntries(
-        results
-          .filter((r): r is PromiseFulfilledResult<{ addr: string; score: number }> => r.status === 'fulfilled')
-          .map((r) => [r.value.addr, r.value.score]),
-      );
-      extraScores = { ...extraScores, ...extra };
-    });
-  });
-
-  const allScores = $derived({ ...scores, ...extraScores });
 
   const handleFundLoan = async (loan: LoanWithTokens) => {
     if (loan.onChainLoanId == null) {
@@ -207,7 +169,7 @@
           </Table.Row>
         {:else}
           {#each loans as loan (loan.id)}
-            {@const score = allScores[loan.borrowerAddress]}
+            {@const score = scores[loan.borrowerAddress]}
             {@const ltv = maxLtv(
               tokenPrices.getTokenMeta(loan.collateralToken?.symbol),
               tokenPrices.getTokenMeta(loan.principalToken?.symbol),
@@ -343,7 +305,7 @@
             {#each signedRequests as row (row.digest)}
               {@const prinTok = findToken(row.principalTokenId)}
               {@const colTok = findToken(row.collateralTokenId)}
-              {@const score = allScores[row.borrowerAddress]}
+              {@const score = scores[row.borrowerAddress]}
               {@const risk = score !== undefined ? getRiskLevel(score) : null}
               {@const ltv = row.maxLtvBps / 100}
               {@const isOwn = wallet.address?.toLowerCase() === row.borrowerAddress.toLowerCase()}

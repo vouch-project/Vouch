@@ -1,5 +1,6 @@
 <script lang="ts">
   import { axiosApi } from '$api/axiosApi';
+  import { getSignedOffers, getSignedRequests, type SignedOfferRow, type SignedRequestRow } from '$api/signedOrders';
   import { Button } from '$lib/components/ui/button';
   import * as Tabs from '$lib/components/ui/tabs';
   import { supabase } from '$lib/supabase';
@@ -23,6 +24,9 @@
   let lendOffers: LendOfferRow[] = $state([]);
   let lendOffersLoading = $state(true);
   let lendOffersError: string | null = $state(null);
+
+  let signedRequests: SignedRequestRow[] = $state([]);
+  let signedOffers: SignedOfferRow[] = $state([]);
 
   let refreshing = $state(false);
   let realtimeActive = $state(false);
@@ -52,6 +56,36 @@
         lendOffersLoading = false;
       }
     })();
+  });
+
+  $effect(() => {
+    void data.streamed.signedRequestsPromise.then((rows) => { signedRequests = rows; });
+  });
+
+  $effect(() => {
+    void data.streamed.signedOffersPromise.then((rows) => { signedOffers = rows; });
+  });
+
+  // Fetch scores for signed-request borrowers not covered by the loans score fetch.
+  $effect(() => {
+    const missing = [...new Set(signedRequests.map((r) => r.borrowerAddress))].filter(
+      (addr) => scores[addr] === undefined,
+    );
+    if (missing.length === 0) return;
+    void Promise.allSettled(
+      missing.map((addr) =>
+        axiosApi
+          .get<{ score: number }>(`/scoring/${encodeURIComponent(addr)}`)
+          .then(({ data: d }) => ({ addr, score: d.score })),
+      ),
+    ).then((results) => {
+      const extra = Object.fromEntries(
+        results
+          .filter((r): r is PromiseFulfilledResult<{ addr: string; score: number }> => r.status === 'fulfilled')
+          .map((r) => [r.value.addr, r.value.score]),
+      );
+      scores = { ...scores, ...extra };
+    });
   });
 
   const fetchScores = async (newLoans: LoanWithTokens[]) => {
@@ -105,9 +139,25 @@
     }
   };
 
+  const fetchSignedRequests = async () => {
+    try {
+      signedRequests = await getSignedRequests();
+    } catch {
+      // non-fatal: signed requests are additive to the main loan list
+    }
+  };
+
+  const fetchSignedOffers = async () => {
+    try {
+      signedOffers = await getSignedOffers();
+    } catch {
+      // non-fatal
+    }
+  };
+
   const handleRefresh = async () => {
     refreshing = true;
-    await Promise.all([fetchLoans(), fetchLendOffers()]);
+    await Promise.all([fetchLoans(), fetchLendOffers(), fetchSignedRequests(), fetchSignedOffers()]);
     refreshing = false;
   };
 
@@ -123,6 +173,8 @@
         .channel('public:marketplace')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'loans' }, () => void fetchLoans())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'lend_offers' }, () => void fetchLendOffers())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'signed_loan_requests' }, () => void fetchSignedRequests())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'signed_lend_offers' }, () => void fetchSignedOffers())
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') console.log('Realtime subscribed to marketplace changes.');
         });
@@ -197,11 +249,11 @@
     </div>
 
     <Tabs.Content value="borrow">
-      <BorrowTab {loans} {scores} loading={loansLoading} errorMsg={loansError} />
+      <BorrowTab {loans} {scores} {signedRequests} loading={loansLoading} errorMsg={loansError} />
     </Tabs.Content>
 
     <Tabs.Content value="lend">
-      <LendTab {lendOffers} loading={lendOffersLoading} error={lendOffersError} />
+      <LendTab {lendOffers} {signedOffers} loading={lendOffersLoading} error={lendOffersError} />
     </Tabs.Content>
   </Tabs.Root>
 </div>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { axiosApi } from '$api/axiosApi';
   import type { Token } from '$api/chain';
-  import { getSignedOffers, type SignedOfferRow } from '$api/signedOrders';
+  import { type SignedOfferRow } from '$api/signedOrders';
   import { resolve } from '$app/paths';
   import { Button } from '$lib/components/ui/button';
   import * as Card from '$lib/components/ui/card';
@@ -19,8 +19,9 @@
   import { ethers } from 'ethers';
   import { COLLATERAL_BUFFER_BPS, deadlineSeconds, findToken, getErrorMessage, tokenAddress, truncateAddress, type LendOfferRow } from './_utils';
 
-  let { lendOffers, loading, error }: {
+  let { lendOffers, signedOffers, loading, error }: {
     lendOffers: LendOfferRow[];
+    signedOffers: SignedOfferRow[];
     loading: boolean;
     error: string | null;
   } = $props();
@@ -39,21 +40,9 @@
     }
   });
 
-  let signedOffers: SignedOfferRow[] = $state([]);
   let signedError: string | null = $state(null);
   let fillingDigest: string | null = $state(null);
   let gaslessOfferCollateral: Record<string, string> = $state({});
-
-  $effect(() => {
-    void (async () => {
-      try {
-        signedError = null;
-        signedOffers = await getSignedOffers();
-      } catch (e) {
-        signedError = getErrorMessage(e);
-      }
-    })();
-  });
 
   const getEffectiveRatioBps = (offer: LendOfferRow): number => {
     const att = attestations[offer.id];

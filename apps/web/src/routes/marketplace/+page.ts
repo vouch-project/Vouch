@@ -1,9 +1,12 @@
 import { axiosApi } from '$api/axiosApi';
+import { getSignedOffers, getSignedRequests } from '$api/signedOrders';
 import { supabase } from '$lib/supabase';
 import type { LoanWithTokens } from '$lib/types';
 import type { Address } from '@vouch/database-types';
 import type { PageLoad } from './$types';
 import type { LendOfferRow } from './_utils';
+
+export type { SignedOfferRow, SignedRequestRow } from '$api/signedOrders';
 
 export const load: PageLoad = () => {
   const loansPromise: PromiseLike<LoanWithTokens[]> = supabase
@@ -45,5 +48,8 @@ export const load: PageLoad = () => {
       return (data as unknown as LendOfferRow[]) ?? [];
     });
 
-  return { streamed: { loansPromise, scoresPromise, lendOffersPromise } };
+  const signedRequestsPromise = getSignedRequests().catch((): [] => []);
+  const signedOffersPromise = getSignedOffers().catch((): [] => []);
+
+  return { streamed: { loansPromise, scoresPromise, lendOffersPromise, signedRequestsPromise, signedOffersPromise } };
 };
