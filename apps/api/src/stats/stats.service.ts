@@ -1,5 +1,5 @@
 import { InjectRedis } from '@nestjs-modules/ioredis';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import { SupabaseService } from '../supabase/supabase.service';
 import { PriceFeedService, priceKey } from '../tokens/price-feed.service';
@@ -51,7 +51,7 @@ export class StatsService {
 
     if (error || !data) {
       this.logger.error('Failed to fetch active loans for stats', error);
-      throw error ?? new Error('No data returned from loans query');
+      throw new InternalServerErrorException('Failed to compute protocol stats');
     }
 
     const prices = await this.priceFeedService.getPrices();
@@ -69,19 +69,23 @@ export class StatsService {
       return { decimals: token.decimals, priceUsd: price };
     };
 
-    // Convert a raw token amount (stored as text bigint) to a USD value without
-    // precision loss. Number(rawAmount) overflows for large uint256 values, so
-    // we do the integer division in bigint space first, then convert each part.
+    // Convert a raw token amount (stored as text bigint) to a USD value.
+    // We keep 8 digits of fractional precision — enough for USD display — and do
+    // all scaling in bigint space so large uint256 values don't overflow Number's
+    // 53-bit mantissa before the final float conversion.
+    const PRECISION = 8n;
+    const PRECISION_SCALE = 10n ** PRECISION;
     const toUsd = (
       rawAmount: string,
       decimals: number,
       priceUsd: number,
     ): number => {
-      const scale = BigInt(10) ** BigInt(decimals);
       const raw = BigInt(rawAmount);
-      const whole = Number(raw / scale);
-      const frac = Number(raw % scale) / 10 ** decimals;
-      return (whole + frac) * priceUsd;
+      const scale = BigInt(10) ** BigInt(decimals);
+      // Shift raw into our precision window, then divide by the token scale.
+      // Result is an integer representing (amount * 10^8) with no float rounding.
+      const scaled = (raw * PRECISION_SCALE) / scale;
+      return (Number(scaled) / Number(PRECISION_SCALE)) * priceUsd;
     };
 
     let tvlUsd = 0;
