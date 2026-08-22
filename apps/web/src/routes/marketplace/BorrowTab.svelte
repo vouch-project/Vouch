@@ -247,7 +247,7 @@
                   </span>
                 </div>
               </Table.Cell>
-              <Table.Cell class="px-1 sm:px-3 lg:px-6 py-3 text-left whitespace-nowrap min-w-max">
+              <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
                 <div class="flex flex-col gap-0.5">
                   <div class="flex items-center gap-1.5 sm:gap-2">
                     <div class="w-10 sm:w-14 h-1.5 bg-muted rounded-full overflow-hidden hidden lg:block">
@@ -274,13 +274,13 @@
                   {formatLoanTerm(loan.duration)}
                 </div>
               </Table.Cell>
-              <Table.Cell class="px-1 sm:px-3 lg:px-6 py-3 text-left min-w-max">
+              <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left min-w-max">
                 {#if risk && hf}
-                  <div class="flex flex-col gap-0.5">
+                  <div class="flex items-center gap-1.5">
                     <Badge class={cn('font-bold px-1 sm:px-2.5 py-0 text-[8px] sm:text-[10px]', risk.color)} variant="outline">
                       {risk.label}
                     </Badge>
-                    <span class="text-[9px] text-muted-foreground hidden lg:block">HF {hf.healthFactor.toFixed(2)}</span>
+                    <span class="text-[9px] text-muted-foreground hidden lg:inline">HF {hf.healthFactor.toFixed(2)}</span>
                   </div>
                 {:else}
                   <div class="h-4 w-10 bg-muted animate-pulse rounded"></div>
@@ -389,20 +389,17 @@
                     <span>{formatUint256(row.collateralAmount, colTok?.decimals)} {colTok?.symbol ?? 'ETH'}</span>
                   </div>
                 </Table.Cell>
-                <Table.Cell class="px-1 sm:px-3 lg:px-6 py-3 text-left whitespace-nowrap min-w-max">
-                  <div class="flex flex-col gap-0.5">
-                    <div class="flex items-center gap-1.5 sm:gap-2">
-                      <div class="w-10 sm:w-14 h-1.5 bg-muted rounded-full overflow-hidden hidden lg:block">
-                        <div
-                          style:width="{ltvUtilization}%"
-                          class={cn('h-full transition-all', ltvUtilization < 60 ? 'bg-green-500' : ltvUtilization < 85 ? 'bg-amber-500' : 'bg-red-500')}
-                        ></div>
-                      </div>
-                      <span class={cn('font-bold text-[10px] sm:text-sm', ltvUtilization < 60 ? 'text-green-600' : ltvUtilization < 85 ? 'text-amber-600' : 'text-red-600')}>
-                        {currentLtv.toFixed(1)}%
-                      </span>
+                <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left whitespace-nowrap min-w-max">
+                  <div class="flex items-center gap-1.5 sm:gap-2" title="max {maxLtvVal.toFixed(0)}%">
+                    <div class="w-10 sm:w-14 h-1.5 bg-muted rounded-full overflow-hidden hidden lg:block">
+                      <div
+                        style:width="{ltvUtilization}%"
+                        class={cn('h-full transition-all', ltvUtilization < 60 ? 'bg-green-500' : ltvUtilization < 85 ? 'bg-amber-500' : 'bg-red-500')}
+                      ></div>
                     </div>
-                    <span class="text-[9px] text-muted-foreground hidden lg:block">max {maxLtvVal.toFixed(0)}%</span>
+                    <span class={cn('font-bold text-[10px] sm:text-sm', ltvUtilization < 60 ? 'text-green-600' : ltvUtilization < 85 ? 'text-amber-600' : 'text-red-600')}>
+                      {currentLtv.toFixed(1)}%
+                    </span>
                   </div>
                 </Table.Cell>
                 <Table.Cell
@@ -418,7 +415,7 @@
                     {formatLoanTerm(row.duration)}
                   </div>
                 </Table.Cell>
-                <Table.Cell class="px-1 sm:px-3 lg:px-6 py-3 text-left min-w-max">
+                <Table.Cell class="px-1 sm:px-3 lg:px-6 py-4 text-left min-w-max">
                   {#if risk && hf}
                     <div class="flex flex-col gap-0.5">
                       <Badge class={cn('font-bold px-1 sm:px-2.5 py-0 text-[8px] sm:text-[10px]', risk.color)} variant="outline">
