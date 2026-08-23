@@ -303,7 +303,7 @@ describe('ScoringService', () => {
         CHAIN_ID,
       );
       const domain = {
-        name: 'VouchVault',
+        name: 'Vouch',
         version: '1',
         chainId: CHAIN_ID,
         verifyingContract: ethers.getAddress(CONTRACT_ADDRESS),

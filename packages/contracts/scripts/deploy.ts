@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { ethers, network, upgrades } from 'hardhat';
 import path from 'path';
-import type { VouchVault } from '../typechain-types';
+import type { VouchVault, VouchVaultLens } from '../typechain-types';
 
 /**
  * Read a variable from the loaded .env file content, falling back to the
@@ -66,6 +66,39 @@ async function applyProtocolConfig(vault: VouchVault, envContent: string): Promi
   }
 }
 
+function setEnvVar(env: string, name: string, value: string): string {
+  const line = `${name}=${value}`;
+  if (new RegExp(`^${name}=`, 'm').test(env)) {
+    return env.replace(new RegExp(`^${name}=.*`, 'm'), line);
+  }
+  return env.trimEnd() + `\n${line}\n`;
+}
+
+async function deployLens(
+  vaultAddress: string,
+  env: string,
+  envPath: string,
+  lensEnvVarName: string,
+  skipIfExists = false,
+): Promise<void> {
+  if (skipIfExists) {
+    const existingLens = readEnvVar(env, lensEnvVarName);
+    if (existingLens) {
+      console.log(`VouchVaultLens already deployed at ${existingLens}, skipping`);
+      return;
+    }
+  }
+  console.log('Deploying VouchVaultLens...');
+  const LensFactory = await ethers.getContractFactory('VouchVaultLens');
+  const lens = (await LensFactory.deploy(vaultAddress)) as unknown as VouchVaultLens;
+  await lens.waitForDeployment();
+  const lensAddress = await lens.getAddress();
+  console.log(`VouchVaultLens deployed to: ${lensAddress}`);
+  const updated = setEnvVar(readFileSync(envPath, 'utf-8'), lensEnvVarName, lensAddress);
+  writeFileSync(envPath, updated, 'utf-8');
+  console.log(`✅ Saved ${lensEnvVarName} to ${envPath}`);
+}
+
 async function main() {
   const [deployer] = await ethers.getSigners();
   console.log(`Deploying contracts with the account: ${deployer.address}`);
@@ -76,10 +109,12 @@ async function main() {
   // Usage: UPGRADE=1 npx hardhat run scripts/deploy.ts --network sepolia
   const isUpgrade = process.env.UPGRADE === '1';
 
-  // .env path and variable — Sepolia deployments write to a separate key so
+  // .env path and variables — Sepolia deployments write to separate keys so
   // PUBLIC_VOUCH_VAULT_ADDRESS always holds the mainnet/local address.
   const envPath = path.resolve(__dirname, '../../../.env');
-  const envVarName = network.name === 'sepolia' ? 'SEPOLIA_VOUCH_VAULT_ADDRESS' : 'PUBLIC_VOUCH_VAULT_ADDRESS';
+  const isSepolia = network.name === 'sepolia';
+  const envVarName = isSepolia ? 'SEPOLIA_VOUCH_VAULT_ADDRESS' : 'PUBLIC_VOUCH_VAULT_ADDRESS';
+  const lensEnvVarName = isSepolia ? 'SEPOLIA_VOUCH_VAULT_LENS_ADDRESS' : 'PUBLIC_VOUCH_VAULT_LENS_ADDRESS';
   let env = '';
   let proxyAddress = '';
 
@@ -104,7 +139,8 @@ async function main() {
     const upgradedVault = (await ethers.getContractAt('VouchVault', address)) as unknown as VouchVault;
     await applyProtocolConfig(upgradedVault, env);
     await applyScoreSigner(upgradedVault, env);
-    // No need to update .env, address stays the same
+    // Deploy lens if it hasn't been deployed yet (vault address unchanged after upgrade).
+    await deployLens(address, env, envPath, lensEnvVarName, true);
     return;
   }
 
@@ -123,22 +159,15 @@ async function main() {
   await applyScoreSigner(deployedVault, env);
 
   // Inject contract address into root .env
-  const envLine = `${envVarName}=${address}`;
   if (!existsSync(envPath)) {
-    env = envLine;
+    env = `${envVarName}=${address}\n`;
   } else {
-    // Check if the variable already exists
-    if (new RegExp(`^${envVarName}=`, 'm').test(env)) {
-      // Replace existing line
-      env = env.replace(new RegExp(`^${envVarName}=.*`, 'm'), envLine);
-    } else {
-      // Append to the end, ensuring there is a newline first
-      env = env.trimEnd() + `\n${envLine}\n`;
-    }
+    env = setEnvVar(env, envVarName, address);
   }
-
   writeFileSync(envPath, env, 'utf-8');
   console.log(`✅ Saved ${envVarName} to ${envPath}`);
+
+  await deployLens(address, env, envPath, lensEnvVarName);
 }
 
 main().catch((error) => {

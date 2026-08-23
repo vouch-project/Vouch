@@ -136,7 +136,8 @@ const parseLoanId = (contract: VouchVault, receipt: ethers.TransactionReceipt, e
 
 /**
  * Sign a loan request as the borrower (EIP-712).
- * Returns the signature and the on-chain digest (from hashLoanRequest).
+ * Returns the signature and the EIP-712 digest, computed client-side with
+ * ethers.TypedDataEncoder over the same domain/types the contract hashes internally.
  */
 export const signLoanRequest = async (request: SignedLoanRequest): Promise<{ signature: string; digest: string }> => {
   const contract = await getVouchVaultContract();
@@ -148,14 +149,19 @@ export const signLoanRequest = async (request: SignedLoanRequest): Promise<{ sig
     LOAN_REQUEST_TYPES as unknown as Record<string, ethers.TypedDataField[]>,
     request,
   );
-  const digest = await contract.hashLoanRequest(request);
+  const digest = ethers.TypedDataEncoder.hash(
+    domain,
+    LOAN_REQUEST_TYPES as unknown as Record<string, ethers.TypedDataField[]>,
+    request,
+  );
 
   return { signature, digest };
 };
 
 /**
  * Sign a lend offer as the lender (EIP-712).
- * Returns the signature and the on-chain digest (from hashLendOffer).
+ * Returns the signature and the EIP-712 digest, computed client-side with
+ * ethers.TypedDataEncoder over the same domain/types the contract hashes internally.
  */
 export const signLendOffer = async (offer: SignedLendOffer): Promise<{ signature: string; digest: string }> => {
   const contract = await getVouchVaultContract();
@@ -167,7 +173,11 @@ export const signLendOffer = async (offer: SignedLendOffer): Promise<{ signature
     LEND_OFFER_TYPES as unknown as Record<string, ethers.TypedDataField[]>,
     offer,
   );
-  const digest = await contract.hashLendOffer(offer);
+  const digest = ethers.TypedDataEncoder.hash(
+    domain,
+    LEND_OFFER_TYPES as unknown as Record<string, ethers.TypedDataField[]>,
+    offer,
+  );
 
   return { signature, digest };
 };
