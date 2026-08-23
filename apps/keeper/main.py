@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
+import sys
 from datetime import UTC, datetime
 
 from pydantic import ValidationError
-from web3.exceptions import ContractLogicError
 
-from chain import VaultChain
+from chain import VaultChain, transient_oracle_error_name
 from config import Settings
 from db import (
     ActionableLoan,
@@ -35,12 +35,26 @@ def _handle_signal() -> None:
     shutdown_event.set()
 
 
+def _log_health_factor_failure(loan_id: int) -> None:
+    """Log a getHealthFactor failure at the right volume for the current exception.
+
+    Must be called from within an `except` block. A stale/missing Chainlink feed is expected on
+    testnets and produces a one-line debug note; anything else gets a full error traceback.
+    """
+    exc = sys.exc_info()[1]
+    name = transient_oracle_error_name(exc) if exc is not None else None
+    if name is not None:
+        logger.debug("skipping loan %s: oracle unavailable (%s)", loan_id, name)
+    else:
+        logger.exception("get_health_factor failed for loan %s", loan_id)
+
+
 def process_loan(loan: ActionableLoan, chain: VaultChain) -> None:
     if loan.status == "active":
         try:
             hf = chain.get_health_factor(loan.on_chain_loan_id)
         except Exception:
-            logger.exception("get_health_factor failed for loan %s", loan.on_chain_loan_id)
+            _log_health_factor_failure(loan.on_chain_loan_id)
             return
         if hf < HF_THRESHOLD:
             try:
@@ -64,14 +78,8 @@ def process_loan(loan: ActionableLoan, chain: VaultChain) -> None:
             return
         try:
             hf = chain.get_health_factor(loan.on_chain_loan_id)
-        except ContractLogicError as exc:
-            if "No price feed" in str(exc):
-                logger.debug("skipping loan %s: no price feed configured", loan.on_chain_loan_id)
-                return
-            logger.exception("get_health_factor failed for loan %s", loan.on_chain_loan_id)
-            return
         except Exception:
-            logger.exception("get_health_factor failed for loan %s", loan.on_chain_loan_id)
+            _log_health_factor_failure(loan.on_chain_loan_id)
             return
         if hf < HF_THRESHOLD:
             try:

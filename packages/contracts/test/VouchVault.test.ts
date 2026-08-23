@@ -2690,6 +2690,54 @@ describe('VouchVault', function () {
       expect(balanceAfter - balanceBefore).to.equal(collateral);
     });
 
+    it('expires a past-deadline loan even when the price feed is stale (feeds set)', async function () {
+      // Regression: expireLoan must not read the oracle once the funding deadline has passed.
+      // Otherwise a stale Chainlink feed (common on testnets) reverts with StalePrice and traps
+      // the borrower's collateral in a loan that is already expirable on time grounds.
+      const { vault, mockToken, owner, borrower, anyone } = await deployForExpiryWithFeeds();
+      const collateral = ethers.parseEther('1'); // healthy ratio, so only the deadline authorizes expiry
+      const principal = ethers.parseUnits('2', 18);
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(
+        vault,
+        owner,
+        borrower.address,
+        10000,
+        ethers.ZeroAddress,
+        await mockToken.getAddress(),
+      );
+      await vault
+        .connect(borrower)
+        .createLoan(
+          ethers.ZeroAddress,
+          0n,
+          await mockToken.getAddress(),
+          principal,
+          0,
+          0,
+          7n * 86400n,
+          8000,
+          10000,
+          ltvExpiry,
+          ltvSig,
+          {
+            value: collateral,
+          },
+        );
+
+      // Advance past the 7-day fund window (also far beyond the 1-hour STALE_PRICE_THRESHOLD, so
+      // the feeds' updatedAt is now stale). getHealthFactor would revert here; expireLoan must not.
+      await ethers.provider.send('evm_increaseTime', [8 * 86400]);
+      await ethers.provider.send('evm_mine', []);
+      await expect(vault.getHealthFactor(0)).to.be.revertedWithCustomError(vault, 'StalePrice');
+
+      const balanceBefore = await ethers.provider.getBalance(borrower.address);
+      await expect(vault.connect(anyone).expireLoan(0))
+        .to.emit(vault, 'LoanExpired')
+        .withArgs(0, borrower.address, (ts: bigint) => ts > 0n);
+      const balanceAfter = await ethers.provider.getBalance(borrower.address);
+      expect(balanceAfter - balanceBefore).to.equal(collateral);
+    });
+
     it('reverts within deadline when loan is healthy (price feeds set)', async function () {
       // HF = (1 ETH * $3200 * 80%) / (2 MOCK * $1000) = $2560 / $2000 = 1.28 — healthy
       const { vault, mockToken, owner, borrower } = await deployForExpiryWithFeeds();
