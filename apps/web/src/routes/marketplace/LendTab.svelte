@@ -176,7 +176,8 @@
     const qualifiesForDiscount =
       offer.trustedRatioBps > 0 &&
       scoreAttestation.sig !== '0x' &&
-      scoreAttestation.score >= offer.scoreThreshold;
+      scoreAttestation.score >= offer.scoreThreshold &&
+      scoreAttestation.expiry > Math.floor(Date.now() / 1000);
     const effectiveRatio = qualifiesForDiscount ? offer.trustedRatioBps : offer.collateralRatioBps;
 
     const colRaw = requiredCollateralRaw(offer, prinTok, chosenColTok, effectiveRatio);
