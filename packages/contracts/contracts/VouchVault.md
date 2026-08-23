@@ -91,6 +91,15 @@ struct Loan {
 
 ### View Functions
 
+> **Read helpers live on `VouchVaultLens`.** To keep `VouchVault` under the 24 576-byte
+> EVM code-size limit, the convenience read helpers below (plus `getFundingDetails` and
+> `getRepaymentDetails`) were moved to a separate, stateless companion contract,
+> `VouchVaultLens`, constructed with the vault address. Call them on a lens instance
+> (`VouchVaultLens(lensAddress).getRepaymentDetails(loanId)`), not on the vault. The lens reads
+> raw loan data via the vault's `getLoanRaw`, `deposits`, and `lockedEthCollateral` getters,
+> which remain on `VouchVault`. `getHealthFactor` remains callable on the vault (the lens also
+> forwards it).
+
 #### balanceOf(address user) → uint256
 
 - Returns the withdrawable ETH deposit balance of `user`.
@@ -112,6 +121,14 @@ struct Loan {
 #### getLoan(uint256 loanId) → (address borrower, address collateralToken, uint256 collateralAmount, uint256 createdAt, bool active)
 
 - Returns the full details of a loan by its ID.
+
+#### getFundingDetails(uint256 loanId) → (address lender, uint256 principalAmount, bool funded, uint256 fundedAt)
+
+- Returns the funding state of a loan.
+
+#### getRepaymentDetails(uint256 loanId) → (uint16 interestRateBps, uint256 durationSeconds, bool repaid, uint256 totalDue, uint256 amountRepaid, uint256 remaining, uint256 fundDeadline)
+
+- Returns repayment progress. `totalDue` includes interest accrued up to the **current block timestamp** (crystallized interest plus pending whole-day accrual on the outstanding principal); once `repaid` it equals the final `amountRepaid`. `remaining = max(totalDue - amountRepaid, 0)`.
 
 ---
 
@@ -168,9 +185,10 @@ struct SignedLendOffer {
 
 ### Functions
 
-#### hashLoanRequest(SignedLoanRequest req) → bytes32 / hashLendOffer(SignedLendOffer offer) → bytes32
+#### Order digests (EIP-712)
 
-- Returns the EIP-712 digest (the same value produced by `TypedDataEncoder.hash(domain, types, value)`). Used off-chain to key/track an order and on-chain as the consumed-order marker.
+- The order digest is the EIP-712 hash of the struct — the value produced by `TypedDataEncoder.hash(domain, types, value)`. It is used off-chain to key/track an order and on-chain as the consumed-order marker.
+- The vault's `hashLoanRequest` / `hashLendOffer` helpers are `internal` (not part of the ABI — omitted to keep the contract under the 24 576-byte limit). Compute the digest **client-side** with `ethers.TypedDataEncoder.hash(domain, types, value)` using the domain and struct field order documented above; it matches what `fill*` / `cancel*` hash internally.
 
 #### fillLoanRequest(SignedLoanRequest req, bytes sig) — payable
 
@@ -202,8 +220,8 @@ struct SignedLendOffer {
 ## Usage Guidelines
 
 - Always check event logs for confirmation of deposits, withdrawals, and loan creation.
-- ETH collateral (via `createLoan`) is locked separately from the withdrawable `deposits` balance — it cannot be withdrawn via `withdraw()`. The aggregate is accessible via `lockedBalanceOf`.
-- ERC20 collateral (via `createLoanWithERC20`) is **not** tracked in `lockedBalanceOf` or `loanLockedBalanceOf`. Query collateral details per loan using `getLoanLockedCollateral(loanId)`.
+- ETH collateral (via `createLoan`) is locked separately from the withdrawable `deposits` balance — it cannot be withdrawn via `withdraw()`. The aggregate is accessible via `VouchVaultLens.lockedBalanceOf` (or the vault's `lockedEthCollateral` mapping getter).
+- ERC20 collateral (via `createLoanWithERC20`) is **not** tracked in `lockedBalanceOf` or `loanLockedBalanceOf`. Query collateral details per loan using `VouchVaultLens.getLoanLockedCollateral(loanId)`.
 - ERC20 collateral requires a prior `approve()` call on the token contract. The vault uses `SafeERC20.safeTransferFrom`, so non-compliant tokens (e.g. those that don't return a boolean) are handled correctly.
 - Only the owner can authorize contract upgrades.
 - Loans are uniquely identified by an auto-incrementing `loanId` starting at 0.

@@ -172,17 +172,27 @@ export type RepaymentDetails = {
 };
 
 // Mirrors VouchVault._currentInterestOwed: crystallized interest + pending whole-day accrual.
-const currentInterestOwed = (loan: {
-  funded: boolean; interestAccrued: bigint; durationSeconds: bigint;
-  lastAccrualAt: bigint; fundedAt: bigint; principalAmount: bigint;
-  principalRepaid: bigint; interestRateBps: bigint;
-}): bigint => {
+// `nowSec` MUST be a chain timestamp (the latest block), not the client clock — the contract
+// accrues against block.timestamp, so using Date.now() here would misstate totalDue/remaining
+// whenever the user's system clock is skewed.
+const currentInterestOwed = (
+  loan: {
+    funded: boolean;
+    interestAccrued: bigint;
+    durationSeconds: bigint;
+    lastAccrualAt: bigint;
+    fundedAt: bigint;
+    principalAmount: bigint;
+    principalRepaid: bigint;
+    interestRateBps: bigint;
+  },
+  nowSec: bigint,
+): bigint => {
   if (!loan.funded) return 0n;
   let owed = loan.interestAccrued;
   if (loan.durationSeconds === 0n) return owed;
   const from = loan.lastAccrualAt === 0n ? loan.fundedAt : loan.lastAccrualAt;
   const dueAt = loan.fundedAt + loan.durationSeconds;
-  const nowSec = BigInt(Math.floor(Date.now() / 1000));
   const cappedNow = nowSec < dueAt ? nowSec : dueAt;
   if (cappedNow > from) {
     const periods = (cappedNow - from) / 86400n;
@@ -194,16 +204,25 @@ const currentInterestOwed = (loan: {
 
 export const getRepaymentDetails = async (onChainLoanId: bigint): Promise<RepaymentDetails> => {
   const contract = await getVouchVaultContract();
-  const loan = await contract.loans(onChainLoanId);
-  const interestOwed = currentInterestOwed({
-    funded: loan.funded, interestAccrued: loan.interestAccrued,
-    durationSeconds: loan.durationSeconds, lastAccrualAt: loan.lastAccrualAt,
-    fundedAt: loan.fundedAt, principalAmount: loan.principalAmount,
-    principalRepaid: loan.principalRepaid, interestRateBps: BigInt(loan.interestRateBps),
-  });
-  const totalDue = loan.repaid
-    ? loan.amountRepaid
-    : loan.funded ? loan.principalAmount + interestOwed : 0n;
+  const provider = contract.runner?.provider;
+  if (!provider) throw new Error('No provider available to read chain time');
+  const [loan, block] = await Promise.all([contract.loans(onChainLoanId), provider.getBlock('latest')]);
+  if (!block) throw new Error('Unable to read latest block for interest accrual');
+  const nowSec = BigInt(block.timestamp);
+  const interestOwed = currentInterestOwed(
+    {
+      funded: loan.funded,
+      interestAccrued: loan.interestAccrued,
+      durationSeconds: loan.durationSeconds,
+      lastAccrualAt: loan.lastAccrualAt,
+      fundedAt: loan.fundedAt,
+      principalAmount: loan.principalAmount,
+      principalRepaid: loan.principalRepaid,
+      interestRateBps: BigInt(loan.interestRateBps),
+    },
+    nowSec,
+  );
+  const totalDue = loan.repaid ? loan.amountRepaid : loan.funded ? loan.principalAmount + interestOwed : 0n;
   const remaining = totalDue > loan.amountRepaid ? totalDue - loan.amountRepaid : 0n;
   return {
     interestRateBps: Number(loan.interestRateBps),

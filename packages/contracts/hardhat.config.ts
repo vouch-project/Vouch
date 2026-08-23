@@ -9,7 +9,15 @@ import path from 'path';
 // config-evaluation time (network `accounts` are read when this file loads).
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-const { SEPOLIA_RPC_URL, DEPLOYER_PRIVATE_KEY, ETHERSCAN_API_KEY } = process.env;
+const { SEPOLIA_RPC_URL, DEPLOYER_PRIVATE_KEY, ETHERSCAN_API_KEY, SOLC_OPTIMIZER_RUNS } = process.env;
+
+// Optimizer `runs` trades deployment size against runtime gas: low values shrink the
+// deployed bytecode, high values cheapen frequently-called functions (deposits, repayments,
+// fills). VouchVault sits just under the 24 576-byte EVM limit, so production/deploy builds
+// MUST use runs=1 to stay deployable. Override via SOLC_OPTIMIZER_RUNS locally (e.g. 200) when
+// benchmarking runtime gas — the local Hardhat network sets allowUnlimitedContractSize, so the
+// resulting oversized artifact still deploys there but is NOT safe to ship on-chain.
+const optimizerRuns = SOLC_OPTIMIZER_RUNS ? Number(SOLC_OPTIMIZER_RUNS) : 1;
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -17,7 +25,7 @@ const config: HardhatUserConfig = {
     settings: {
       optimizer: {
         enabled: true,
-        runs: 1,
+        runs: optimizerRuns,
         details: {
           yul: true,
           yulDetails: { stackAllocation: true },
