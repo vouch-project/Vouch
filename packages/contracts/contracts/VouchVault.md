@@ -63,24 +63,27 @@ struct Loan {
 - **Requirements:** Caller must have a sufficient `deposits` balance.
 - **Note:** Uses `call` for the ETH transfer to avoid gas limit issues.
 
-#### createLoan()
+#### createLoan(address collateralToken, uint256 collateralAmount, address principalToken, uint256 principalAmount, uint16 interestRateBps, uint256 durationSeconds, uint256 fundWindowSeconds, uint16 liquidationThresholdBps, uint16 maxLtvBps, uint256 expiry, bytes sig)
 
-- **Description:** Create a new loan using native ETH as collateral. The sent ETH is locked (not added to the withdrawable `deposits` balance).
-- **Inputs:** None (payable)
-- **Outputs:** None
-- **Events:** `LoanCreated(uint256 indexed loanId, address indexed borrower, address collateralToken, uint256 collateralAmount, uint256 timestamp)`
-- **Requirements:** `msg.value > 0`
-- **Note:** `collateralToken` in the event will be `address(0)` for ETH loans.
-
-#### createLoanWithERC20(address token, uint256 amount)
-
-- **Description:** Create a new loan using an ERC20 token as collateral. Transfers `amount` of `token` from the caller to the vault using OpenZeppelin's `SafeERC20`, which supports non-standard tokens that do not return a boolean (e.g. USDT).
+- **Description:** Create a new loan by depositing collateral (native ETH or an ERC20 token). A single entry point handles both collateral kinds — pass `collateralToken == address(0)` for native ETH, or a token address for ERC20 collateral. ETH collateral is locked (not added to the withdrawable `deposits` balance). ERC20 collateral is transferred in via OpenZeppelin's `SafeERC20`, which supports non-standard tokens that do not return a boolean (e.g. USDT).
 - **Inputs:**
-  - `token` (address): ERC20 token contract address (must not be `address(0)`)
-  - `amount` (uint256): Amount of tokens to lock as collateral
+  - `collateralToken` (address): Collateral token address; `address(0)` for native ETH.
+  - `collateralAmount` (uint256): Amount of ERC20 collateral; ignored for ETH (the sent `msg.value` is used).
+  - `principalToken` (address): Token the borrower wants to receive; `address(0)` for native ETH.
+  - `principalAmount` (uint256): Amount the borrower wants to receive (must be `> 0`).
+  - `interestRateBps` (uint16): Annual interest rate in basis points (e.g. `500` = 5% APR); `0` = interest-free.
+  - `durationSeconds` (uint256): Loan term in seconds; caps interest accrual; `0` = no deadline / no time-based interest.
+  - `fundWindowSeconds` (uint256): Seconds from creation during which the loan may be funded (must be `> 0`).
+  - `liquidationThresholdBps` (uint16): Maximum LTV in basis points; must be in `(0, 10000]` and must not exceed `maxLtvBps`.
+  - `maxLtvBps` (uint16): Backend-attested LTV ceiling for this borrower.
+  - `expiry` (uint256): LTV attestation expiry (unix seconds).
+  - `sig` (bytes): EIP-712 signature over the LTV attestation from `scoreSigner`.
 - **Outputs:** None
-- **Events:** `LoanCreated(uint256 indexed loanId, address indexed borrower, address collateralToken, uint256 collateralAmount, uint256 timestamp)`
-- **Requirements:** Caller must have approved the vault to spend at least `amount` of `token`. `amount > 0`.
+- **Events:** `LoanCreated(uint256 indexed loanId, address indexed borrower, address collateralToken, uint256 collateralAmount, address principalToken, uint256 principalAmount, uint256 timestamp)`
+- **Requirements:**
+  - ETH collateral (`collateralToken == address(0)`): `msg.value > 0`.
+  - ERC20 collateral: `msg.value == 0`, `collateralAmount > 0`, and the caller must have approved the vault to spend at least `collateralAmount`. Fee-on-transfer tokens revert (`FeeOnTransferNotSupported`).
+- **Note:** `collateralToken` in the event is `address(0)` for ETH loans.
 
 #### releaseLoanCollateral(uint256 loanId)
 
@@ -136,7 +139,7 @@ struct Loan {
 
 - **`Deposited(address indexed user, uint256 amount)`**
 - **`Withdrawn(address indexed user, uint256 amount)`**
-- **`LoanCreated(uint256 indexed loanId, address indexed borrower, address collateralToken, uint256 collateralAmount, uint256 timestamp)`**
+- **`LoanCreated(uint256 indexed loanId, address indexed borrower, address collateralToken, uint256 collateralAmount, address principalToken, uint256 principalAmount, uint256 timestamp)`**
 
 ---
 
@@ -221,7 +224,7 @@ struct SignedLendOffer {
 
 - Always check event logs for confirmation of deposits, withdrawals, and loan creation.
 - ETH collateral (via `createLoan`) is locked separately from the withdrawable `deposits` balance — it cannot be withdrawn via `withdraw()`. The aggregate is accessible via `VouchVaultLens.lockedBalanceOf` (or the vault's `lockedEthCollateral` mapping getter).
-- ERC20 collateral (via `createLoanWithERC20`) is **not** tracked in `lockedBalanceOf` or `loanLockedBalanceOf`. Query collateral details per loan using `VouchVaultLens.getLoanLockedCollateral(loanId)`.
+- ERC20 collateral (via `createLoan` with `collateralToken != address(0)`) is **not** tracked in `lockedBalanceOf` or `loanLockedBalanceOf`. Query collateral details per loan using `VouchVaultLens.getLoanLockedCollateral(loanId)`.
 - ERC20 collateral requires a prior `approve()` call on the token contract. The vault uses `SafeERC20.safeTransferFrom`, so non-compliant tokens (e.g. those that don't return a boolean) are handled correctly.
 - Only the owner can authorize contract upgrades.
 - Loans are uniquely identified by an auto-incrementing `loanId` starting at 0.

@@ -310,6 +310,25 @@ export const fundLoan = async (
 ): Promise<ethers.TransactionReceipt> => {
   const contract = await getVouchVaultContract();
 
+  // The vault funds from the loan's on-chain terms (requestedPrincipalToken/Amount), not from the
+  // caller-supplied args. Validate against those terms up front so a stale or bad UI value can't
+  // approve the wrong token/amount (leaving an unintended allowance behind) before the tx reverts.
+  const loan = await contract.loans(onChainLoanId);
+  const onChainToken = isNativeTokenAddress(loan.requestedPrincipalToken)
+    ? ethers.ZeroAddress
+    : loan.requestedPrincipalToken;
+  const suppliedToken = isNativeTokenAddress(principalTokenAddress) ? ethers.ZeroAddress : principalTokenAddress;
+  if (suppliedToken.toLowerCase() !== onChainToken.toLowerCase()) {
+    throw new Error(
+      `Principal token mismatch: loan expects ${onChainToken}, got ${suppliedToken}. Refresh the loan and try again.`,
+    );
+  }
+  if (principalRawAmount !== loan.requestedPrincipalAmount) {
+    throw new Error(
+      `Principal amount mismatch: loan expects ${loan.requestedPrincipalAmount}, got ${principalRawAmount}. Refresh the loan and try again.`,
+    );
+  }
+
   let tx: ethers.TransactionResponse;
 
   if (!principalTokenAddress || principalTokenAddress === ethers.ZeroAddress) {

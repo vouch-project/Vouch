@@ -17,7 +17,10 @@ const { SEPOLIA_RPC_URL, DEPLOYER_PRIVATE_KEY, ETHERSCAN_API_KEY, SOLC_OPTIMIZER
 // MUST use runs=1 to stay deployable. Override via SOLC_OPTIMIZER_RUNS locally (e.g. 200) when
 // benchmarking runtime gas — the local Hardhat network sets allowUnlimitedContractSize, so the
 // resulting oversized artifact still deploys there but is NOT safe to ship on-chain.
-const optimizerRuns = SOLC_OPTIMIZER_RUNS ? Number(SOLC_OPTIMIZER_RUNS) : 1;
+// Coerce to a positive integer; fall back to 1 for missing, non-numeric, zero, or negative values
+// so a bad SOLC_OPTIMIZER_RUNS can never produce a NaN/invalid `runs` that breaks compilation.
+const parsedRuns = Math.trunc(Number(SOLC_OPTIMIZER_RUNS));
+const optimizerRuns = Number.isFinite(parsedRuns) && parsedRuns > 0 ? parsedRuns : 1;
 
 const config: HardhatUserConfig = {
   solidity: {
