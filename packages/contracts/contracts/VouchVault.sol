@@ -64,6 +64,9 @@ error BonusExceedsMax();
 error LtvExceedsAttestedMax();
 error LtvAttestationExpired();
 error InvalidLtvAttestation();
+error SignatureAlreadyUsed();
+error InvalidSignature();
+error UnexpectedEth();
 
 /// @title VouchVault (Upgradeable)
 /// @notice Lending vault contract for the Vouch protocol supporting collateralized loans
@@ -169,7 +172,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     // no fee is taken and the lender receives the full payment.
     address public protocolTreasury;
     uint256 public protocolFeeBps;                        // 1000 = 10% of interest
-    uint256 public constant MAX_PROTOCOL_FEE_BPS = 5000;  // hard cap: 50% of interest
+    uint256 internal constant MAX_PROTOCOL_FEE_BPS = 5000;  // hard cap: 50% of interest
 
     // --- Pull-over-push payouts ---
     // Lender principal+interest and treasury fees are CREDITED here during repayment
@@ -200,7 +203,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     // `principal * minInterestBps / 10000` is charged as interest the moment a loan is funded.
     // 0 (the default) disables the floor, giving pure time-based outstanding-balance interest.
     uint256 public minInterestBps;
-    uint256 public constant MAX_MIN_INTEREST_BPS = 10000; // hard cap: 100% of principal
+    uint256 internal constant MAX_MIN_INTEREST_BPS = 10000; // hard cap: 100% of principal
 
     modifier nonReentrant() {
         if (_reentrancyStatus == _ENTERED) revert ReentrantCall();
@@ -211,11 +214,11 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
 
     // --- Oracle & liquidation ---
     mapping(address token => AggregatorV3Interface) public priceFeeds;
-    uint256 public constant STALE_PRICE_THRESHOLD = 1 hours;
+    uint256 internal constant STALE_PRICE_THRESHOLD = 1 hours;
     mapping(address token => uint8) public tokenDecimals;
 
     uint256 public liquidationBonusBps;                          // default 500 = 5%
-    uint256 public constant MAX_LIQUIDATION_BONUS_BPS = 2000;    // hard cap: 20%
+    uint256 internal constant MAX_LIQUIDATION_BONUS_BPS = 2000;    // hard cap: 20%
 
     // --- Lend offers ---
     mapping(uint256 => LendOffer) public lendOffers;
@@ -239,8 +242,6 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         keccak256("LtvAttestation(address borrower,address collateralToken,address borrowToken,uint16 maxLtvBps,uint256 expiry,uint256 nonce)");
 
     // --- Events ---
-    event Deposited(address indexed user, uint256 amount);
-    event Withdrawn(address indexed user, uint256 amount);
     event LoanCreated(
         uint256 indexed loanId,
         address indexed borrower,
@@ -294,8 +295,6 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     event ProtocolTreasuryUpdated(address indexed treasury);
     event ProtocolFeeUpdated(uint256 feeBps);
     event ProtocolFeeCollected(uint256 indexed loanId, address indexed token, uint256 amount);
-    event MinInterestUpdated(uint256 minInterestBps);
-
     event PaymentCredited(address indexed account, address indexed token, uint256 amount);
     event PaymentWithdrawn(address indexed account, address indexed token, uint256 amount);
 
@@ -307,9 +306,6 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         uint256 collateralReturned,
         uint256 timestamp
     );
-    event LiquidationBonusUpdated(uint256 bonusBps);
-    event ScoreSignerUpdated(address indexed signer);
-    event LtvAttestationUsed(address indexed borrower, uint256 nonce);
 
     event LendOfferCreated(
         uint256 indexed offerId,
@@ -396,7 +392,6 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     function setMinInterestBps(uint256 newMinInterestBps) external onlyOwner {
         if (newMinInterestBps > MAX_MIN_INTEREST_BPS) revert MinInterestExceedsMax();
         minInterestBps = newMinInterestBps;
-        emit MinInterestUpdated(newMinInterestBps);
     }
 
     /**
@@ -406,13 +401,11 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     function setLiquidationBonusBps(uint256 newBonusBps) external onlyOwner {
         if (newBonusBps > MAX_LIQUIDATION_BONUS_BPS) revert BonusExceedsMax();
         liquidationBonusBps = newBonusBps;
-        emit LiquidationBonusUpdated(newBonusBps);
     }
 
     function setScoreSigner(address newSigner) external onlyOwner {
         if (newSigner == address(0)) revert InvalidAddress();
         scoreSigner = newSigner;
-        emit ScoreSignerUpdated(newSigner);
     }
 
     /// @dev Verify an EIP-712 LtvAttestation signed by `scoreSigner` and consume the nonce.
@@ -439,7 +432,6 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         )));
         if (ECDSA.recover(digest, sig) != scoreSigner) revert InvalidLtvAttestation();
         nonces[borrower]++;
-        emit LtvAttestationUsed(borrower, nonce);
     }
 
     /**
@@ -451,6 +443,23 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
             return 0;
         }
         return (interestPortion * protocolFeeBps) / 10000;
+    }
+
+    /// @dev Close out a pre-funding loan, return its collateral to the borrower, and clear locked state.
+    function _returnCollateral(Loan storage loan) internal {
+        uint256 amount = loan.collateralAmount - loan.collateralReleased;
+        loan.active = false;
+        loan.collateralLocked = false;
+        loan.collateralReleased = loan.collateralAmount;
+        if (amount > 0) {
+            if (loan.collateralToken == address(0)) {
+                lockedEthCollateral[loan.borrower] -= amount;
+                (bool ok, ) = payable(loan.borrower).call{value: amount}("");
+                if (!ok) revert EthTransferFailed();
+            } else {
+                IERC20(loan.collateralToken).safeTransfer(loan.borrower, amount);
+            }
+        }
     }
 
     /// @dev Credit a pull-payment to `account` for `token` (address(0) = native ETH).
@@ -509,7 +518,6 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     function deposit() external payable {
         if (msg.value == 0) revert ZeroValue();
         deposits[msg.sender] += msg.value;
-        emit Deposited(msg.sender, msg.value);
     }
 
     /// @notice Create a new loan by depositing collateral (ETH or ERC20).
@@ -597,22 +605,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         if (msg.sender != loan.borrower) revert OnlyBorrower();
         if (loan.funded) revert LoanAlreadyFunded();
 
-        uint256 amount = loan.collateralAmount - loan.collateralReleased;
-
-        loan.active = false;
-        loan.collateralLocked = false;
-        loan.collateralReleased = loan.collateralAmount;
-
-        if (amount > 0) {
-            if (loan.collateralToken == address(0)) {
-                lockedEthCollateral[loan.borrower] -= amount;
-                (bool ok, ) = payable(loan.borrower).call{value: amount}("");
-                if (!ok) revert EthTransferFailed();
-            } else {
-                IERC20(loan.collateralToken).safeTransfer(loan.borrower, amount);
-            }
-        }
-
+        _returnCollateral(loan);
         emit LoanCancelled(loanId, loan.borrower, block.timestamp);
     }
 
@@ -630,22 +623,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
             getHealthFactor(loanId) < 1e18;
         if (!deadlinePassed && !undercollateralized) revert LoanCannotBeExpired();
 
-        uint256 amount = loan.collateralAmount - loan.collateralReleased;
-
-        loan.active = false;
-        loan.collateralLocked = false;
-        loan.collateralReleased = loan.collateralAmount;
-
-        if (amount > 0) {
-            if (loan.collateralToken == address(0)) {
-                lockedEthCollateral[loan.borrower] -= amount;
-                (bool ok, ) = payable(loan.borrower).call{value: amount}("");
-                if (!ok) revert EthTransferFailed();
-            } else {
-                IERC20(loan.collateralToken).safeTransfer(loan.borrower, amount);
-            }
-        }
-
+        _returnCollateral(loan);
         emit LoanExpired(loanId, loan.borrower, block.timestamp);
     }
 
@@ -790,16 +768,16 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     ///         the lender supplies principal (ETH or ERC20), a funded loan is created,
     ///         and the signature digest is consumed to prevent replay.
     function fillLoanRequest(SignedLoanRequest calldata req, bytes calldata sig) external payable nonReentrant {
-        require(req.collateralToken != address(0), "Collateral must be ERC20");
-        require(req.collateralAmount > 0, "Collateral must be > 0");
-        require(req.principalAmount > 0, "Principal must be > 0");
-        require(req.maxLtvBps > 0 && req.maxLtvBps <= 10000, "Invalid maxLtvBps");
-        require(req.interestRateBps <= 10000, "Interest rate cannot exceed 100%");
-        require(block.timestamp <= req.deadline, "Request expired");
+        if (req.collateralToken == address(0)) revert InvalidToken();
+        if (req.collateralAmount == 0) revert ZeroValue();
+        if (req.principalAmount == 0) revert ZeroValue();
+        if (req.maxLtvBps == 0 || req.maxLtvBps > 10000) revert InvalidMaxLtv();
+        if (req.interestRateBps > 10000) revert InvalidInterestRate();
+        if (block.timestamp > req.deadline) revert OfferExpired();
 
         bytes32 digest = hashLoanRequest(req);
-        require(!consumedSignatures[digest], "Signature already used");
-        require(ECDSA.recover(digest, sig) == req.borrower, "Invalid signature");
+        if (consumedSignatures[digest]) revert SignatureAlreadyUsed();
+        if (ECDSA.recover(digest, sig) != req.borrower) revert InvalidSignature();
 
         // Checks-effects-interactions: mark consumed before any external call.
         consumedSignatures[digest] = true;
@@ -808,12 +786,12 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         uint256 balBefore = IERC20(req.collateralToken).balanceOf(address(this));
         IERC20(req.collateralToken).safeTransferFrom(req.borrower, address(this), req.collateralAmount);
         uint256 received = IERC20(req.collateralToken).balanceOf(address(this)) - balBefore;
-        require(received == req.collateralAmount, "Fee-on-transfer collateral not supported");
+        if (received != req.collateralAmount) revert FeeOnTransferNotSupported();
 
         // Convert the LTV (<=10000) into an implied collateral ratio (>=10000):
         // impliedRatioBps = 10000 * 10000 / maxLtvBps
         // e.g. maxLtvBps=6500 -> 10000^2/6500 ~= 15384 bps ~= 153.84% collateralization.
-        // The require above ensures maxLtvBps > 0, so division is safe.
+        // The check above ensures maxLtvBps > 0, so division is safe.
         uint256 impliedRatioBps = Math.mulDiv(10000, 10000, req.maxLtvBps);
         _checkCollateralValueRaw(req.principalToken, req.principalAmount, req.collateralToken, req.collateralAmount, impliedRatioBps);
 
@@ -821,13 +799,13 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
 
         // Lender (msg.sender) supplies principal to borrower.
         if (req.principalToken == address(0)) {
-            require(msg.value == req.principalAmount, "Incorrect ETH principal");
+            if (msg.value != req.principalAmount) revert InvalidAmount();
             _payoutEth(req.borrower, req.principalAmount);
         } else {
-            require(msg.value == 0, "Unexpected ETH");
+            if (msg.value != 0) revert UnexpectedEth();
             uint256 pBefore = IERC20(req.principalToken).balanceOf(address(this));
             IERC20(req.principalToken).safeTransferFrom(msg.sender, address(this), req.principalAmount);
-            require(IERC20(req.principalToken).balanceOf(address(this)) - pBefore == req.principalAmount, "Fee-on-transfer principal not supported");
+            if (IERC20(req.principalToken).balanceOf(address(this)) - pBefore != req.principalAmount) revert FeeOnTransferNotSupported();
             _payoutToken(req.principalToken, req.borrower, req.principalAmount);
         }
 
@@ -881,17 +859,17 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     /// @param collateralAmount Amount of ERC20 collateral to pull when collateralToken != address(0). Ignored for ETH collateral (uses msg.value).
     /// @param sig              EIP-712 signature from offer.lender over the offer hash.
     function fillLendOffer(SignedLendOffer calldata offer, address collateralToken, uint256 collateralAmount, bytes calldata sig) external payable nonReentrant {
-        require(offer.principalToken != address(0), "Principal must be ERC20");
-        require(offer.principalAmount > 0, "Principal must be > 0");
-        require(offer.collateralRatioBps >= 10000, "Collateral ratio must be >= 100%");
-        require(offer.trustedRatioBps == 0 || (offer.trustedRatioBps >= 10000 && offer.trustedRatioBps <= offer.collateralRatioBps), "Invalid trustedRatioBps");
-        require(offer.maxLtvBps > 0 && offer.maxLtvBps <= 10000, "Invalid maxLtvBps");
-        require(offer.interestRateBps <= 10000, "Interest rate cannot exceed 100%");
-        require(block.timestamp <= offer.deadline, "Offer expired");
+        if (offer.principalToken == address(0)) revert InvalidToken();
+        if (offer.principalAmount == 0) revert ZeroValue();
+        if (offer.collateralRatioBps < 10000) revert InvalidCollateralRatio();
+        if (offer.trustedRatioBps != 0 && (offer.trustedRatioBps < 10000 || offer.trustedRatioBps > offer.collateralRatioBps)) revert InvalidTrustedRatio();
+        if (offer.maxLtvBps == 0 || offer.maxLtvBps > 10000) revert InvalidMaxLtv();
+        if (offer.interestRateBps > 10000) revert InvalidInterestRate();
+        if (block.timestamp > offer.deadline) revert OfferExpired();
 
         bytes32 digest = hashLendOffer(offer);
-        require(!consumedSignatures[digest], "Signature already used");
-        require(ECDSA.recover(digest, sig) == offer.lender, "Invalid signature");
+        if (consumedSignatures[digest]) revert SignatureAlreadyUsed();
+        if (ECDSA.recover(digest, sig) != offer.lender) revert InvalidSignature();
 
         // Checks-effects-interactions: mark consumed before any external call.
         consumedSignatures[digest] = true;
@@ -902,20 +880,20 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         uint256 _collateralAmount;
         if (collateralToken == address(0)) {
             // ETH collateral path
-            require(msg.value > 0, "Collateral required");
+            if (msg.value == 0) revert ZeroValue();
             _collateralToken = address(0);
             _collateralAmount = msg.value;
             lockedEthCollateral[msg.sender] += msg.value;
         } else {
             // ERC20 collateral path
-            require(msg.value == 0, "Unexpected ETH");
-            require(collateralAmount > 0, "Collateral required");
+            if (msg.value != 0) revert UnexpectedEth();
+            if (collateralAmount == 0) revert ZeroValue();
             _collateralToken = collateralToken;
             _collateralAmount = collateralAmount;
             uint256 balBefore = IERC20(_collateralToken).balanceOf(address(this));
             IERC20(_collateralToken).safeTransferFrom(msg.sender, address(this), _collateralAmount);
             uint256 received = IERC20(_collateralToken).balanceOf(address(this)) - balBefore;
-            require(received == _collateralAmount, "Fee-on-transfer collateral not supported");
+            if (received != _collateralAmount) revert FeeOnTransferNotSupported();
         }
 
         // Signed offers fill at the base collateralRatioBps (no score attestation at fill time).
@@ -925,7 +903,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         // Pull ERC20 principal from lender (fee-on-transfer guard), then disburse to borrower.
         uint256 pBefore = IERC20(offer.principalToken).balanceOf(address(this));
         IERC20(offer.principalToken).safeTransferFrom(offer.lender, address(this), offer.principalAmount);
-        require(IERC20(offer.principalToken).balanceOf(address(this)) - pBefore == offer.principalAmount, "Fee-on-transfer principal not supported");
+        if (IERC20(offer.principalToken).balanceOf(address(this)) - pBefore != offer.principalAmount) revert FeeOnTransferNotSupported();
 
         uint256 loanId = _createLoanFromSignedOffer(offer, msg.sender, _collateralToken, _collateralAmount);
         _payoutToken(offer.principalToken, msg.sender, offer.principalAmount);
@@ -937,9 +915,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     /// @dev    Only the borrower may cancel. Marks the digest as consumed to prevent any future fill.
     /// @param req The loan request to cancel.
     function cancelSignedLoanRequest(SignedLoanRequest calldata req) external {
-        require(msg.sender == req.borrower, "Not signer");
+        if (msg.sender != req.borrower) revert OnlyBorrower();
         bytes32 digest = hashLoanRequest(req);
-        require(!consumedSignatures[digest], "Signature already used");
+        if (consumedSignatures[digest]) revert SignatureAlreadyUsed();
         consumedSignatures[digest] = true;
         emit SignedLoanRequestCancelled(digest, req.borrower);
     }
@@ -948,9 +926,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     /// @dev    Only the lender may cancel. Marks the digest as consumed to prevent any future fill.
     /// @param offer The lend offer to cancel.
     function cancelSignedLendOffer(SignedLendOffer calldata offer) external {
-        require(msg.sender == offer.lender, "Not signer");
+        if (msg.sender != offer.lender) revert OnlyLender();
         bytes32 digest = hashLendOffer(offer);
-        require(!consumedSignatures[digest], "Signature already used");
+        if (consumedSignatures[digest]) revert SignatureAlreadyUsed();
         consumedSignatures[digest] = true;
         emit SignedLendOfferCancelled(digest, offer.lender);
     }
@@ -1139,8 +1117,6 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
 
         (bool success, ) = payable(msg.sender).call{value: amount}("");
         if (!success) revert EthTransferFailed();
-
-        emit Withdrawn(msg.sender, amount);
     }
 
     /**
@@ -1300,12 +1276,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         if (block.timestamp - updatedAt > STALE_PRICE_THRESHOLD) revert StalePrice();
         uint8 feedDecimals = feed.decimals();
         if (feedDecimals > 18) revert FeedDecimalsTooLarge();
-        // Normalize to 18 decimals
-        if (feedDecimals < 18) {
-            return uint256(price) * (10 ** (18 - feedDecimals));
-        } else if (feedDecimals > 18) {
-            return uint256(price) / (10 ** (feedDecimals - 18));
-        }
+        if (feedDecimals < 18) return uint256(price) * (10 ** (18 - feedDecimals));
         return uint256(price);
     }
 
@@ -1606,58 +1577,6 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         loan.lastAccrualAt = from + periods * ACCRUAL_PERIOD;
     }
 
-    /**
-     * @notice Returns repayment-related details for a loan.
-     * @return interestRateBps  Agreed ANNUAL interest rate in basis points.
-     * @return durationSeconds  Agreed loan duration in seconds (0 = no deadline).
-     * @return repaid           Whether the loan has been fully repaid.
-     * @return totalDue         Principal + accrued interest owed right now (0 if not funded).
-     * @return amountRepaid     Cumulative amount repaid so far.
-     * @return remaining        Amount still outstanding right now.
-     * @return fundDeadline     Timestamp after which the loan can no longer be funded.
-     */
-    function getRepaymentDetails(uint256 loanId) external view returns (
-        uint16 interestRateBps,
-        uint256 durationSeconds,
-        bool repaid,
-        uint256 totalDue,
-        uint256 amountRepaid,
-        uint256 remaining,
-        uint256 fundDeadline
-    ) {
-        Loan memory loan = loans[loanId];
-        uint256 due = loan.repaid
-            ? loan.amountRepaid
-            : loan.funded ? loan.principalAmount + _currentInterestOwed(loan) : 0;
-        return (
-            loan.interestRateBps,
-            loan.durationSeconds,
-            loan.repaid,
-            due,
-            loan.amountRepaid,
-            due > loan.amountRepaid ? due - loan.amountRepaid : 0,
-            loan.fundDeadline
-        );
-    }
-
-    /**
-     * @notice Returns funding details for a given loan.
-     * @param loanId The loan to query.
-     * @return lender          Address that funded the loan (zero address if unfunded).
-     * @return principalAmount ETH amount sent by the lender.
-     * @return funded          Whether the loan has been funded.
-     * @return fundedAt        Timestamp of funding (0 if unfunded).
-     */
-    function getFundingDetails(uint256 loanId) external view returns (
-        address lender,
-        uint256 principalAmount,
-        bool funded,
-        uint256 fundedAt
-    ) {
-        Loan memory loan = loans[loanId];
-        return (loan.lender, loan.principalAmount, loan.funded, loan.fundedAt);
-    }
-
     // --- EIP-712 domain ---
 
     function _EIP712Name() internal pure override returns (string memory) { return "Vouch"; }
@@ -1665,7 +1584,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
 
     // --- Signed order hash functions ---
 
-    function hashLoanRequest(SignedLoanRequest calldata req) public view returns (bytes32) {
+    function hashLoanRequest(SignedLoanRequest calldata req) internal view returns (bytes32) {
         return _hashTypedDataV4(keccak256(abi.encode(
             LOAN_REQUEST_TYPEHASH, req.borrower, req.collateralToken, req.collateralAmount,
             req.principalToken, req.principalAmount, req.interestRateBps, req.durationSeconds,
@@ -1673,7 +1592,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         )));
     }
 
-    function hashLendOffer(SignedLendOffer calldata offer) public view returns (bytes32) {
+    function hashLendOffer(SignedLendOffer calldata offer) internal view returns (bytes32) {
         return _hashTypedDataV4(keccak256(abi.encode(
             LEND_OFFER_TYPEHASH, offer.lender, offer.principalToken, offer.principalAmount,
             offer.collateralRatioBps, offer.trustedRatioBps, offer.scoreThreshold,

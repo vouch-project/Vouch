@@ -171,21 +171,48 @@ export type RepaymentDetails = {
   collateralReleased: bigint;
 };
 
+// Mirrors VouchVault._currentInterestOwed: crystallized interest + pending whole-day accrual.
+const currentInterestOwed = (loan: {
+  funded: boolean; interestAccrued: bigint; durationSeconds: bigint;
+  lastAccrualAt: bigint; fundedAt: bigint; principalAmount: bigint;
+  principalRepaid: bigint; interestRateBps: bigint;
+}): bigint => {
+  if (!loan.funded) return 0n;
+  let owed = loan.interestAccrued;
+  if (loan.durationSeconds === 0n) return owed;
+  const from = loan.lastAccrualAt === 0n ? loan.fundedAt : loan.lastAccrualAt;
+  const dueAt = loan.fundedAt + loan.durationSeconds;
+  const nowSec = BigInt(Math.floor(Date.now() / 1000));
+  const cappedNow = nowSec < dueAt ? nowSec : dueAt;
+  if (cappedNow > from) {
+    const periods = (cappedNow - from) / 86400n;
+    const outstanding = loan.principalAmount - loan.principalRepaid;
+    owed += (outstanding * loan.interestRateBps * periods) / (10000n * 365n);
+  }
+  return owed;
+};
+
 export const getRepaymentDetails = async (onChainLoanId: bigint): Promise<RepaymentDetails> => {
   const contract = await getVouchVaultContract();
-  const [loan, details] = await Promise.all([
-    contract.loans(onChainLoanId),
-    contract.getRepaymentDetails(onChainLoanId),
-  ]);
-
+  const loan = await contract.loans(onChainLoanId);
+  const interestOwed = currentInterestOwed({
+    funded: loan.funded, interestAccrued: loan.interestAccrued,
+    durationSeconds: loan.durationSeconds, lastAccrualAt: loan.lastAccrualAt,
+    fundedAt: loan.fundedAt, principalAmount: loan.principalAmount,
+    principalRepaid: loan.principalRepaid, interestRateBps: BigInt(loan.interestRateBps),
+  });
+  const totalDue = loan.repaid
+    ? loan.amountRepaid
+    : loan.funded ? loan.principalAmount + interestOwed : 0n;
+  const remaining = totalDue > loan.amountRepaid ? totalDue - loan.amountRepaid : 0n;
   return {
-    interestRateBps: Number(details[0]),
-    durationSeconds: details[1],
-    repaid: details[2],
-    totalDue: details[3],
-    amountRepaid: details[4],
-    remaining: details[5],
-    fundDeadline: details[6],
+    interestRateBps: Number(loan.interestRateBps),
+    durationSeconds: loan.durationSeconds,
+    repaid: loan.repaid,
+    totalDue,
+    amountRepaid: loan.amountRepaid,
+    remaining,
+    fundDeadline: loan.fundDeadline,
     principalRepaid: loan.principalRepaid,
     collateralReleased: loan.collateralReleased,
   };

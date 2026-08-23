@@ -148,7 +148,7 @@ export const signLoanRequest = async (request: SignedLoanRequest): Promise<{ sig
     LOAN_REQUEST_TYPES as unknown as Record<string, ethers.TypedDataField[]>,
     request,
   );
-  const digest = await contract.hashLoanRequest(request);
+  const digest = ethers.TypedDataEncoder.hash(domain, LOAN_REQUEST_TYPES as unknown as Record<string, ethers.TypedDataField[]>, request);
 
   return { signature, digest };
 };
@@ -167,7 +167,7 @@ export const signLendOffer = async (offer: SignedLendOffer): Promise<{ signature
     LEND_OFFER_TYPES as unknown as Record<string, ethers.TypedDataField[]>,
     offer,
   );
-  const digest = await contract.hashLendOffer(offer);
+  const digest = ethers.TypedDataEncoder.hash(domain, LEND_OFFER_TYPES as unknown as Record<string, ethers.TypedDataField[]>, offer);
 
   return { signature, digest };
 };

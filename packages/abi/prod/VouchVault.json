@@ -175,6 +175,16 @@
   },
   {
     "inputs": [],
+    "name": "InvalidSignature",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidToken",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "InvalidTrustedRatio",
     "type": "error"
   },
@@ -338,6 +348,11 @@
   },
   {
     "inputs": [],
+    "name": "SignatureAlreadyUsed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "StalePrice",
     "type": "error"
   },
@@ -364,27 +379,13 @@
   },
   {
     "inputs": [],
-    "name": "ZeroValue",
+    "name": "UnexpectedEth",
     "type": "error"
   },
   {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      }
-    ],
-    "name": "Deposited",
-    "type": "event"
+    "inputs": [],
+    "name": "ZeroValue",
+    "type": "error"
   },
   {
     "anonymous": false,
@@ -491,19 +492,6 @@
       }
     ],
     "name": "LendOfferExpired",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "bonusBps",
-        "type": "uint256"
-      }
-    ],
-    "name": "LiquidationBonusUpdated",
     "type": "event"
   },
   {
@@ -789,38 +777,6 @@
       {
         "indexed": true,
         "internalType": "address",
-        "name": "borrower",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "nonce",
-        "type": "uint256"
-      }
-    ],
-    "name": "LtvAttestationUsed",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "minInterestBps",
-        "type": "uint256"
-      }
-    ],
-    "name": "MinInterestUpdated",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
         "name": "previousOwner",
         "type": "address"
       },
@@ -933,19 +889,6 @@
       }
     ],
     "name": "ProtocolTreasuryUpdated",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "signer",
-        "type": "address"
-      }
-    ],
-    "name": "ScoreSignerUpdated",
     "type": "event"
   },
   {
@@ -1120,77 +1063,6 @@
     ],
     "name": "Upgraded",
     "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      }
-    ],
-    "name": "Withdrawn",
-    "type": "event"
-  },
-  {
-    "inputs": [],
-    "name": "MAX_LIQUIDATION_BONUS_BPS",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "MAX_MIN_INTEREST_BPS",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "MAX_PROTOCOL_FEE_BPS",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "STALE_PRICE_THRESHOLD",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
   },
   {
     "inputs": [],
@@ -1810,40 +1682,6 @@
         "type": "uint256"
       }
     ],
-    "name": "getFundingDetails",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "lender",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "principalAmount",
-        "type": "uint256"
-      },
-      {
-        "internalType": "bool",
-        "name": "funded",
-        "type": "bool"
-      },
-      {
-        "internalType": "uint256",
-        "name": "fundedAt",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "loanId",
-        "type": "uint256"
-      }
-    ],
     "name": "getHealthFactor",
     "outputs": [
       {
@@ -1986,202 +1824,6 @@
         "internalType": "struct VouchVault.Loan",
         "name": "",
         "type": "tuple"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "loanId",
-        "type": "uint256"
-      }
-    ],
-    "name": "getRepaymentDetails",
-    "outputs": [
-      {
-        "internalType": "uint16",
-        "name": "interestRateBps",
-        "type": "uint16"
-      },
-      {
-        "internalType": "uint256",
-        "name": "durationSeconds",
-        "type": "uint256"
-      },
-      {
-        "internalType": "bool",
-        "name": "repaid",
-        "type": "bool"
-      },
-      {
-        "internalType": "uint256",
-        "name": "totalDue",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "amountRepaid",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "remaining",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "fundDeadline",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "components": [
-          {
-            "internalType": "address",
-            "name": "lender",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "principalToken",
-            "type": "address"
-          },
-          {
-            "internalType": "uint256",
-            "name": "principalAmount",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint16",
-            "name": "collateralRatioBps",
-            "type": "uint16"
-          },
-          {
-            "internalType": "uint16",
-            "name": "trustedRatioBps",
-            "type": "uint16"
-          },
-          {
-            "internalType": "uint16",
-            "name": "scoreThreshold",
-            "type": "uint16"
-          },
-          {
-            "internalType": "uint16",
-            "name": "maxLtvBps",
-            "type": "uint16"
-          },
-          {
-            "internalType": "uint16",
-            "name": "interestRateBps",
-            "type": "uint16"
-          },
-          {
-            "internalType": "uint256",
-            "name": "durationSeconds",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "nonce",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "deadline",
-            "type": "uint256"
-          }
-        ],
-        "internalType": "struct VouchVault.SignedLendOffer",
-        "name": "offer",
-        "type": "tuple"
-      }
-    ],
-    "name": "hashLendOffer",
-    "outputs": [
-      {
-        "internalType": "bytes32",
-        "name": "",
-        "type": "bytes32"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "components": [
-          {
-            "internalType": "address",
-            "name": "borrower",
-            "type": "address"
-          },
-          {
-            "internalType": "address",
-            "name": "collateralToken",
-            "type": "address"
-          },
-          {
-            "internalType": "uint256",
-            "name": "collateralAmount",
-            "type": "uint256"
-          },
-          {
-            "internalType": "address",
-            "name": "principalToken",
-            "type": "address"
-          },
-          {
-            "internalType": "uint256",
-            "name": "principalAmount",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint16",
-            "name": "interestRateBps",
-            "type": "uint16"
-          },
-          {
-            "internalType": "uint256",
-            "name": "durationSeconds",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint16",
-            "name": "maxLtvBps",
-            "type": "uint16"
-          },
-          {
-            "internalType": "uint256",
-            "name": "nonce",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "deadline",
-            "type": "uint256"
-          }
-        ],
-        "internalType": "struct VouchVault.SignedLoanRequest",
-        "name": "req",
-        "type": "tuple"
-      }
-    ],
-    "name": "hashLoanRequest",
-    "outputs": [
-      {
-        "internalType": "bytes32",
-        "name": "",
-        "type": "bytes32"
       }
     ],
     "stateMutability": "view",

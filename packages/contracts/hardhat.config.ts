@@ -15,7 +15,14 @@ const config: HardhatUserConfig = {
   solidity: {
     version: '0.8.24',
     settings: {
-      optimizer: { enabled: true, runs: 200 },
+      optimizer: {
+        enabled: true,
+        runs: 1,
+        details: {
+          yul: true,
+          yulDetails: { stackAllocation: true },
+        },
+      },
       viaIR: true,
       // Requires a Cancun-compatible network (Sepolia post-EIP-4844, Hardhat ≥2.22).
       // Update this before deploying to any chain that hasn't activated Cancun.
