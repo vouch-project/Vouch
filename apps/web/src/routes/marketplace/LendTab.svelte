@@ -13,6 +13,7 @@
   import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
   import { cn } from '$lib/utils';
   import { fillLendOffer, type SignedLendOffer } from '$lib/wallet/signedOrders';
+  import { getScoreAttestation } from '$api/scoring';
   import { acceptLendOffer, isNativeTokenAddress, type ScoreAttestation } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Check, Clock, Copy, Info, RefreshCw, Zap } from '@lucide/svelte';
@@ -159,11 +160,18 @@
       signedError = 'Missing price data to size the required collateral.';
       return;
     }
+    const contractAddress = chainInfo.contractAddress;
+    const networkId = wallet.networkId;
+    if (!contractAddress || !networkId) {
+      signedError = 'Wallet not connected to a supported network.';
+      return;
+    }
     const colTokenAddress = isNativeTokenAddress(chosenColTok.address) ? ethers.ZeroAddress : chosenColTok.address;
     fillingDigest = row.digest;
     signedError = null;
     try {
-      await fillLendOffer(offer, colTokenAddress, colRaw, row.signature);
+      const scoreAttestation = await getScoreAttestation(wallet.address!, contractAddress, networkId);
+      await fillLendOffer(offer, colTokenAddress, colRaw, row.signature, scoreAttestation);
       signedOffers = signedOffers.filter((r) => r.digest !== row.digest);
     } catch (e) {
       signedError = getErrorMessage(e);

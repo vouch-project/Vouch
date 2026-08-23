@@ -18,3 +18,16 @@ export const getLtvAttestation = async (
       params: { collateralToken, borrowToken, contractAddress, chainId },
     })
   ).data;
+
+export type ScoreAttestation = { score: number; expiry: number; sig: string };
+
+export const getScoreAttestation = async (
+  address: string,
+  contractAddress: string,
+  chainId: number,
+): Promise<ScoreAttestation> =>
+  (
+    await axiosApi.get<ScoreAttestation>(`/scoring/${address}/attestation`, {
+      params: { contractAddress, chainId },
+    })
+  ).data;
