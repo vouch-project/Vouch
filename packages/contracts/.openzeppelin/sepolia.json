@@ -2961,6 +2961,569 @@
           ]
         }
       }
+    },
+    "367f6b282a0ed442c40a1e09a5d0d65aca7e0c65e5769a35613684be8f1ed285": {
+      "address": "0x204cEfDb490CB5C05872dA2B9710e8DEad8f3Bb0",
+      "txHash": "0x69e99dd552811c8948830d9f6a3f326264354f6bb532ae4ecab4b7bb31651b23",
+      "layout": {
+        "solcVersion": "0.8.24",
+        "storage": [
+          {
+            "label": "deposits",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:157"
+          },
+          {
+            "label": "loans",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_mapping(t_uint256,t_struct(Loan)9400_storage)",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:158"
+          },
+          {
+            "label": "nextLoanId",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_uint256",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:159"
+          },
+          {
+            "label": "lockedEthCollateral",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:160"
+          },
+          {
+            "label": "protocolTreasury",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_address",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:173"
+          },
+          {
+            "label": "protocolFeeBps",
+            "offset": 0,
+            "slot": "5",
+            "type": "t_uint256",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:174"
+          },
+          {
+            "label": "pendingPayments",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_mapping(t_address,t_mapping(t_address,t_uint256))",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:182"
+          },
+          {
+            "label": "_reentrancyStatus",
+            "offset": 0,
+            "slot": "7",
+            "type": "t_uint256",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:189"
+          },
+          {
+            "label": "minInterestBps",
+            "offset": 0,
+            "slot": "8",
+            "type": "t_uint256",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:205"
+          },
+          {
+            "label": "priceFeeds",
+            "offset": 0,
+            "slot": "9",
+            "type": "t_mapping(t_address,t_contract(AggregatorV3Interface)45)",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:216"
+          },
+          {
+            "label": "tokenDecimals",
+            "offset": 0,
+            "slot": "10",
+            "type": "t_mapping(t_address,t_uint8)",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:218"
+          },
+          {
+            "label": "liquidationBonusBps",
+            "offset": 0,
+            "slot": "11",
+            "type": "t_uint256",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:220"
+          },
+          {
+            "label": "lendOffers",
+            "offset": 0,
+            "slot": "12",
+            "type": "t_mapping(t_uint256,t_struct(LendOffer)9427_storage)",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:224"
+          },
+          {
+            "label": "nextLendOfferId",
+            "offset": 0,
+            "slot": "13",
+            "type": "t_uint256",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:225"
+          },
+          {
+            "label": "consumedSignatures",
+            "offset": 0,
+            "slot": "14",
+            "type": "t_mapping(t_bytes32,t_bool)",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:228"
+          },
+          {
+            "label": "scoreSigner",
+            "offset": 0,
+            "slot": "15",
+            "type": "t_address",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:233"
+          },
+          {
+            "label": "nonces",
+            "offset": 0,
+            "slot": "16",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "VouchVault",
+            "src": "contracts/VouchVault.sol:239"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_bytes32": {
+            "label": "bytes32",
+            "numberOfBytes": "32"
+          },
+          "t_string_storage": {
+            "label": "string",
+            "numberOfBytes": "32"
+          },
+          "t_struct(EIP712Storage)174_storage": {
+            "label": "struct EIP712Upgradeable.EIP712Storage",
+            "members": [
+              {
+                "label": "_hashedName",
+                "type": "t_bytes32",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_hashedVersion",
+                "type": "t_bytes32",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "_name",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "_version",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "3"
+              }
+            ],
+            "numberOfBytes": "128"
+          },
+          "t_struct(InitializableStorage)486_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)59_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_contract(AggregatorV3Interface)45": {
+            "label": "contract AggregatorV3Interface",
+            "numberOfBytes": "20"
+          },
+          "t_mapping(t_address,t_contract(AggregatorV3Interface)45)": {
+            "label": "mapping(address => contract AggregatorV3Interface)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_mapping(t_address,t_uint256))": {
+            "label": "mapping(address => mapping(address => uint256))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_uint256)": {
+            "label": "mapping(address => uint256)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_uint8)": {
+            "label": "mapping(address => uint8)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_bytes32,t_bool)": {
+            "label": "mapping(bytes32 => bool)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_struct(LendOffer)9427_storage)": {
+            "label": "mapping(uint256 => struct VouchVault.LendOffer)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_struct(Loan)9400_storage)": {
+            "label": "mapping(uint256 => struct VouchVault.Loan)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(LendOffer)9427_storage": {
+            "label": "struct VouchVault.LendOffer",
+            "members": [
+              {
+                "label": "lender",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "principalToken",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "principalAmount",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "collateralRatioBps",
+                "type": "t_uint16",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "trustedRatioBps",
+                "type": "t_uint16",
+                "offset": 2,
+                "slot": "3"
+              },
+              {
+                "label": "scoreThreshold",
+                "type": "t_uint16",
+                "offset": 4,
+                "slot": "3"
+              },
+              {
+                "label": "maxLtvBps",
+                "type": "t_uint16",
+                "offset": 6,
+                "slot": "3"
+              },
+              {
+                "label": "interestRateBps",
+                "type": "t_uint16",
+                "offset": 8,
+                "slot": "3"
+              },
+              {
+                "label": "durationSeconds",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "acceptDeadline",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "5"
+              },
+              {
+                "label": "active",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "6"
+              },
+              {
+                "label": "accepted",
+                "type": "t_bool",
+                "offset": 1,
+                "slot": "6"
+              },
+              {
+                "label": "acceptedLoanId",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "7"
+              }
+            ],
+            "numberOfBytes": "256"
+          },
+          "t_struct(Loan)9400_storage": {
+            "label": "struct VouchVault.Loan",
+            "members": [
+              {
+                "label": "borrower",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "collateralToken",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "collateralAmount",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "collateralLocked",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "collateralReleased",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "createdAt",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "5"
+              },
+              {
+                "label": "active",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "6"
+              },
+              {
+                "label": "funded",
+                "type": "t_bool",
+                "offset": 1,
+                "slot": "6"
+              },
+              {
+                "label": "repaid",
+                "type": "t_bool",
+                "offset": 2,
+                "slot": "6"
+              },
+              {
+                "label": "fundDeadline",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "7"
+              },
+              {
+                "label": "lender",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "8"
+              },
+              {
+                "label": "requestedPrincipalToken",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "9"
+              },
+              {
+                "label": "requestedPrincipalAmount",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "10"
+              },
+              {
+                "label": "principalAmount",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "11"
+              },
+              {
+                "label": "fundedAt",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "12"
+              },
+              {
+                "label": "interestRateBps",
+                "type": "t_uint16",
+                "offset": 0,
+                "slot": "13"
+              },
+              {
+                "label": "durationSeconds",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "14"
+              },
+              {
+                "label": "amountRepaid",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "15"
+              },
+              {
+                "label": "principalRepaid",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "16"
+              },
+              {
+                "label": "interestAccrued",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "17"
+              },
+              {
+                "label": "lastAccrualAt",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "18"
+              },
+              {
+                "label": "liquidationThresholdBps",
+                "type": "t_uint16",
+                "offset": 0,
+                "slot": "19"
+              },
+              {
+                "label": "lendOfferId",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "20"
+              }
+            ],
+            "numberOfBytes": "672"
+          },
+          "t_uint16": {
+            "label": "uint16",
+            "numberOfBytes": "2"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint8": {
+            "label": "uint8",
+            "numberOfBytes": "1"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.EIP712": [
+            {
+              "contract": "EIP712Upgradeable",
+              "label": "_hashedName",
+              "type": "t_bytes32",
+              "src": "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol:37",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "EIP712Upgradeable",
+              "label": "_hashedVersion",
+              "type": "t_bytes32",
+              "src": "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol:38",
+              "offset": 0,
+              "slot": "1"
+            },
+            {
+              "contract": "EIP712Upgradeable",
+              "label": "_name",
+              "type": "t_string_storage",
+              "src": "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol:40",
+              "offset": 0,
+              "slot": "2"
+            },
+            {
+              "contract": "EIP712Upgradeable",
+              "label": "_version",
+              "type": "t_string_storage",
+              "src": "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol:41",
+              "offset": 0,
+              "slot": "3"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
     }
   }
 }
