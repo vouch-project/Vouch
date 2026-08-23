@@ -15,6 +15,37 @@ logger = logging.getLogger("vouch.keeper.chain")
 
 _ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
+# Oracle-health custom errors raised by VouchVault._getPrice / getHealthFactor. On testnets
+# (Sepolia especially) Chainlink feeds update infrequently, so these reverts are expected and
+# transient — not keeper faults. Callers log them quietly instead of as error-level tracebacks.
+# Keyed by 4-byte selector (keccak of the signature) so we can recognize them even when web3
+# can't decode the ABI and only reports the raw selector (e.g. "0x19abf40e").
+_TRANSIENT_ORACLE_SIGS = (
+    "NoPriceFeed()",
+    "InvalidPrice()",
+    "RoundNotComplete()",
+    "StaleRound()",
+    "PriceTimestampInFuture()",
+    "StalePrice()",
+)
+_TRANSIENT_ORACLE_SELECTORS = {
+    Web3.keccak(text=sig)[:4].hex().lower(): sig[:-2] for sig in _TRANSIENT_ORACLE_SIGS
+}
+
+
+def transient_oracle_error_name(exc: BaseException) -> str | None:
+    """Return the oracle-health error name if `exc` is a stale/missing/incomplete-feed revert.
+
+    Returns None for any other error, so callers can distinguish an expected feed hiccup from a
+    genuine fault. Matches the 4-byte selector against both the exception's `data` attribute and
+    its string form, since web3 surfaces custom errors as either depending on ABI availability.
+    """
+    haystack = f"{getattr(exc, 'data', '')} {exc}".lower()
+    for selector, name in _TRANSIENT_ORACLE_SELECTORS.items():
+        if selector in haystack:
+            return name
+    return None
+
 
 def _abi_search_dirs() -> list[Path]:
     """Directories to look for ABI JSON in, most specific first."""

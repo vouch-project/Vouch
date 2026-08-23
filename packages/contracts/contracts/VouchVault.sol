@@ -618,7 +618,12 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         if (loan.funded) revert LoanAlreadyFunded();
 
         bool deadlinePassed = block.timestamp > loan.fundDeadline;
-        bool undercollateralized = address(priceFeeds[loan.collateralToken]) != address(0) &&
+        // Only read the oracle when the deadline check alone can't authorize expiry. Leading with
+        // `!deadlinePassed` short-circuits the getHealthFactor call (and its staleness revert) once
+        // the funding window has passed, so a stale feed can never trap collateral in a loan that is
+        // already expirable on time grounds.
+        bool undercollateralized = !deadlinePassed &&
+            address(priceFeeds[loan.collateralToken]) != address(0) &&
             address(priceFeeds[loan.requestedPrincipalToken]) != address(0) &&
             getHealthFactor(loanId) < 1e18;
         if (!deadlinePassed && !undercollateralized) revert LoanCannotBeExpired();
