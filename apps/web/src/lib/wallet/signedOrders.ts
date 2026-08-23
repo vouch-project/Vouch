@@ -191,21 +191,27 @@ export type FillResult = {
   loanId: bigint;
 };
 
+export type LtvAttestation = { maxLtvBps: number; expiry: number; sig: string };
+
 /**
  * Fill a signed loan request as the lender (lender supplies principal).
  * - ETH principal: sends value.
  * - ERC20 principal: approves the vault, then calls fillLoanRequest.
  */
-export const fillLoanRequest = async (request: SignedLoanRequest, signature: string): Promise<FillResult> => {
+export const fillLoanRequest = async (
+  request: SignedLoanRequest,
+  signature: string,
+  attestation: LtvAttestation,
+): Promise<FillResult> => {
   const contract = await getVouchVaultContract();
 
   let tx: ethers.TransactionResponse;
 
   if (isNativeTokenAddress(request.principalToken)) {
-    tx = await contract.fillLoanRequest(request, signature, { value: request.principalAmount });
+    tx = await contract.fillLoanRequest(request, signature, attestation.maxLtvBps, attestation.expiry, attestation.sig, { value: request.principalAmount });
   } else {
     await approveERC20IfNeeded(contract, request.principalToken, request.principalAmount);
-    tx = await contract.fillLoanRequest(request, signature);
+    tx = await contract.fillLoanRequest(request, signature, attestation.maxLtvBps, attestation.expiry, attestation.sig);
   }
 
   const receipt = await tx.wait();

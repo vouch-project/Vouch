@@ -14,6 +14,7 @@
   import type { LoanWithTokens } from '$lib/types';
   import { cn } from '$lib/utils';
   import { fillLoanRequest, type SignedLoanRequest } from '$lib/wallet/signedOrders';
+  import { getLtvAttestation } from '$api/scoring';
   import { fundLoan } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Check, Clock, Copy, Info, RefreshCw, TrendingUp, Zap } from '@lucide/svelte';
@@ -80,7 +81,14 @@
     fillingDigest = row.digest;
     signedError = null;
     try {
-      await fillLoanRequest(req, row.signature);
+      const attestation = await getLtvAttestation(
+        row.borrowerAddress,
+        req.collateralToken,
+        req.principalToken,
+        chainInfo.contractAddress!,
+        wallet.networkId!,
+      );
+      await fillLoanRequest(req, row.signature, attestation);
     } catch (e) {
       signedError = getErrorMessage(e);
     } finally {
