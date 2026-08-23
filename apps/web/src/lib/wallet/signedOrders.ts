@@ -194,6 +194,8 @@ export type FillResult = {
 export type LtvAttestation = { maxLtvBps: number; expiry: number; sig: string };
 export type ScoreAttestation = { score: number; expiry: number; sig: string };
 
+const NULL_SCORE_ATTESTATION: ScoreAttestation = { score: 0, expiry: 9999999999, sig: '0x' };
+
 /**
  * Fill a signed loan request as the lender (lender supplies principal).
  * - ETH principal: sends value.
@@ -235,7 +237,7 @@ export const fillLendOffer = async (
   collateralToken: string,
   collateralAmount: bigint,
   signature: string,
-  scoreAttestation: ScoreAttestation,
+  scoreAttestation: ScoreAttestation = NULL_SCORE_ATTESTATION,
 ): Promise<FillResult> => {
   const contract = await getVouchVaultContract();
 

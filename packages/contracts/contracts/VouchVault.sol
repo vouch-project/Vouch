@@ -872,6 +872,9 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     /// @param collateralToken  Collateral token provided by the borrower at fill time (address(0) = native ETH).
     /// @param collateralAmount Amount of ERC20 collateral to pull when collateralToken != address(0). Ignored for ETH collateral (uses msg.value).
     /// @param sig              EIP-712 signature from offer.lender over the offer hash.
+    /// @param score            Borrower's credit score from the backend attestation (0 if not using score discount).
+    /// @param scoreExpiry      Attestation expiry timestamp. Ignored when scoreSig is empty.
+    /// @param scoreSig         Backend signature over (borrower, score, expiry). Pass empty bytes to skip score check and use base collateralRatioBps.
     function fillLendOffer(
         SignedLendOffer calldata offer,
         address collateralToken,

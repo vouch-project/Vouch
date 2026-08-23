@@ -132,7 +132,7 @@
     };
   };
 
-  const requiredCollateralRaw = (offer: SignedLendOffer, principalTok: Token, colTok: Token): bigint | null => {
+  const requiredCollateralRaw = (offer: SignedLendOffer, principalTok: Token, colTok: Token, ratioBps?: number): bigint | null => {
     const principalPriceUsd = tokenPrices.getTokenMeta(principalTok.symbol).priceUsd;
     const colPriceUsd = tokenPrices.getTokenMeta(colTok.symbol).priceUsd;
     if (principalPriceUsd <= 0 || colPriceUsd <= 0) return null;
@@ -142,7 +142,8 @@
     const colPriceInt = BigInt(colPriceIntNum);
     const principalDec = 10n ** BigInt(principalTok.decimals ?? 18);
     const colScale = 10n ** BigInt(colTok.decimals ?? 18);
-    const numer = offer.principalAmount * BigInt(offer.collateralRatioBps) * principalPriceInt * colScale;
+    const effectiveRatio = ratioBps ?? offer.collateralRatioBps;
+    const numer = offer.principalAmount * BigInt(effectiveRatio) * principalPriceInt * colScale;
     const denom = 10000n * colPriceInt * principalDec;
     const colAmountRaw = (numer + denom - 1n) / denom;
     return colAmountRaw + (colAmountRaw * COLLATERAL_BUFFER_BPS) / 10000n;
@@ -155,22 +156,38 @@
       signedError = 'Unable to reconstruct offer — unknown token on this chain.';
       return;
     }
-    const colRaw = requiredCollateralRaw(offer, prinTok, chosenColTok);
-    if (colRaw === null) {
-      signedError = 'Missing price data to size the required collateral.';
-      return;
-    }
     const contractAddress = chainInfo.contractAddress;
     const networkId = wallet.networkId;
     if (!contractAddress || !networkId) {
       signedError = 'Wallet not connected to a supported network.';
       return;
     }
+
+    // Fetch score attestation before sizing collateral so high-score borrowers
+    // benefit from trustedRatioBps. Fall back to base ratio if the endpoint is
+    // unavailable — the contract accepts an empty sig and uses collateralRatioBps.
+    let scoreAttestation = { score: 0, expiry: 9999999999, sig: '0x' };
+    try {
+      scoreAttestation = await getScoreAttestation(wallet.address!, contractAddress, networkId);
+    } catch {
+      // attestation service unavailable — proceed at base collateral ratio
+    }
+
+    const qualifiesForDiscount =
+      offer.trustedRatioBps > 0 &&
+      scoreAttestation.sig !== '0x' &&
+      scoreAttestation.score >= offer.scoreThreshold;
+    const effectiveRatio = qualifiesForDiscount ? offer.trustedRatioBps : offer.collateralRatioBps;
+
+    const colRaw = requiredCollateralRaw(offer, prinTok, chosenColTok, effectiveRatio);
+    if (colRaw === null) {
+      signedError = 'Missing price data to size the required collateral.';
+      return;
+    }
     const colTokenAddress = isNativeTokenAddress(chosenColTok.address) ? ethers.ZeroAddress : chosenColTok.address;
     fillingDigest = row.digest;
     signedError = null;
     try {
-      const scoreAttestation = await getScoreAttestation(wallet.address!, contractAddress, networkId);
       await fillLendOffer(offer, colTokenAddress, colRaw, row.signature, scoreAttestation);
       signedOffers = signedOffers.filter((r) => r.digest !== row.digest);
     } catch (e) {
