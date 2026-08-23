@@ -37,6 +37,22 @@ describe('VouchVault', function () {
     return { expiry, sig };
   }
 
+  async function signScoreAttestation(
+    vault: any,
+    signer: any,
+    borrowerAddress: string,
+    score: number,
+  ): Promise<{ expiry: bigint; sig: string }> {
+    const network = await ethers.provider.getNetwork();
+    const expiry = 9999999999n;
+    const msgHash = ethers.solidityPackedKeccak256(
+      ['address', 'uint16', 'uint256', 'address', 'uint256'],
+      [borrowerAddress, score, expiry, await vault.getAddress(), network.chainId],
+    );
+    const sig = await signer.signMessage(ethers.getBytes(msgHash));
+    return { expiry, sig };
+  }
+
   // The read-only view helpers getRepaymentDetails / getFundingDetails live on VouchVaultLens
   // (moved off the main contract to keep VouchVault under the 24 576-byte limit). These helpers
   // deploy a lens bound to the given vault and forward the query.
@@ -4441,7 +4457,7 @@ describe('VouchVault', function () {
       const sig = await signLendOffer(vault, lender, offer);
       const digest = await hashLendOffer(vault, offer);
 
-      await expect(vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: collateral }))
+      await expect(vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, 0, 9999999999n, '0x', { value: collateral }))
         .to.emit(vault, 'SignedLendOfferFilled')
         .withArgs(
           0,
@@ -4498,7 +4514,7 @@ describe('VouchVault', function () {
       const sig = await signLendOffer(vault, lender, offer);
       const digest = await hashLendOffer(vault, offer);
 
-      await expect(vault.connect(borrower).fillLendOffer(offer, await weth.getAddress(), collateralAmount, sig))
+      await expect(vault.connect(borrower).fillLendOffer(offer, await weth.getAddress(), collateralAmount, sig, 0, 9999999999n, '0x'))
         .to.emit(vault, 'SignedLendOfferFilled')
         .withArgs(
           0,
@@ -4537,7 +4553,7 @@ describe('VouchVault', function () {
       };
       const sig = await signLendOffer(vault, lender, offer);
       await expect(
-        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: 1n }),
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, 0, 9999999999n, '0x', { value: 1n }),
       ).to.be.revertedWithCustomError(vault, 'InvalidToken');
     });
 
@@ -4687,7 +4703,7 @@ describe('VouchVault', function () {
       };
       const sig = await signLendOffer(vault, owner, offer); // wrong signer
       await expect(
-        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: ethers.parseEther('1') }),
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, 0, 9999999999n, '0x', { value: ethers.parseEther('1') }),
       ).to.be.revertedWithCustomError(vault, 'InvalidSignature');
     });
 
@@ -4719,9 +4735,9 @@ describe('VouchVault', function () {
         deadline: 9999999999n,
       };
       const sig = await signLendOffer(vault, lender, offer);
-      await vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: collateral });
+      await vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, 0, 9999999999n, '0x', { value: collateral });
       await expect(
-        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: collateral }),
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, 0, 9999999999n, '0x', { value: collateral }),
       ).to.be.revertedWithCustomError(vault, 'SignatureAlreadyUsed');
     });
 
@@ -4746,7 +4762,7 @@ describe('VouchVault', function () {
       };
       const sig = await signLendOffer(vault, lender, offer);
       await expect(
-        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: ethers.parseEther('1') }),
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, 0, 9999999999n, '0x', { value: ethers.parseEther('1') }),
       ).to.be.revertedWithCustomError(vault, 'OfferExpired');
     });
 
@@ -4780,8 +4796,51 @@ describe('VouchVault', function () {
       };
       const sig = await signLendOffer(vault, lender, offer);
       await expect(
-        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: insufficientCollateral }),
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, 0, 9999999999n, '0x', { value: insufficientCollateral }),
       ).to.be.revertedWithCustomError(vault, 'LoanIsUndercollateralized');
+    });
+
+    it('fillLendOffer: high-score borrower gets trustedRatioBps discount', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const Mock = await ethers.getContractFactory('MockERC20');
+      const usdc = await Mock.deploy('USDC', 'USDC', 6, 0);
+      const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
+      const usdcFeed = await MockAgg.deploy(8, 1n * 10n ** 8n);
+      await vault.connect(owner).setPriceFeed(await usdc.getAddress(), await usdcFeed.getAddress(), 6);
+
+      // principal = 3200 USDC = $3200
+      // collateralRatioBps = 16000 (160%) -> $5120 -> 1.6 ETH at $3200
+      // trustedRatioBps   = 13000 (130%) -> $4160 -> 1.3 ETH at $3200
+      // A score-attested borrower only needs 1.3 ETH
+      const principal = 3200n * 10n ** 6n;
+      const trustedCollateral = ethers.parseEther('1.3'); // exactly $4160 = 130% of $3200
+      const TRUSTED_RATIO = 13000;
+      const SCORE_THRESHOLD = 700;
+      const BORROWER_SCORE = 750;
+
+      await usdc.mint(lender.address, principal);
+      await usdc.connect(lender).approve(await vault.getAddress(), principal);
+
+      const offer = {
+        lender: lender.address,
+        principalToken: await usdc.getAddress(),
+        principalAmount: principal,
+        collateralRatioBps: RATIO,
+        trustedRatioBps: TRUSTED_RATIO,
+        scoreThreshold: SCORE_THRESHOLD,
+        maxLtvBps: LTV,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        nonce: 99n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLendOffer(vault, lender, offer);
+      const { expiry: scoreExpiry, sig: scoreSig } = await signScoreAttestation(vault, owner, borrower.address, BORROWER_SCORE);
+
+      // 1.3 ETH would fail at base ratio (160%) but succeed at trusted ratio (130%)
+      await expect(
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, BORROWER_SCORE, scoreExpiry, scoreSig, { value: trustedCollateral }),
+      ).to.emit(vault, 'SignedLendOfferFilled');
     });
 
     it('cancelSignedLendOffer: lender cancels, then fill reverts', async function () {
@@ -4807,7 +4866,7 @@ describe('VouchVault', function () {
         .withArgs(digest, lender.address);
       const sig = await signLendOffer(vault, lender, offer);
       await expect(
-        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, { value: ethers.parseEther('1') }),
+        vault.connect(borrower).fillLendOffer(offer, ethers.ZeroAddress, 0n, sig, 0, 9999999999n, '0x', { value: ethers.parseEther('1') }),
       ).to.be.revertedWithCustomError(vault, 'SignatureAlreadyUsed');
     });
 

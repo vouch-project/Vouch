@@ -192,6 +192,7 @@ export type FillResult = {
 };
 
 export type LtvAttestation = { maxLtvBps: number; expiry: number; sig: string };
+export type ScoreAttestation = { score: number; expiry: number; sig: string };
 
 /**
  * Fill a signed loan request as the lender (lender supplies principal).
@@ -234,18 +235,20 @@ export const fillLendOffer = async (
   collateralToken: string,
   collateralAmount: bigint,
   signature: string,
+  scoreAttestation: ScoreAttestation,
 ): Promise<FillResult> => {
   const contract = await getVouchVaultContract();
 
   let tx: ethers.TransactionResponse;
+  const { score, expiry: scoreExpiry, sig: scoreSig } = scoreAttestation;
 
   if (isNativeTokenAddress(collateralToken)) {
-    tx = await contract.fillLendOffer(offer, ethers.ZeroAddress, collateralAmount, signature, {
+    tx = await contract.fillLendOffer(offer, ethers.ZeroAddress, collateralAmount, signature, score, scoreExpiry, scoreSig, {
       value: collateralAmount,
     });
   } else {
     await approveERC20IfNeeded(contract, collateralToken, collateralAmount);
-    tx = await contract.fillLendOffer(offer, collateralToken, collateralAmount, signature);
+    tx = await contract.fillLendOffer(offer, collateralToken, collateralAmount, signature, score, scoreExpiry, scoreSig);
   }
 
   const receipt = await tx.wait();
