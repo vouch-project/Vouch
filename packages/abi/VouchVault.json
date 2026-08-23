@@ -1654,6 +1654,21 @@
         "internalType": "bytes",
         "name": "sig",
         "type": "bytes"
+      },
+      {
+        "internalType": "uint16",
+        "name": "attestedMaxLtvBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "attExpiry",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "attSig",
+        "type": "bytes"
       }
     ],
     "name": "fillLoanRequest",

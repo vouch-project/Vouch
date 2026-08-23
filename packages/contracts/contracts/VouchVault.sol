@@ -772,17 +772,26 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     /// @dev    Verifies the borrower's signature, pulls ERC20 collateral from the borrower,
     ///         the lender supplies principal (ETH or ERC20), a funded loan is created,
     ///         and the signature digest is consumed to prevent replay.
-    function fillLoanRequest(SignedLoanRequest calldata req, bytes calldata sig) external payable nonReentrant {
+    function fillLoanRequest(
+        SignedLoanRequest calldata req,
+        bytes calldata sig,
+        uint16 attestedMaxLtvBps,
+        uint256 attExpiry,
+        bytes calldata attSig
+    ) external payable nonReentrant {
         if (req.collateralToken == address(0)) revert InvalidToken();
         if (req.collateralAmount == 0) revert ZeroValue();
         if (req.principalAmount == 0) revert ZeroValue();
         if (req.maxLtvBps == 0 || req.maxLtvBps > 10000) revert InvalidMaxLtv();
         if (req.interestRateBps > 10000) revert InvalidInterestRate();
         if (block.timestamp > req.deadline) revert OfferExpired();
+        if (req.maxLtvBps > attestedMaxLtvBps) revert LtvExceedsAttestedMax();
 
         bytes32 digest = hashLoanRequest(req);
         if (consumedSignatures[digest]) revert SignatureAlreadyUsed();
         if (ECDSA.recover(digest, sig) != req.borrower) revert InvalidSignature();
+
+        _verifyLtvAttestation(req.borrower, req.collateralToken, req.principalToken, attestedMaxLtvBps, attExpiry, attSig);
 
         // Checks-effects-interactions: mark consumed before any external call.
         consumedSignatures[digest] = true;

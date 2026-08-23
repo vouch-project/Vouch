@@ -4090,6 +4090,7 @@ describe('VouchVault', function () {
       const MockAgg = await ethers.getContractFactory('MockV3Aggregator');
       const ethFeed = await MockAgg.deploy(8, 3200n * 10n ** 8n);
       await vault.connect(owner).setPriceFeed(ethers.ZeroAddress, await ethFeed.getAddress(), 18);
+      await vault.connect(owner).setScoreSigner(owner.address);
       return { vault, owner, lender, borrower };
     }
 
@@ -4205,8 +4206,9 @@ describe('VouchVault', function () {
       };
       const sig = await signLoanRequest(vault, borrower, req);
       const digest = await hashLoanRequest(vault, req);
+      const { expiry: attExpiry, sig: attSig } = await signLtvAttestation(vault, owner, borrower.address, LTV, await wbtc.getAddress(), ethers.ZeroAddress);
 
-      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: principal }))
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, LTV, attExpiry, attSig, { value: principal }))
         .to.emit(vault, 'SignedLoanRequestFilled')
         .withArgs(
           0,
@@ -4241,7 +4243,8 @@ describe('VouchVault', function () {
         deadline: 9999999999n,
       };
       const sig = await signLoanRequest(vault, owner, req); // wrong signer
-      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n })).to.be.revertedWithCustomError(
+      const { expiry: attExpiry, sig: attSig } = await signLtvAttestation(vault, owner, borrower.address, LTV, '0x0000000000000000000000000000000000000001', ethers.ZeroAddress);
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, LTV, attExpiry, attSig, { value: 1n })).to.be.revertedWithCustomError(
         vault,
         'InvalidSignature',
       );
@@ -4271,8 +4274,10 @@ describe('VouchVault', function () {
         deadline: 9999999999n,
       };
       const sig = await signLoanRequest(vault, borrower, req);
-      await vault.connect(lender).fillLoanRequest(req, sig, { value: principal });
-      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: principal })).to.be.revertedWithCustomError(
+      const { expiry: attExpiry0, sig: attSig0 } = await signLtvAttestation(vault, owner, borrower.address, LTV, await wbtc.getAddress(), ethers.ZeroAddress);
+      await vault.connect(lender).fillLoanRequest(req, sig, LTV, attExpiry0, attSig0, { value: principal });
+      const { expiry: attExpiry1, sig: attSig1 } = await signLtvAttestation(vault, owner, borrower.address, LTV, await wbtc.getAddress(), ethers.ZeroAddress);
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, LTV, attExpiry1, attSig1, { value: principal })).to.be.revertedWithCustomError(
         vault,
         'SignatureAlreadyUsed',
       );
@@ -4293,7 +4298,7 @@ describe('VouchVault', function () {
         deadline: 9999999999n,
       };
       const sig = await signLoanRequest(vault, borrower, req);
-      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n })).to.be.revertedWithCustomError(
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, LTV, 9999999999n, '0x', { value: 1n })).to.be.revertedWithCustomError(
         vault,
         'InvalidToken',
       );
@@ -4333,7 +4338,8 @@ describe('VouchVault', function () {
         deadline: 9999999999n,
       };
       const sig = await signLoanRequest(vault, borrower, req);
-      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: principal })).to.be.revertedWithCustomError(
+      const { expiry: attExpiry, sig: attSig } = await signLtvAttestation(vault, owner, borrower.address, LTV, await wbtc.getAddress(), ethers.ZeroAddress);
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, LTV, attExpiry, attSig, { value: principal })).to.be.revertedWithCustomError(
         vault,
         'LoanIsUndercollateralized',
       );
@@ -4354,9 +4360,32 @@ describe('VouchVault', function () {
         deadline: 9999999999n,
       };
       const sig = await signLoanRequest(vault, borrower, req);
-      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 0n })).to.be.revertedWithCustomError(
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, LTV, 9999999999n, '0x', { value: 0n })).to.be.revertedWithCustomError(
         vault,
         'ZeroValue',
+      );
+    });
+
+    it('fillLoanRequest: reverts when maxLtvBps exceeds attested ceiling', async function () {
+      const { vault, owner, lender, borrower } = await deployFixture();
+      const req = {
+        borrower: borrower.address,
+        collateralToken: '0x0000000000000000000000000000000000000001',
+        collateralAmount: 1n,
+        principalToken: ethers.ZeroAddress,
+        principalAmount: 1n,
+        interestRateBps: RATE,
+        durationSeconds: DURATION,
+        maxLtvBps: 8000, // borrower self-reports 80% LTV
+        nonce: 1n,
+        deadline: 9999999999n,
+      };
+      const sig = await signLoanRequest(vault, borrower, req);
+      const { expiry: attExpiry, sig: attSig } = await signLtvAttestation(vault, owner, borrower.address, 6500, '0x0000000000000000000000000000000000000001', ethers.ZeroAddress);
+      // attestation caps at 65% but request asks for 80% — must revert
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, 6500, attExpiry, attSig, { value: 1n })).to.be.revertedWithCustomError(
+        vault,
+        'LtvExceedsAttestedMax',
       );
     });
 
@@ -4513,7 +4542,7 @@ describe('VouchVault', function () {
     });
 
     it('cancelSignedLoanRequest: borrower cancels, then fill reverts', async function () {
-      const { vault, lender, borrower } = await deployFixture();
+      const { vault, owner, lender, borrower } = await deployFixture();
       const req = {
         borrower: borrower.address,
         collateralToken: '0x0000000000000000000000000000000000000001',
@@ -4531,7 +4560,8 @@ describe('VouchVault', function () {
         .to.emit(vault, 'SignedLoanRequestCancelled')
         .withArgs(digest, borrower.address);
       const sig = await signLoanRequest(vault, borrower, req);
-      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n })).to.be.revertedWithCustomError(
+      const { expiry: attExpiry, sig: attSig } = await signLtvAttestation(vault, owner, borrower.address, LTV, '0x0000000000000000000000000000000000000001', ethers.ZeroAddress);
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, LTV, attExpiry, attSig, { value: 1n })).to.be.revertedWithCustomError(
         vault,
         'SignatureAlreadyUsed',
       );
@@ -4574,7 +4604,7 @@ describe('VouchVault', function () {
         deadline: pastDeadline,
       };
       const sig = await signLoanRequest(vault, borrower, req);
-      await expect(vault.connect(lender).fillLoanRequest(req, sig, { value: 1n })).to.be.revertedWithCustomError(
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, LTV, 9999999999n, '0x', { value: 1n })).to.be.revertedWithCustomError(
         vault,
         'OfferExpired',
       );
@@ -4615,8 +4645,9 @@ describe('VouchVault', function () {
       };
       const sig = await signLoanRequest(vault, borrower, req);
       const digest = await hashLoanRequest(vault, req);
+      const { expiry: attExpiry, sig: attSig } = await signLtvAttestation(vault, owner, borrower.address, LTV, await wbtc.getAddress(), await usdc.getAddress());
 
-      await expect(vault.connect(lender).fillLoanRequest(req, sig))
+      await expect(vault.connect(lender).fillLoanRequest(req, sig, LTV, attExpiry, attSig))
         .to.emit(vault, 'SignedLoanRequestFilled')
         .withArgs(
           0,
