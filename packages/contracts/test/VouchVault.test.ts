@@ -78,6 +78,66 @@ describe('VouchVault', function () {
     expect(await vault.deposits(owner.address)).to.equal(depositAmount);
   });
 
+  describe('VouchVaultLens field decoding', function () {
+    // Regression guard: VouchVaultLens reconstructs the Loan struct positionally from the
+    // auto-generated `loans` mapping getter (VouchVault no longer exposes getLoanRaw). A
+    // transposed field in that 23-element decode could return wrong data while other tests
+    // still pass, so assert every lens helper output against vault.loans() field-by-field
+    // on a fully-populated (funded, ETH-collateral) loan where the fields hold distinct values.
+    it('lens helpers match vault.loans() for every exposed field', async function () {
+      const [owner, borrower, lender] = await ethers.getSigners();
+      const VouchVault = await ethers.getContractFactory('VouchVault');
+      const vault = await upgrades.deployProxy(VouchVault, [owner.address], { kind: 'uups' });
+      await vault.setScoreSigner(owner.address);
+
+      const collateral = ethers.parseEther('0.5');
+      const principal = ethers.parseEther('1.0');
+      const fundWindow = 7n * 86400n;
+      const { expiry: ltvExpiry, sig: ltvSig } = await signLtvAttestation(vault, owner, borrower.address, 10000);
+      await vault
+        .connect(borrower)
+        .createLoan(ethers.ZeroAddress, 0n, ethers.ZeroAddress, principal, 500, 86400, fundWindow, 8000, 10000, ltvExpiry, ltvSig, {
+          value: collateral,
+        });
+      await vault.connect(lender).fundLoan(0, { value: principal });
+
+      const Lens = await ethers.getContractFactory('VouchVaultLens');
+      const lens = await Lens.deploy(await vault.getAddress());
+      const loan = await vault.loans(0); // source of truth
+
+      const gl = await lens.getLoan(0);
+      expect(gl.borrower).to.equal(loan.borrower);
+      expect(gl.collateralToken).to.equal(loan.collateralToken);
+      expect(gl.collateralAmount).to.equal(loan.collateralAmount);
+      expect(gl.createdAt).to.equal(loan.createdAt);
+      expect(gl.active).to.equal(loan.active);
+
+      const lc = await lens.getLoanLockedCollateral(0);
+      expect(lc.collateralToken).to.equal(loan.collateralToken);
+      expect(lc.collateralAmount).to.equal(loan.collateralAmount - loan.collateralReleased);
+      expect(lc.locked).to.equal(loan.collateralLocked);
+
+      // ETH collateral, so the locked balance is collateralAmount - collateralReleased.
+      expect(await lens.loanLockedBalanceOf(0)).to.equal(loan.collateralAmount - loan.collateralReleased);
+
+      const fd = await lens.getFundingDetails(0);
+      expect(fd.lender).to.equal(loan.lender);
+      expect(fd.principalAmount).to.equal(loan.principalAmount);
+      expect(fd.funded).to.equal(loan.funded);
+      expect(fd.fundedAt).to.equal(loan.fundedAt);
+
+      const rd = await lens.getRepaymentDetails(0);
+      expect(rd.interestRateBps).to.equal(loan.interestRateBps);
+      expect(rd.durationSeconds).to.equal(loan.durationSeconds);
+      expect(rd.repaid).to.equal(loan.repaid);
+      expect(rd.amountRepaid).to.equal(loan.amountRepaid);
+      expect(rd.fundDeadline).to.equal(loan.fundDeadline);
+      // funded and unrepaid: totalDue is at least the principal, remaining mirrors it.
+      expect(rd.totalDue).to.be.gte(loan.principalAmount);
+      expect(rd.remaining).to.equal(rd.totalDue - loan.amountRepaid);
+    });
+  });
+
   describe('createLoan', function () {
     it('Should create a loan with collateral', async function () {
       const [owner] = await ethers.getSigners();

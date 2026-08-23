@@ -74,20 +74,7 @@ function setEnvVar(env: string, name: string, value: string): string {
   return env.trimEnd() + `\n${line}\n`;
 }
 
-async function deployLens(
-  vaultAddress: string,
-  env: string,
-  envPath: string,
-  lensEnvVarName: string,
-  skipIfExists = false,
-): Promise<void> {
-  if (skipIfExists) {
-    const existingLens = readEnvVar(env, lensEnvVarName);
-    if (existingLens) {
-      console.log(`VouchVaultLens already deployed at ${existingLens}, skipping`);
-      return;
-    }
-  }
+async function deployLens(vaultAddress: string, envPath: string, lensEnvVarName: string): Promise<void> {
   console.log('Deploying VouchVaultLens...');
   const LensFactory = await ethers.getContractFactory('VouchVaultLens');
   const lens = (await LensFactory.deploy(vaultAddress)) as unknown as VouchVaultLens;
@@ -139,8 +126,13 @@ async function main() {
     const upgradedVault = (await ethers.getContractAt('VouchVault', address)) as unknown as VouchVault;
     await applyProtocolConfig(upgradedVault, env);
     await applyScoreSigner(upgradedVault, env);
-    // Deploy lens if it hasn't been deployed yet (vault address unchanged after upgrade).
-    await deployLens(address, env, envPath, lensEnvVarName, true);
+    // Always redeploy the lens on upgrade. VouchVaultLens is stateless but tightly
+    // coupled to the vault's read ABI (it decodes the `loans` getter tuple and forwards
+    // getHealthFactor), so an implementation upgrade can change or remove a selector the
+    // previously deployed lens still calls — leaving the old lens reverting on every read.
+    // Redeploying binds a fresh lens to the (unchanged) proxy address and rewrites the
+    // configured lens address in .env so consumers pick it up.
+    await deployLens(address, envPath, lensEnvVarName);
     return;
   }
 
@@ -167,7 +159,7 @@ async function main() {
   writeFileSync(envPath, env, 'utf-8');
   console.log(`✅ Saved ${envVarName} to ${envPath}`);
 
-  await deployLens(address, env, envPath, lensEnvVarName);
+  await deployLens(address, envPath, lensEnvVarName);
 }
 
 main().catch((error) => {

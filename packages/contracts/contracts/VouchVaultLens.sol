@@ -17,6 +17,38 @@ contract VouchVaultLens {
         vault = VouchVault(_vault);
     }
 
+    /// @dev Rebuild the full Loan struct from the auto-generated getter of VouchVault's
+    ///      public `loans` mapping. VouchVault no longer exposes a dedicated getLoanRaw
+    ///      view (it sits at the 24 576-byte EVM limit); the tuple returned here is in
+    ///      declaration order of VouchVault.Loan.
+    function _loan(uint256 loanId) private view returns (VouchVault.Loan memory loan) {
+        (
+            loan.borrower,
+            loan.collateralToken,
+            loan.collateralAmount,
+            loan.collateralLocked,
+            loan.collateralReleased,
+            loan.createdAt,
+            loan.active,
+            loan.funded,
+            loan.repaid,
+            loan.fundDeadline,
+            loan.lender,
+            loan.requestedPrincipalToken,
+            loan.requestedPrincipalAmount,
+            loan.principalAmount,
+            loan.fundedAt,
+            loan.interestRateBps,
+            loan.durationSeconds,
+            loan.amountRepaid,
+            loan.principalRepaid,
+            loan.interestAccrued,
+            loan.lastAccrualAt,
+            loan.liquidationThresholdBps,
+            loan.lendOfferId
+        ) = vault.loans(loanId);
+    }
+
     function _currentInterestOwed(VouchVault.Loan memory loan) internal view returns (uint256) {
         if (!loan.funded) return 0;
         uint256 owed = loan.interestAccrued;
@@ -41,7 +73,7 @@ contract VouchVaultLens {
     }
 
     function loanLockedBalanceOf(uint256 loanId) external view returns (uint256) {
-        VouchVault.Loan memory loan = vault.getLoanRaw(loanId);
+        VouchVault.Loan memory loan = _loan(loanId);
         return loan.collateralToken == address(0) ? loan.collateralAmount - loan.collateralReleased : 0;
     }
 
@@ -50,7 +82,7 @@ contract VouchVaultLens {
         uint256 collateralAmount,
         bool locked
     ) {
-        VouchVault.Loan memory loan = vault.getLoanRaw(loanId);
+        VouchVault.Loan memory loan = _loan(loanId);
         return (loan.collateralToken, loan.collateralAmount - loan.collateralReleased, loan.collateralLocked);
     }
 
@@ -61,7 +93,7 @@ contract VouchVaultLens {
         uint256 createdAt,
         bool active
     ) {
-        VouchVault.Loan memory loan = vault.getLoanRaw(loanId);
+        VouchVault.Loan memory loan = _loan(loanId);
         return (loan.borrower, loan.collateralToken, loan.collateralAmount, loan.createdAt, loan.active);
     }
 
@@ -71,7 +103,7 @@ contract VouchVaultLens {
         bool funded,
         uint256 fundedAt
     ) {
-        VouchVault.Loan memory loan = vault.getLoanRaw(loanId);
+        VouchVault.Loan memory loan = _loan(loanId);
         return (loan.lender, loan.principalAmount, loan.funded, loan.fundedAt);
     }
 
@@ -84,7 +116,7 @@ contract VouchVaultLens {
         uint256 remaining,
         uint256 fundDeadline
     ) {
-        VouchVault.Loan memory loan = vault.getLoanRaw(loanId);
+        VouchVault.Loan memory loan = _loan(loanId);
         uint256 due = loan.repaid
             ? loan.amountRepaid
             : loan.funded ? loan.principalAmount + _currentInterestOwed(loan) : 0;
