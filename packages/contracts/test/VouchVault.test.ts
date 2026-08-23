@@ -2800,7 +2800,7 @@ describe('VouchVault', function () {
           },
         );
 
-      // Advance past the 7-day fund window (also far beyond the 1-hour STALE_PRICE_THRESHOLD, so
+      // Advance past the 7-day fund window (also far beyond the 1-day STALE_PRICE_THRESHOLD, so
       // the feeds' updatedAt is now stale). getHealthFactor would revert here; expireLoan must not.
       await ethers.provider.send('evm_increaseTime', [8 * 86400]);
       await ethers.provider.send('evm_mine', []);

@@ -214,7 +214,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
 
     // --- Oracle & liquidation ---
     mapping(address token => AggregatorV3Interface) public priceFeeds;
-    uint256 internal constant STALE_PRICE_THRESHOLD = 1 hours;
+    uint256 internal constant STALE_PRICE_THRESHOLD = 1 days;
     mapping(address token => uint8) public tokenDecimals;
 
     uint256 public liquidationBonusBps;                          // default 500 = 5%
