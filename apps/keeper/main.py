@@ -141,11 +141,14 @@ async def main() -> None:
     try:
         settings = Settings()
     except ValidationError as exc:
-        # Keeper isn't configured (missing KEEPER_PRIVATE_KEY / KEEPER_NETWORK_ID / addresses).
-        # Exit cleanly instead of crashing so an unconfigured keeper doesn't tear down the rest
-        # of `turbo run dev`. Set the KEEPER_* vars in the root .env to enable it.
-        missing = ", ".join(str(e["loc"][0]) for e in exc.errors())
-        logger.warning("Keeper not configured (missing: %s); not starting.", missing)
+        # Keeper isn't configured — settings are missing or invalid (e.g. absent
+        # KEEPER_PRIVATE_KEY / KEEPER_NETWORK_ID / PUBLIC_VOUCH_VAULT(_LENS)_ADDRESS, or a malformed
+        # value). Exit cleanly instead of crashing so an unconfigured keeper doesn't tear down the
+        # rest of `turbo run dev`. Set the vars in the root .env to enable it.
+        issues = ", ".join(str(e["loc"][0]) for e in exc.errors())
+        logger.warning(
+            "Keeper not configured (settings invalid/incomplete: %s); not starting.", issues
+        )
         return
 
     loop = asyncio.get_running_loop()

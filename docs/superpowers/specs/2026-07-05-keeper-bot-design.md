@@ -5,7 +5,7 @@
 
 ## Overview
 
-A Python async polling loop that monitors on-chain loans and automatically calls `liquidate()` for undercollateralized active loans and `expireLoan()` for expired or undercollateralized pending loans. Runs as a standalone Docker service in `apps/keeper/`.
+A Python async polling loop that monitors on-chain loans and automatically calls `liquidate()` for undercollateralized active loans and `expireLoan()` for expired or undercollateralized pending loans. It also expires stale lend offers (`expireLendOffer()`) whose accept deadline has passed. Runs as a standalone Docker service in `apps/keeper/`.
 
 ---
 
@@ -24,8 +24,8 @@ Single process, single async polling loop. On each tick:
 apps/keeper/
 ├── main.py          # Entry point — wires config/chain/db, runs the loop
 ├── config.py        # Env var parsing via pydantic-settings
-├── chain.py         # web3 wrapper: get_health_factor(), liquidate(), expire_loan()
-├── db.py            # Supabase wrapper: get_actionable_loans()
+├── chain.py         # web3 wrapper: get_health_factor(), liquidate(), expire_loan(), expire_lend_offer()
+├── db.py            # Supabase wrapper: get_actionable_loans(), get_expirable_lend_offers()
 └── tests/
     └── test_keeper.py
 ```
@@ -50,32 +50,43 @@ apps/keeper/
 
 The contract enforces all preconditions, so a `liquidate`/`expireLoan` revert on an ineligible loan is safe — the keeper logs it as a warning and continues.
 
+### Lend offers (`get_expirable_lend_offers`)
+
+1. Fetch open lend offers with an `acceptDeadline`
+2. If `acceptDeadline < now` → call `expireLendOffer(offerId)`
+3. Else → skip
+
+As with loans, a revert (e.g. offer already expired/filled) is caught, logged as a warning, and the loop continues.
+
 ---
 
 ## Configuration
 
-New env vars added to `.env.example`:
+Env vars consumed by the keeper (see `apps/keeper/config.py`):
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `KEEPER_RPC_URL` | JSON-RPC endpoint | `http://localhost:8545` |
-| `KEEPER_CONTRACT_ADDRESS` | Deployed VouchVault address | — |
-| `KEEPER_PRIVATE_KEY` | EOA private key for submitting txs | — |
-| `KEEPER_POLL_INTERVAL_SECONDS` | Seconds between loop ticks | `60` |
+| Variable                          | Description                                                         | Default                 |
+| --------------------------------- | ------------------------------------------------------------------- | ----------------------- |
+| `KEEPER_RPC_URL`                  | JSON-RPC endpoint                                                   | `http://localhost:8545` |
+| `PUBLIC_VOUCH_VAULT_ADDRESS`      | Deployed VouchVault address (shared with the rest of the stack)     | —                       |
+| `PUBLIC_VOUCH_VAULT_LENS_ADDRESS` | Deployed VouchVaultLens address (shared with the rest of the stack) | —                       |
+| `KEEPER_PRIVATE_KEY`              | EOA private key for submitting txs                                  | —                       |
+| `KEEPER_NETWORK_ID`               | Chain/network id used to scope Supabase queries                     | —                       |
+| `KEEPER_POLL_INTERVAL_SECONDS`    | Seconds between loop ticks                                          | `60`                    |
 
-Existing `SUPABASE_URL` and `SUPABASE_SECRET_KEY` are reused.
+The vault + lens addresses are read from the shared `PUBLIC_VOUCH_VAULT(_LENS)_ADDRESS` vars (via pydantic `validation_alias`) rather than duplicated `KEEPER_*` vars. Existing `SUPABASE_URL` and `SUPABASE_SECRET_KEY` are reused.
 
 ---
 
 ## Error Handling
 
-| Situation | Behavior |
-|-----------|----------|
-| RPC unreachable on startup | Crash immediately |
-| Supabase unreachable on startup | Crash immediately |
-| `getHealthFactor` reverts | Log + skip that loan |
-| `liquidate`/`expireLoan` reverts | Log warning + skip (not a crash) |
-| Unexpected exception mid-loop | Log exception + continue loop |
+| Situation                                          | Behavior                                                             |
+| -------------------------------------------------- | -------------------------------------------------------------------- |
+| Settings missing/invalid on startup                | Log warning + exit cleanly (don't crash `turbo run dev`)             |
+| RPC unreachable on startup                         | Log warning + retry each poll interval until reachable (or shutdown) |
+| Supabase unreachable during a tick                 | Log exception + retry on the next loop tick (keeper keeps running)   |
+| `getHealthFactor` reverts                          | Log + skip that loan                                                 |
+| `liquidate`/`expireLoan`/`expireLendOffer` reverts | Log warning + skip (not a crash)                                     |
+| Unexpected exception mid-loop                      | Log exception + continue loop                                        |
 
 ---
 

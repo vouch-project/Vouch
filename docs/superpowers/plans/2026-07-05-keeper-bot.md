@@ -17,7 +17,7 @@
 - Decision logic lives in `process_loan(loan, chain)` — a plain function, not a method — so it can be unit-tested without running the async loop.
 - All tests use `unittest.mock.MagicMock` only — no real chain or DB.
 - `fund_deadline=None` in `ActionableLoan` means no deadline was set (borrower wanted indefinite window) — do NOT treat this as "deadline passed"; skip to HF check only.
-- The minimal ABI for web3 is embedded directly in `chain.py` (three functions: `getHealthFactor`, `liquidate`, `expireLoan`). Do not read a JSON file at runtime.
+- Contract ABIs are loaded at runtime from the generated JSON in `packages/abi/` (or `apps/keeper/abi` in the Docker image), produced by `packages/contracts/scripts/extract-abi.mjs`. Do not hand-maintain ABI copies in the keeper — this keeps the keeper's ABI in sync with the deployed contracts.
 - `liquidate()` on the contract currently reverts with `"liquidate: not implemented"` — this is expected. The keeper calls it anyway; the revert is caught, logged as a warning, and the loop continues.
 - `getHealthFactor` reverts with `"No price feed for token"` when price feeds are not configured. Catch this in the pending-loan path and skip (no feeds = no HF expiry).
 
@@ -26,11 +26,13 @@
 ### Task 1: Config + dependency setup
 
 **Files:**
+
 - Modify: `apps/keeper/pyproject.toml`
 - Create: `apps/keeper/config.py`
 - Modify: `.env.example` (root)
 
 **Interfaces:**
+
 - Produces: `Settings` class importable as `from config import Settings`. Fields: `keeper_rpc_url: str`, `keeper_contract_address: str`, `keeper_private_key: str`, `keeper_poll_interval_seconds: int`, `supabase_url: str`, `supabase_secret_key: str`. All read from environment; `keeper_rpc_url` defaults to `"http://localhost:8545"`, `keeper_poll_interval_seconds` defaults to `60`.
 
 - [ ] **Step 1: Add `pydantic-settings` to `pyproject.toml`**
@@ -120,9 +122,11 @@ git commit -m "feat(keeper): config module + pydantic-settings dependency"
 ### Task 2: `db.py` — Supabase loan fetcher
 
 **Files:**
+
 - Create: `apps/keeper/db.py`
 
 **Interfaces:**
+
 - Consumes: `Settings` from `config.py`
 - Produces:
   - `ActionableLoan` dataclass with fields: `on_chain_loan_id: int`, `status: str` (`"active"` or `"pending"`), `fund_deadline: datetime | None`
@@ -202,9 +206,11 @@ git commit -m "feat(keeper): db module — fetch actionable loans from Supabase"
 ### Task 3: `chain.py` — web3 contract wrapper
 
 **Files:**
+
 - Create: `apps/keeper/chain.py`
 
 **Interfaces:**
+
 - Consumes: `Settings` from `config.py`
 - Produces: `VaultChain` class with methods:
   - `__init__(settings: Settings) -> None` — raises `RuntimeError` if RPC unreachable
@@ -308,22 +314,27 @@ git commit -m "feat(keeper): chain module — web3 wrapper for getHealthFactor/l
 ### Task 4: Main loop + decision logic + tests
 
 **Files:**
+
 - Modify: `apps/keeper/main.py` (replace stub)
 - Create: `apps/keeper/tests/__init__.py`
 - Create: `apps/keeper/tests/conftest.py`
 - Create: `apps/keeper/tests/test_keeper.py`
 
 **Interfaces:**
+
 - Consumes: `ActionableLoan` from `db.py`, `VaultChain` from `chain.py`, `Settings` from `config.py`
 - Produces: `process_loan(loan: ActionableLoan, chain: VaultChain) -> None` (the testable decision unit), `HF_THRESHOLD: int = 10**18`
 
 - [ ] **Step 1: Write failing tests**
 
 Create `apps/keeper/tests/__init__.py` (empty):
+
 ```python
+
 ```
 
 Create `apps/keeper/tests/conftest.py`:
+
 ```python
 import sys
 from pathlib import Path
@@ -332,6 +343,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 ```
 
 Create `apps/keeper/tests/test_keeper.py`:
+
 ```python
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
@@ -548,6 +560,7 @@ cd apps/keeper && pytest tests/test_keeper.py -v
 ```
 
 Expected output:
+
 ```
 tests/test_keeper.py::test_active_unhealthy_calls_liquidate PASSED
 tests/test_keeper.py::test_active_healthy_no_liquidate PASSED
