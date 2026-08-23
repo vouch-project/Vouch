@@ -86,7 +86,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      KEEPER_RPC_URL: http://hardhat-node:8545
+      KEEPER_RPC_URL: ${RPC_URL}
 
   redis:
     image: redis:7
