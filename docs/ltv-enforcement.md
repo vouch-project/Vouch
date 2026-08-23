@@ -2,66 +2,70 @@
 
 ## Problem
 
-The credit-score-driven LTV is currently a frontend convention, not an on-chain rule.
+The credit-score-driven LTV ceiling is enforced by the frontend, not the contract.
 
-`createLoan` / `createLoanWithERC20` accept `liquidationThresholdBps` directly and only
-validate `0 < value <= 10000`. A user calling the contract directly (bypassing the frontend)
-can pass any LTV they want, ignoring their credit score entirely.
+`fillLoanRequest` allows a lender to fill a borrower's EIP-712-signed loan request.
+The `maxLtvBps` field is chosen by the borrower at signing time and only validated
+as `0 < value <= 10000`. A borrower could sign with `maxLtvBps = 10000`, bypassing
+their credit score entirely.
 
 ## Solution: Backend-Signed LTV Attestation (EIP-712)
 
-The backend signs a typed message authorizing a maximum LTV for a specific borrower.
-The contract verifies the signature before accepting the loan.
+The backend signs a typed message authorising a maximum LTV for a specific borrower
+and token pair. The contract verifies the attestation signature inside `fillLoanRequest`
+before creating the loan.
 
 ### Signed Message Fields
 
 ```solidity
 struct LtvAttestation {
     address borrower;
+    address collateralToken;
+    address borrowToken;
     uint16  maxLtvBps;   // credit-score-driven ceiling
     uint256 expiry;      // unix timestamp, short TTL (e.g. 5 minutes)
     uint256 nonce;       // per-borrower nonce to prevent replay
 }
 ```
 
-### Contract Changes
+### Contract Changes (`fillLoanRequest`)
 
-1. Store a `trustedSigner` address (set once by owner, e.g. the backend signing key).
-2. Add a `nonces` mapping: `mapping(address => uint256) public nonces`.
-3. Add EIP-712 domain separator and `LtvAttestation` type hash.
-4. In `createLoan` / `createLoanWithERC20`, add parameters:
-   - `uint16 maxLtvBps`
-   - `uint256 expiry`
-   - `bytes calldata sig`
-5. Before creating the loan:
-   ```solidity
-   require(block.timestamp <= expiry, "Attestation expired");
-   require(liquidationThresholdBps <= maxLtvBps, "Exceeds attested LTV");
-   bytes32 hash = _hashAttestation(msg.sender, maxLtvBps, expiry, nonces[msg.sender]);
-   require(ECDSA.recover(hash, sig) == trustedSigner, "Invalid attestation");
-   nonces[msg.sender]++;
-   ```
+Three parameters added:
+- `uint16 attestedMaxLtvBps` — the backend-authorised ceiling
+- `uint256 attExpiry` — attestation expiry timestamp
+- `bytes calldata attSig` — backend ECDSA signature over the `LtvAttestation` struct
 
-### Backend Changes
+Before creating the loan, the function now:
+```solidity
+if (req.maxLtvBps > attestedMaxLtvBps) revert LtvExceedsAttestedMax();
+// (replay + borrower sig checks run here)
+_verifyLtvAttestation(req.borrower, req.collateralToken, req.principalToken,
+                      attestedMaxLtvBps, attExpiry, attSig);
+```
 
-When a borrower submits a loan request, the API:
-1. Fetches the credit score from the ML engine.
-2. Computes `maxLtvBps` using the same `baseLtv × scoreMult` formula as the frontend.
-3. Signs the `LtvAttestation` struct with the trusted private key.
-4. Returns the signature + `maxLtvBps` + `expiry` to the frontend.
-5. Frontend passes all three to `createLoan`.
+`_verifyLtvAttestation` hashes the `LtvAttestation` struct via EIP-712, recovers the
+signer, and reverts with `InvalidAttestation` if it does not match `scoreSigner`.
+It is a no-op when `scoreSigner == address(0)` (local/test environments).
+
+### Frontend Changes
+
+At fill time (lender side, `BorrowTab.svelte`):
+1. Calls `GET /scoring/{address}/ltv-attestation` with token pair + chain info.
+2. Passes the returned `{ maxLtvBps, expiry, sig }` to `fillLoanRequest`.
+
+### Backend
+
+When a lender requests to fill a loan:
+1. Fetches the borrower's credit score from the ML engine.
+2. Computes `maxLtvBps` using the `baseLtv × scoreMult` formula.
+3. Signs the `LtvAttestation` struct with the trusted private key (`SCORE_SIGNER_PRIVATE_KEY`).
+4. Returns `{ maxLtvBps, expiry, sig }`.
 
 ### Trust Model
 
-The backend signing key becomes a trusted component — consistent with the existing
-trust model for the credit score itself. If the key is compromised, an attacker could
-issue high-LTV attestations, so the key must be stored securely (e.g. AWS KMS or
-equivalent).
+The backend signing key is the trust anchor — consistent with the existing trust model
+for the credit score. If the key is compromised, an attacker could issue high-LTV
+attestations. The key must be stored securely (e.g. AWS KMS).
 
-### Notes
-
-- Short expiry (5 min) limits replay risk.
-- Nonce prevents the same attestation being reused.
-- This pattern is identical to EIP-2612 permit signatures — the EIP-712 infrastructure
-  from Milestone 5 can be reused.
-- Aligns with Phase 2 EIP-712 work already planned.
+Short expiry (5 min) limits replay risk. The per-borrower nonce prevents the same
+attestation from being reused across fills.

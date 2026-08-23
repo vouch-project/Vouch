@@ -781,11 +781,12 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         if (req.interestRateBps > 10000) revert InvalidInterestRate();
         if (block.timestamp > req.deadline) revert OfferExpired();
         if (req.maxLtvBps > attestedMaxLtvBps) revert LtvExceedsAttestedMax();
-        _verifyLtvAttestation(req.borrower, req.collateralToken, req.principalToken, attestedMaxLtvBps, attExpiry, attSig);
 
         bytes32 digest = hashLoanRequest(req);
         if (consumedSignatures[digest]) revert SignatureAlreadyUsed();
         if (ECDSA.recover(digest, sig) != req.borrower) revert InvalidSignature();
+
+        _verifyLtvAttestation(req.borrower, req.collateralToken, req.principalToken, attestedMaxLtvBps, attExpiry, attSig);
 
         // Checks-effects-interactions: mark consumed before any external call.
         consumedSignatures[digest] = true;
