@@ -1548,10 +1548,10 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
 
     // --- View Functions ---
 
-    /// @notice Returns the raw Loan struct for the given loanId. Used by VouchVaultLens.
-    function getLoanRaw(uint256 loanId) external view returns (Loan memory) {
-        return loans[loanId];
-    }
+    // Note: raw loan data is exposed via the auto-generated getter for the public
+    // `loans` mapping. VouchVaultLens reconstructs the Loan struct from that tuple,
+    // so no dedicated getLoanRaw view is needed here — every extra external function
+    // adds bytecode and VouchVault sits right at the 24 576-byte EVM limit.
 
     /// @notice Total interest charged so far on the OUTSTANDING principal, plus any origination floor.
     /// @dev View-only mirror of `_accrue`: returns crystallized interest (`interestAccrued`) plus the
