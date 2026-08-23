@@ -1,6 +1,6 @@
 import type { VouchVault } from '@vouch/contracts';
 import { ethers } from 'ethers';
-import { ERC20_ABI, getVouchVaultContract, isNativeTokenAddress } from './vouchVault';
+import { ERC20_ABI, getVouchVaultContract, isNativeTokenAddress, type ScoreAttestation } from './vouchVault';
 
 // ---------------------------------------------------------------------------
 // EIP-712 domain meta (chain-id + contract address added at runtime)
@@ -192,8 +192,6 @@ export type FillResult = {
 };
 
 export type LtvAttestation = { maxLtvBps: number; expiry: number; sig: string };
-export type ScoreAttestation = { score: number; expiry: number; sig: string };
-
 const NULL_SCORE_ATTESTATION: ScoreAttestation = { score: 0, expiry: 9999999999, sig: '0x' };
 
 /**

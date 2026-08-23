@@ -1,4 +1,7 @@
 import { axiosApi } from './axiosApi';
+import type { ScoreAttestation } from '$lib/wallet/vouchVault';
+
+export type { ScoreAttestation };
 
 export type LtvAttestation = {
   maxLtvBps: number;
@@ -18,8 +21,6 @@ export const getLtvAttestation = async (
       params: { collateralToken, borrowToken, contractAddress, chainId },
     })
   ).data;
-
-export type ScoreAttestation = { score: number; expiry: number; sig: string };
 
 export const getScoreAttestation = async (
   address: string,

@@ -158,7 +158,8 @@
     }
     const contractAddress = chainInfo.contractAddress;
     const networkId = wallet.networkId;
-    if (!contractAddress || !networkId) {
+    const walletAddress = wallet.address;
+    if (!contractAddress || !networkId || !walletAddress) {
       signedError = 'Wallet not connected to a supported network.';
       return;
     }
@@ -168,7 +169,7 @@
     // unavailable — the contract accepts an empty sig and uses collateralRatioBps.
     let scoreAttestation = { score: 0, expiry: 9999999999, sig: '0x' };
     try {
-      scoreAttestation = await getScoreAttestation(wallet.address!, contractAddress, networkId);
+      scoreAttestation = await getScoreAttestation(walletAddress, contractAddress, networkId);
     } catch {
       // attestation service unavailable — proceed at base collateral ratio
     }
