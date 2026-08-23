@@ -66,7 +66,7 @@ Env vars consumed by the keeper (see `apps/keeper/config.py`):
 
 | Variable                          | Description                                                         | Default                 |
 | --------------------------------- | ------------------------------------------------------------------- | ----------------------- |
-| `KEEPER_RPC_URL`                  | JSON-RPC endpoint                                                   | `http://localhost:8545` |
+| `RPC_URL`                         | JSON-RPC endpoint                                                   | `http://localhost:8545` |
 | `PUBLIC_VOUCH_VAULT_ADDRESS`      | Deployed VouchVault address (shared with the rest of the stack)     | —                       |
 | `PUBLIC_VOUCH_VAULT_LENS_ADDRESS` | Deployed VouchVaultLens address (shared with the rest of the stack) | —                       |
 | `KEEPER_PRIVATE_KEY`              | EOA private key for submitting txs                                  | —                       |

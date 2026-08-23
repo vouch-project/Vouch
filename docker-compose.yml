@@ -31,7 +31,6 @@ services:
         required: false
     environment:
       NODE_ENV: production
-      RPC_URL: http://hardhat-node:8545
       REDIS_HOST: redis
       REDIS_PORT: 6379
       ML_ENGINE_URL: http://ml-engine:8001
@@ -88,8 +87,6 @@ services:
       - .env
       - path: /etc/vouch/secrets.env
         required: false
-    environment:
-      KEEPER_RPC_URL: ${RPC_URL:-http://hardhat-node:8545}
 
   redis:
     image: redis:7
