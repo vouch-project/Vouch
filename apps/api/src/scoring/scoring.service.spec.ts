@@ -1,6 +1,11 @@
 import { HttpService } from '@nestjs/axios';
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ethers } from 'ethers';
 import { of } from 'rxjs';
 import { SupabaseService } from '../supabase/supabase.service';
 import { ScoringService } from './scoring.service';
@@ -51,6 +56,7 @@ describe('ScoringService', () => {
         ScoringService,
         { provide: HttpService, useValue: { get: httpGetSpy } },
         { provide: SupabaseService, useValue: supabaseService },
+        { provide: ConfigService, useValue: { get: jest.fn() } },
       ],
     }).compile();
 
@@ -160,5 +166,211 @@ describe('ScoringService', () => {
     await expect(service.getCreditScore(MOCK_ADDRESS)).rejects.toThrow(
       'Credit scoring service unavailable',
     );
+  });
+
+  describe('getLtvAttestation', () => {
+    const CONTRACT_ADDRESS = '0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF';
+    const COLLATERAL_ADDRESS = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
+    const BORROW_ADDRESS = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC';
+    const CHAIN_ID = 31337n;
+    const PRIVATE_KEY =
+      '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
+
+    beforeEach(() => {
+      jest.spyOn(service, 'getCreditScore').mockResolvedValue({
+        address: MOCK_ADDRESS,
+        score: 575,
+        confidence: 0.8,
+        modelVersion: 'v1',
+        strengths: [],
+        riskFactors: [],
+        improvements: [],
+        explanation: null,
+        computedAt: new Date().toISOString(),
+      });
+      jest.spyOn(service as any, 'getBorrowerNonce').mockResolvedValue(0n);
+      supabaseService.client.from = jest.fn(() => ({
+        select: jest.fn().mockReturnValue({
+          in: jest.fn().mockResolvedValue({ data: [], error: null }),
+        }),
+      }));
+    });
+
+    it('throws ServiceUnavailableException when SCORE_SIGNER_PRIVATE_KEY is not set', async () => {
+      await expect(
+        service.getLtvAttestation(
+          MOCK_ADDRESS,
+          COLLATERAL_ADDRESS,
+          BORROW_ADDRESS,
+          CONTRACT_ADDRESS,
+          CHAIN_ID,
+        ),
+      ).rejects.toThrow(ServiceUnavailableException);
+    });
+
+    it('throws BadRequestException for an invalid token address', async () => {
+      jest.spyOn(service['configService'], 'get').mockReturnValue(PRIVATE_KEY);
+      await expect(
+        service.getLtvAttestation(
+          MOCK_ADDRESS,
+          'not-an-address',
+          BORROW_ADDRESS,
+          CONTRACT_ADDRESS,
+          CHAIN_ID,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('clamps maxLtvBps to [1, 10000] with extreme volatility', async () => {
+      jest.spyOn(service['configService'], 'get').mockReturnValue(PRIVATE_KEY);
+      supabaseService.client.from = jest.fn(() => ({
+        select: jest.fn().mockReturnValue({
+          in: jest.fn().mockResolvedValue({
+            data: [
+              {
+                address: ethers.getAddress(COLLATERAL_ADDRESS),
+                volatility: 3.0,
+              },
+              { address: ethers.getAddress(BORROW_ADDRESS), volatility: 3.0 },
+            ],
+            error: null,
+          }),
+        }),
+      }));
+      const { maxLtvBps } = await service.getLtvAttestation(
+        MOCK_ADDRESS,
+        COLLATERAL_ADDRESS,
+        BORROW_ADDRESS,
+        CONTRACT_ADDRESS,
+        CHAIN_ID,
+      );
+      expect(maxLtvBps).toBeGreaterThanOrEqual(1);
+      expect(maxLtvBps).toBeLessThanOrEqual(10000);
+    });
+
+    it('uses DEFAULT_VOLATILITY for non-ETH tokens when Supabase query fails', async () => {
+      jest.spyOn(service['configService'], 'get').mockReturnValue(PRIVATE_KEY);
+      // Simulate Supabase returning an error (data is null).
+      supabaseService.client.from = jest.fn(() => ({
+        select: jest.fn().mockReturnValue({
+          in: jest
+            .fn()
+            .mockResolvedValue({ data: null, error: { message: 'DB error' } }),
+        }),
+      }));
+      const { maxLtvBps: ltvOnError } = await service.getLtvAttestation(
+        MOCK_ADDRESS,
+        COLLATERAL_ADDRESS,
+        BORROW_ADDRESS,
+        CONTRACT_ADDRESS,
+        CHAIN_ID,
+      );
+
+      // With DEFAULT_VOLATILITY (0.6), base = 90 - 0.6*40 = 66.
+      // With ETH_VOLATILITY (0.45), base = 90 - 0.45*40 = 72.
+      // The error path must produce a result <= the ETH-volatility result, proving it used DEFAULT.
+      supabaseService.client.from = jest.fn(() => ({
+        select: jest.fn().mockReturnValue({
+          in: jest.fn().mockResolvedValue({
+            data: [
+              {
+                address: ethers.getAddress(COLLATERAL_ADDRESS),
+                volatility: 0.45,
+              },
+              { address: ethers.getAddress(BORROW_ADDRESS), volatility: 0.45 },
+            ],
+            error: null,
+          }),
+        }),
+      }));
+      const { maxLtvBps: ltvEthVolatility } = await service.getLtvAttestation(
+        MOCK_ADDRESS,
+        COLLATERAL_ADDRESS,
+        BORROW_ADDRESS,
+        CONTRACT_ADDRESS,
+        CHAIN_ID,
+      );
+      expect(ltvOnError).toBeLessThanOrEqual(ltvEthVolatility);
+    });
+
+    it('returns a signature that recovers to the expected signer address', async () => {
+      jest.spyOn(service['configService'], 'get').mockReturnValue(PRIVATE_KEY);
+      const { maxLtvBps, expiry, sig } = await service.getLtvAttestation(
+        MOCK_ADDRESS,
+        COLLATERAL_ADDRESS,
+        BORROW_ADDRESS,
+        CONTRACT_ADDRESS,
+        CHAIN_ID,
+      );
+      const domain = {
+        name: 'Vouch',
+        version: '1',
+        chainId: CHAIN_ID,
+        verifyingContract: ethers.getAddress(CONTRACT_ADDRESS),
+      };
+      const types = {
+        LtvAttestation: [
+          { name: 'borrower', type: 'address' },
+          { name: 'collateralToken', type: 'address' },
+          { name: 'borrowToken', type: 'address' },
+          { name: 'maxLtvBps', type: 'uint16' },
+          { name: 'expiry', type: 'uint256' },
+          { name: 'nonce', type: 'uint256' },
+        ],
+      };
+      const recovered = ethers.verifyTypedData(
+        domain,
+        types,
+        {
+          borrower: MOCK_ADDRESS,
+          collateralToken: ethers.getAddress(COLLATERAL_ADDRESS),
+          borrowToken: ethers.getAddress(BORROW_ADDRESS),
+          maxLtvBps,
+          expiry,
+          nonce: 0n, // getBorrowerNonce is mocked to return 0n
+        },
+        sig,
+      );
+      expect(recovered).toBe(new ethers.Wallet(PRIVATE_KEY).address);
+    });
+  });
+
+  describe('getAttestation', () => {
+    const CONTRACT_ADDRESS = '0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF';
+    const CHAIN_ID = 31337n;
+    const PRIVATE_KEY =
+      '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
+
+    it('throws ServiceUnavailableException when SCORE_SIGNER_PRIVATE_KEY is not set', async () => {
+      await expect(
+        service.getAttestation(MOCK_ADDRESS, CONTRACT_ADDRESS, CHAIN_ID),
+      ).rejects.toThrow(ServiceUnavailableException);
+    });
+
+    it('throws BadRequestException for an invalid contractAddress', async () => {
+      jest.spyOn(service['configService'], 'get').mockReturnValue(PRIVATE_KEY);
+      await expect(
+        service.getAttestation(MOCK_ADDRESS, 'not-an-address', CHAIN_ID),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('returns a signature that recovers to the expected signer address', async () => {
+      jest.spyOn(service['configService'], 'get').mockReturnValue(PRIVATE_KEY);
+      const { score, expiry, sig } = await service.getAttestation(
+        MOCK_ADDRESS,
+        CONTRACT_ADDRESS,
+        CHAIN_ID,
+      );
+
+      const normalizedAddress = ethers.getAddress(MOCK_ADDRESS);
+      const normalizedContract = ethers.getAddress(CONTRACT_ADDRESS);
+      const msgHash = ethers.solidityPackedKeccak256(
+        ['address', 'uint16', 'uint256', 'address', 'uint256'],
+        [normalizedAddress, score, expiry, normalizedContract, CHAIN_ID],
+      );
+      const recovered = ethers.verifyMessage(ethers.getBytes(msgHash), sig);
+      const expectedSigner = new ethers.Wallet(PRIVATE_KEY).address;
+      expect(recovered).toBe(expectedSigner);
+    });
   });
 });

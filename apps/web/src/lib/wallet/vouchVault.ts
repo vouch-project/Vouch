@@ -2,6 +2,7 @@ import type { VouchVault } from '@vouch/contracts';
 import { VouchVault__factory } from '@vouch/contracts';
 import { ethers } from 'ethers';
 import type { Token } from '../../api/chain';
+import type { LtvAttestation } from '../loans/creditScore';
 import { chainInfo } from '../stores/chainInfo.svelte';
 
 export const getVouchVaultContract = async (): Promise<VouchVault> => {
@@ -15,7 +16,9 @@ export const getVouchVaultContract = async (): Promise<VouchVault> => {
   return VouchVault__factory.connect(chainInfo.contractAddress, signer);
 };
 
-const isNativeToken = (token: Token): boolean => !token.address || token.address === ethers.ZeroAddress;
+export const isNativeTokenAddress = (address: string): boolean => !address || address === ethers.ZeroAddress;
+
+const isNativeToken = (token: Token): boolean => isNativeTokenAddress(token.address);
 
 const createEthLoan = async (
   contract: VouchVault,
@@ -26,22 +29,28 @@ const createEthLoan = async (
   durationSeconds: number,
   fundWindowSeconds: number,
   liquidationThresholdBps: number,
+  attestation: LtvAttestation,
 ): Promise<ethers.TransactionResponse> => {
   const value = ethers.parseEther(collateralAmount);
   const principalTokenAddress = isNativeToken(principalToken) ? ethers.ZeroAddress : principalToken.address;
   const principalAmountParsed = ethers.parseUnits(principalAmount, principalToken.decimals ?? 18);
   return contract.createLoan(
+    ethers.ZeroAddress,
+    0n,
     principalTokenAddress,
     principalAmountParsed,
     interestRateBps,
     durationSeconds,
     fundWindowSeconds,
     liquidationThresholdBps,
+    attestation.maxLtvBps,
+    attestation.expiry,
+    attestation.sig,
     { value },
   );
 };
 
-const ERC20_ABI = [
+export const ERC20_ABI = [
   'function approve(address spender, uint256 amount) returns (bool)',
   'function allowance(address owner, address spender) view returns (uint256)',
 ];
@@ -56,6 +65,7 @@ const createErc20Loan = async (
   durationSeconds: number,
   fundWindowSeconds: number,
   liquidationThresholdBps: number,
+  attestation: LtvAttestation,
 ): Promise<ethers.TransactionResponse> => {
   const amount = ethers.parseUnits(collateralAmount, token.decimals ?? 18);
 
@@ -70,7 +80,7 @@ const createErc20Loan = async (
 
   const principalTokenAddress = isNativeToken(principalToken) ? ethers.ZeroAddress : principalToken.address;
   const principalAmountParsed = ethers.parseUnits(principalAmount, principalToken.decimals ?? 18);
-  return contract.createLoanWithERC20(
+  return contract.createLoan(
     token.address,
     amount,
     principalTokenAddress,
@@ -79,6 +89,9 @@ const createErc20Loan = async (
     durationSeconds,
     fundWindowSeconds,
     liquidationThresholdBps,
+    attestation.maxLtvBps,
+    attestation.expiry,
+    attestation.sig,
   );
 };
 
@@ -96,6 +109,7 @@ export const createLoan = async (
   durationSeconds: number,
   fundWindowSeconds: number,
   liquidationThresholdBps: number,
+  attestation: LtvAttestation,
 ): Promise<CreateLoanResult> => {
   const contract = await getVouchVaultContract();
 
@@ -109,6 +123,7 @@ export const createLoan = async (
         durationSeconds,
         fundWindowSeconds,
         liquidationThresholdBps,
+        attestation,
       )
     : createErc20Loan(
         contract,
@@ -120,6 +135,7 @@ export const createLoan = async (
         durationSeconds,
         fundWindowSeconds,
         liquidationThresholdBps,
+        attestation,
       ));
 
   const receipt = await tx.wait();
@@ -155,23 +171,67 @@ export type RepaymentDetails = {
   collateralReleased: bigint;
 };
 
+// Mirrors VouchVault._currentInterestOwed: crystallized interest + pending whole-day accrual.
+// `nowSec` MUST be a chain timestamp (the latest block), not the client clock — the contract
+// accrues against block.timestamp, so using Date.now() here would misstate totalDue/remaining
+// whenever the user's system clock is skewed.
+const currentInterestOwed = (
+  loan: {
+    funded: boolean;
+    interestAccrued: bigint;
+    durationSeconds: bigint;
+    lastAccrualAt: bigint;
+    fundedAt: bigint;
+    principalAmount: bigint;
+    principalRepaid: bigint;
+    interestRateBps: bigint;
+  },
+  nowSec: bigint,
+): bigint => {
+  if (!loan.funded) return 0n;
+  let owed = loan.interestAccrued;
+  if (loan.durationSeconds === 0n) return owed;
+  const from = loan.lastAccrualAt === 0n ? loan.fundedAt : loan.lastAccrualAt;
+  const dueAt = loan.fundedAt + loan.durationSeconds;
+  const cappedNow = nowSec < dueAt ? nowSec : dueAt;
+  if (cappedNow > from) {
+    const periods = (cappedNow - from) / 86400n;
+    const outstanding = loan.principalAmount - loan.principalRepaid;
+    owed += (outstanding * loan.interestRateBps * periods) / (10000n * 365n);
+  }
+  return owed;
+};
+
 export const getRepaymentDetails = async (onChainLoanId: bigint): Promise<RepaymentDetails> => {
   const contract = await getVouchVaultContract();
-  // `getRepaymentDetails` gives the live-accrued totals; the public `loans` getter
-  // gives the monotonic on-chain principal-repaid / collateral-released bookkeeping
-  // (which can't be reconstructed client-side because interest keeps accruing).
-  const [result, loan] = await Promise.all([
-    contract.getRepaymentDetails(onChainLoanId),
-    contract.loans(onChainLoanId),
-  ]);
+  const provider = contract.runner?.provider;
+  if (!provider) throw new Error('No provider available to read chain time');
+  const [loan, block] = await Promise.all([contract.loans(onChainLoanId), provider.getBlock('latest')]);
+  if (!block) throw new Error('Unable to read latest block for interest accrual');
+  const nowSec = BigInt(block.timestamp);
+  const interestOwed = currentInterestOwed(
+    {
+      funded: loan.funded,
+      interestAccrued: loan.interestAccrued,
+      durationSeconds: loan.durationSeconds,
+      lastAccrualAt: loan.lastAccrualAt,
+      fundedAt: loan.fundedAt,
+      principalAmount: loan.principalAmount,
+      principalRepaid: loan.principalRepaid,
+      interestRateBps: BigInt(loan.interestRateBps),
+    },
+    nowSec,
+  );
+  const totalDue = loan.repaid ? loan.amountRepaid : loan.funded ? loan.principalAmount + interestOwed : 0n;
+  const remaining = totalDue > loan.amountRepaid ? totalDue - loan.amountRepaid : 0n;
   return {
-    interestRateBps: Number(result.interestRateBps),
-    durationSeconds: result.durationSeconds,
-    repaid: result.repaid,
-    totalDue: result.totalDue,
-    amountRepaid: result.amountRepaid,
-    remaining: result.remaining,
-    fundDeadline: result.fundDeadline,
+    interestRateBps: Number(loan.interestRateBps),
+    durationSeconds: loan.durationSeconds,
+    repaid: loan.repaid,
+    totalDue,
+    amountRepaid: loan.amountRepaid,
+    remaining,
+    fundDeadline: loan.fundDeadline,
     principalRepaid: loan.principalRepaid,
     collateralReleased: loan.collateralReleased,
   };
@@ -193,40 +253,32 @@ export const getProtocolFeeBps = async (): Promise<number> => {
 };
 
 /**
- * Repay some or all of an ETH-principal loan.
- * @param onChainLoanId   - The on-chain loan ID.
- * @param paymentWei      - Amount to pay in wei (1 to remaining balance).
+ * Repay some or all of a loan.
+ * @param onChainLoanId        - The on-chain loan ID.
+ * @param paymentRaw           - Amount to pay in smallest units (1 to remaining balance).
+ * @param principalTokenAddress - ERC20 principal token address; omit or use ZeroAddress for native ETH.
  */
-export const repayLoan = async (onChainLoanId: bigint, paymentWei: bigint): Promise<ethers.TransactionReceipt> => {
-  const contract = await getVouchVaultContract();
-  const tx: ethers.TransactionResponse = await contract.repayLoan(onChainLoanId, { value: paymentWei });
-  const receipt = await tx.wait();
-  if (!receipt) throw new Error('Transaction failed');
-  return receipt;
-};
-
-/**
- * Repay some or all of an ERC20-principal loan.
- * @param onChainLoanId      - The on-chain loan ID.
- * @param paymentRaw         - Token amount to pay (raw units, ≤ remaining).
- * @param principalToken     - The principal token (used for approval).
- */
-export const repayLoanWithERC20 = async (
+export const repayLoan = async (
   onChainLoanId: bigint,
   paymentRaw: bigint,
-  principalTokenAddress: string,
+  principalTokenAddress?: string,
 ): Promise<ethers.TransactionReceipt> => {
   const contract = await getVouchVaultContract();
+  let tx: ethers.TransactionResponse;
 
-  const erc20 = new ethers.Contract(principalTokenAddress, ERC20_ABI, contract.runner);
-  const signer = await (contract.runner as ethers.JsonRpcSigner).getAddress();
-  const allowance: bigint = await erc20.allowance(signer, contract.target);
-  if (allowance < paymentRaw) {
-    const approveTx = await erc20.approve(contract.target, paymentRaw);
-    await approveTx.wait();
+  if (!principalTokenAddress || principalTokenAddress === ethers.ZeroAddress) {
+    tx = await contract.repayLoan(onChainLoanId, 0n, { value: paymentRaw });
+  } else {
+    const erc20 = new ethers.Contract(principalTokenAddress, ERC20_ABI, contract.runner);
+    const signer = await (contract.runner as ethers.JsonRpcSigner).getAddress();
+    const allowance: bigint = await erc20.allowance(signer, contract.target);
+    if (allowance < paymentRaw) {
+      const approveTx = await erc20.approve(contract.target, paymentRaw);
+      await approveTx.wait();
+    }
+    tx = await contract.repayLoan(onChainLoanId, paymentRaw);
   }
 
-  const tx: ethers.TransactionResponse = await contract.repayLoanWithERC20(onChainLoanId, paymentRaw);
   const receipt = await tx.wait();
   if (!receipt) throw new Error('Transaction failed');
   return receipt;
@@ -258,6 +310,25 @@ export const fundLoan = async (
 ): Promise<ethers.TransactionReceipt> => {
   const contract = await getVouchVaultContract();
 
+  // The vault funds from the loan's on-chain terms (requestedPrincipalToken/Amount), not from the
+  // caller-supplied args. Validate against those terms up front so a stale or bad UI value can't
+  // approve the wrong token/amount (leaving an unintended allowance behind) before the tx reverts.
+  const loan = await contract.loans(onChainLoanId);
+  const onChainToken = isNativeTokenAddress(loan.requestedPrincipalToken)
+    ? ethers.ZeroAddress
+    : loan.requestedPrincipalToken;
+  const suppliedToken = isNativeTokenAddress(principalTokenAddress) ? ethers.ZeroAddress : principalTokenAddress;
+  if (suppliedToken.toLowerCase() !== onChainToken.toLowerCase()) {
+    throw new Error(
+      `Principal token mismatch: loan expects ${onChainToken}, got ${suppliedToken}. Refresh the loan and try again.`,
+    );
+  }
+  if (principalRawAmount !== loan.requestedPrincipalAmount) {
+    throw new Error(
+      `Principal amount mismatch: loan expects ${loan.requestedPrincipalAmount}, got ${principalRawAmount}. Refresh the loan and try again.`,
+    );
+  }
+
   let tx: ethers.TransactionResponse;
 
   if (!principalTokenAddress || principalTokenAddress === ethers.ZeroAddress) {
@@ -272,7 +343,7 @@ export const fundLoan = async (
       const approveTx = await erc20.approve(contract.target, principalRawAmount);
       await approveTx.wait();
     }
-    tx = await contract.fundLoanWithERC20(onChainLoanId, principalTokenAddress, principalRawAmount);
+    tx = await contract.fundLoan(onChainLoanId);
   }
 
   const receipt = await tx.wait();
@@ -316,6 +387,146 @@ export const withdrawPayments = async (tokenAddress: string): Promise<ethers.Tra
   const contract = await getVouchVaultContract();
   const token = !tokenAddress || tokenAddress === ethers.ZeroAddress ? ethers.ZeroAddress : tokenAddress;
   const tx: ethers.TransactionResponse = await contract.withdrawPayments(token);
+  const receipt = await tx.wait();
+  if (!receipt) throw new Error('Transaction failed');
+  return receipt;
+};
+
+export type CreateLendOfferResult = {
+  receipt: ethers.TransactionReceipt;
+  onChainOfferId: bigint;
+};
+
+export const createLendOffer = async (
+  principalToken: Token,
+  principalAmount: string,
+  collateralRatioBps: number,
+  trustedRatioBps: number,
+  scoreThreshold: number,
+  maxLtvBps: number,
+  rateBps: number,
+  durationSeconds: number,
+  acceptWindowSeconds: number,
+): Promise<CreateLendOfferResult> => {
+  const contract = await getVouchVaultContract();
+
+  let tx: ethers.TransactionResponse;
+
+  if (isNativeToken(principalToken)) {
+    const value = ethers.parseEther(principalAmount);
+    tx = await contract.createLendOffer(
+      ethers.ZeroAddress,
+      0n,
+      collateralRatioBps,
+      trustedRatioBps,
+      scoreThreshold,
+      maxLtvBps,
+      rateBps,
+      durationSeconds,
+      acceptWindowSeconds,
+      { value },
+    );
+  } else {
+    const principalAmountParsed = ethers.parseUnits(principalAmount, principalToken.decimals ?? 18);
+    const erc20 = new ethers.Contract(principalToken.address, ERC20_ABI, contract.runner);
+    const signer = await (contract.runner as ethers.JsonRpcSigner).getAddress();
+    const allowance: bigint = await erc20.allowance(signer, contract.target);
+    if (allowance < principalAmountParsed) {
+      const approveTx = await erc20.approve(contract.target, principalAmountParsed);
+      await approveTx.wait();
+    }
+    tx = await contract.createLendOffer(
+      principalToken.address,
+      principalAmountParsed,
+      collateralRatioBps,
+      trustedRatioBps,
+      scoreThreshold,
+      maxLtvBps,
+      rateBps,
+      durationSeconds,
+      acceptWindowSeconds,
+    );
+  }
+
+  const receipt = await tx.wait();
+  if (!receipt) throw new Error('Transaction failed');
+
+  let onChainOfferId: bigint | undefined;
+  for (const log of receipt.logs) {
+    try {
+      const parsed = contract.interface.parseLog({ topics: [...log.topics], data: log.data });
+      if (parsed?.name === 'LendOfferCreated') {
+        onChainOfferId = parsed.args[0] as bigint;
+        break;
+      }
+    } catch {
+      // skip logs from other contracts
+    }
+  }
+
+  if (onChainOfferId === undefined) throw new Error('LendOfferCreated event not found in receipt');
+  return { receipt, onChainOfferId };
+};
+
+export type AcceptLendOfferResult = {
+  receipt: ethers.TransactionReceipt;
+  loanId: bigint;
+};
+
+export type ScoreAttestation = { score: number; expiry: number; sig: string };
+
+export const acceptLendOffer = async (
+  offerId: bigint,
+  collateralToken: Token,
+  collateralAmount: string,
+  attestation?: ScoreAttestation,
+): Promise<AcceptLendOfferResult> => {
+  const contract = await getVouchVaultContract();
+  const collateralParsed = ethers.parseUnits(collateralAmount, collateralToken.decimals ?? 18);
+  const score = attestation?.score ?? 0;
+  const expiry = attestation?.expiry ?? 0;
+  const sig = attestation?.sig ?? '0x';
+
+  let tx: ethers.TransactionResponse;
+
+  if (isNativeToken(collateralToken)) {
+    tx = await contract.acceptLendOffer(offerId, ethers.ZeroAddress, 0n, score, expiry, sig, {
+      value: collateralParsed,
+    });
+  } else {
+    const erc20 = new ethers.Contract(collateralToken.address, ERC20_ABI, contract.runner);
+    const signer = await (contract.runner as ethers.JsonRpcSigner).getAddress();
+    const allowance: bigint = await erc20.allowance(signer, contract.target);
+    if (allowance < collateralParsed) {
+      const approveTx = await erc20.approve(contract.target, collateralParsed);
+      await approveTx.wait();
+    }
+    tx = await contract.acceptLendOffer(offerId, collateralToken.address, collateralParsed, score, expiry, sig);
+  }
+
+  const receipt = await tx.wait();
+  if (!receipt) throw new Error('Transaction failed');
+
+  let loanId: bigint | undefined;
+  for (const log of receipt.logs) {
+    try {
+      const parsed = contract.interface.parseLog({ topics: [...log.topics], data: log.data });
+      if (parsed?.name === 'LendOfferAccepted') {
+        loanId = parsed.args[1] as bigint;
+        break;
+      }
+    } catch {
+      // skip logs from other contracts
+    }
+  }
+
+  if (loanId === undefined) throw new Error('LendOfferAccepted event not found in receipt');
+  return { receipt, loanId };
+};
+
+export const cancelLendOffer = async (offerId: bigint): Promise<ethers.TransactionReceipt> => {
+  const contract = await getVouchVaultContract();
+  const tx: ethers.TransactionResponse = await contract.cancelLendOffer(offerId);
   const receipt = await tx.wait();
   if (!receipt) throw new Error('Transaction failed');
   return receipt;

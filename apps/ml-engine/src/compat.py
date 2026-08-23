@@ -15,18 +15,22 @@ import sys
 import types
 
 import numpy as np
-from sklearn.isotonic import IsotonicRegression
 from sklearn.pipeline import Pipeline
 
 
 class CalibratedPipeline:
-    def __init__(self, pipeline: Pipeline, calibrator: IsotonicRegression) -> None:
+    def __init__(self, pipeline: Pipeline, calibrator: object) -> None:
         self._pipeline = pipeline
         self._calibrator = calibrator
 
     def predict_proba(self, x: np.ndarray) -> np.ndarray:
         raw = self._pipeline.predict_proba(x)[:, 1]
-        cal = self._calibrator.predict(raw)
+        if hasattr(self._calibrator, "predict_proba"):
+            # LogisticRegression (Platt scaling) — needs 2D input, returns proba
+            cal = self._calibrator.predict_proba(raw.reshape(-1, 1))[:, 1]  # type: ignore[union-attr]
+        else:
+            # IsotonicRegression (legacy) — accepts 1D, returns calibrated values
+            cal = self._calibrator.predict(raw)  # type: ignore[union-attr]
         return np.column_stack([1 - cal, cal])
 
     def predict(self, x: np.ndarray) -> np.ndarray:

@@ -3,7 +3,7 @@
 Reads from the latest parquet snapshot (preferred) or, if missing, falls
 back to a live Supabase read. Runs 5-fold stratified cross-validation for
 evaluation metrics, then trains the final model on an 80/20 calibration
-split and applies isotonic calibration. Writes the model artifact to
+split and applies Platt scaling (logistic regression calibration). Writes the model artifact to
 `services/ml-training/src/vouch_ml_training/models/artifacts/<version>/`.
 """
 
@@ -19,7 +19,7 @@ import joblib
 import numpy as np
 import polars as pl
 from sklearn.impute import SimpleImputer
-from sklearn.isotonic import IsotonicRegression
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
@@ -44,7 +44,6 @@ FEATURE_COLUMNS: list[str] = [
     "ethBalance",
     "stablecoinBalanceUsd",
     "uniqueProtocolsInteracted",
-    "aaveDaysSinceLastBorrow",
     "aaveRepayRatio",
 ]
 LABEL_COLUMN = "labelIsRisky"
@@ -53,20 +52,20 @@ _ARTIFACT_ROOT = Path(__file__).resolve().parents[1] / "models" / "artifacts"
 
 
 class CalibratedPipeline:
-    """sklearn Pipeline + IsotonicRegression wrapper with a predict_proba interface.
+    """sklearn Pipeline + Platt-scaling wrapper with a predict_proba interface.
 
     sklearn >=1.8 removed cv="prefit" from CalibratedClassifierCV. This thin
     wrapper provides the same predict_proba contract so downstream loading code
     can call model.predict_proba(X) as expected.
     """
 
-    def __init__(self, pipeline: Pipeline, calibrator: IsotonicRegression) -> None:
+    def __init__(self, pipeline: Pipeline, calibrator: LogisticRegression) -> None:
         self._pipeline = pipeline
         self._calibrator = calibrator
 
     def predict_proba(self, x: np.ndarray) -> np.ndarray:
         raw = self._pipeline.predict_proba(x)[:, 1]
-        cal = self._calibrator.predict(raw)
+        cal = self._calibrator.predict_proba(raw.reshape(-1, 1))[:, 1]
         return np.column_stack([1 - cal, cal])
 
     def predict(self, x: np.ndarray) -> np.ndarray:
@@ -101,10 +100,16 @@ def _load_dataframe(settings: Settings) -> pl.DataFrame:
         # caps responses at 1000 rows, so a single `.select().execute()`
         # would silently truncate datasets larger than that (the default
         # ETL targets are 750 risky + 750 safe = 1500 rows).
-        log.info("no parquet snapshot found; reading directly from Supabase (paginated)")
+        log.info(
+            "no parquet snapshot found; reading directly from Supabase (paginated)"
+        )
         df = fetch_all_rows(settings)
         if not df.is_empty():
-            keep = [c for c in ["address", LABEL_COLUMN, *FEATURE_COLUMNS] if c in df.columns]
+            keep = [
+                c
+                for c in ["address", LABEL_COLUMN, *FEATURE_COLUMNS]
+                if c in df.columns
+            ]
             df = df.select(keep)
 
     if df.is_empty():
@@ -119,11 +124,12 @@ def _load_dataframe(settings: Settings) -> pl.DataFrame:
 
 def _build_pipeline(scale_pos_weight: float) -> Pipeline:
     base = XGBClassifier(
-        n_estimators=400,
-        max_depth=5,
+        n_estimators=150,
+        max_depth=3,
         learning_rate=0.05,
         subsample=0.8,
         colsample_bytree=0.8,
+        min_child_weight=5,
         reg_lambda=1.0,
         scale_pos_weight=scale_pos_weight,
         objective="binary:logistic",
@@ -147,7 +153,9 @@ def train(settings: Settings | None = None) -> TrainingResult:
     n_risky = int(df.select(pl.col(LABEL_COLUMN).cast(pl.Int8).sum()).item())
     log.info(
         "loaded %d rows | risky=%d safe=%d",
-        df.height, n_risky, df.height - n_risky,
+        df.height,
+        n_risky,
+        df.height - n_risky,
     )
 
     # Drop into numpy for sklearn (it doesn't accept polars natively).
@@ -191,13 +199,15 @@ def train(settings: Settings | None = None) -> TrainingResult:
 
         p_fold = fold_pipe.predict_proba(x_fold_test)[:, 1]
         y_fold_pred = (p_fold >= 0.5).astype(int)
-        fold_metrics.append({
-            "accuracy": float(accuracy_score(y_fold_test, y_fold_pred)),
-            "auc": float(roc_auc_score(y_fold_test, p_fold)),
-            "pr_auc": float(average_precision_score(y_fold_test, p_fold)),
-            "log_loss": float(log_loss(y_fold_test, p_fold)),
-            "brier": float(brier_score_loss(y_fold_test, p_fold)),
-        })
+        fold_metrics.append(
+            {
+                "accuracy": float(accuracy_score(y_fold_test, y_fold_pred)),
+                "auc": float(roc_auc_score(y_fold_test, p_fold)),
+                "pr_auc": float(average_precision_score(y_fold_test, p_fold)),
+                "log_loss": float(log_loss(y_fold_test, p_fold)),
+                "brier": float(brier_score_loss(y_fold_test, p_fold)),
+            }
+        )
         log.info("fold %d metrics | %s", fold_idx + 1, fold_metrics[-1])
 
     # Average metrics across folds
@@ -207,27 +217,36 @@ def train(settings: Settings | None = None) -> TrainingResult:
         metrics[key] = float(np.mean(values))
         metrics[f"{key}_std"] = float(np.std(values))
     metrics["positive_rate"] = float(np.mean(y))
-    log.info("cv metrics (mean) | %s", {k: v for k, v in metrics.items() if not k.endswith("_std")})
+    log.info(
+        "cv metrics (mean) | %s",
+        {k: v for k, v in metrics.items() if not k.endswith("_std")},
+    )
 
-    # Train on an 80% split; hold out 20% for isotonic calibration.
-    # sklearn >=1.8 removed cv="prefit"; use IsotonicRegression directly.
+    # Train on an 80% split; hold out 20% for Platt scaling calibration.
+    # sklearn >=1.8 removed cv="prefit"; fit LogisticRegression on raw proba directly.
     n_pos = int(y.sum())
     n_neg = len(y) - n_pos
     scale_pos_weight = (n_neg / n_pos) if n_pos > 0 else 1.0
     x_cal_train, x_cal_val, y_cal_train, y_cal_val = train_test_split(
-        x, y, test_size=0.2, stratify=y, random_state=42,
+        x,
+        y,
+        test_size=0.2,
+        stratify=y,
+        random_state=42,
     )
     cal_pipe = _build_pipeline(scale_pos_weight)
     cal_pipe.fit(x_cal_train, y_cal_train)
     raw_proba_val = cal_pipe.predict_proba(x_cal_val)[:, 1]
-    isotonic = IsotonicRegression(out_of_bounds="clip")
-    isotonic.fit(raw_proba_val, y_cal_val)
+    calibrator = LogisticRegression()
+    calibrator.fit(raw_proba_val.reshape(-1, 1), y_cal_val)
 
     # Persist artifact
-    model_version = f"{settings.feature_set_version}-{datetime.now(tz=UTC):%Y%m%dT%H%M%SZ}"
+    model_version = (
+        f"{settings.feature_set_version}-{datetime.now(tz=UTC):%Y%m%dT%H%M%SZ}"
+    )
     artifact_dir = _ARTIFACT_ROOT / model_version
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    joblib.dump(CalibratedPipeline(cal_pipe, isotonic), artifact_dir / "model.joblib")
+    joblib.dump(CalibratedPipeline(cal_pipe, calibrator), artifact_dir / "model.joblib")
 
     metadata: dict[str, Any] = {
         "model_version": model_version,

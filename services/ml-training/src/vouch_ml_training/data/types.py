@@ -16,6 +16,8 @@ class LiquidationAggregate(BaseModel):
     first_liquidation_at: datetime
     last_liquidation_at: datetime
     total_principal_usd: float
+    borrows_count: int = 0
+    last_borrow_at: datetime | None = None
     aave_repay_ratio: float | None = None
 
 

@@ -5,10 +5,28 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { firstValueFrom } from 'rxjs';
+import { ConfigService } from '@nestjs/config';
 import { asAddress } from '@vouch/database-types';
+import { ethers } from 'ethers';
+import { firstValueFrom } from 'rxjs';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreditScoreResponseDto } from './dto/credit-score-response.dto';
+
+const LTV_ATTESTATION_TYPES = {
+  LtvAttestation: [
+    { name: 'borrower', type: 'address' },
+    { name: 'collateralToken', type: 'address' },
+    { name: 'borrowToken', type: 'address' },
+    { name: 'maxLtvBps', type: 'uint16' },
+    { name: 'expiry', type: 'uint256' },
+    { name: 'nonce', type: 'uint256' },
+  ],
+};
+
+const DEFAULT_VOLATILITY = 0.6;
+const ETH_VOLATILITY = 0.45;
+
+const ATTESTATION_TTL_S = 5 * 60; // 5 minutes
 
 const SCORE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -31,6 +49,7 @@ export class ScoringService {
   constructor(
     private readonly httpService: HttpService,
     private readonly supabaseService: SupabaseService,
+    private readonly configService: ConfigService,
   ) {}
 
   async getCreditScore(walletAddress: string): Promise<CreditScoreResponseDto> {
@@ -128,5 +147,188 @@ export class ScoringService {
       explanation: mlData.explanation,
       computedAt,
     };
+  }
+
+  private async getBorrowerNonce(
+    borrower: string,
+    contractAddress: string,
+    chainId: bigint,
+  ): Promise<bigint> {
+    const { data: chainRow, error } = await this.supabaseService.client
+      .from('chains')
+      .select('rpcUrl')
+      .eq('networkId', chainId.toString())
+      .eq('contractAddress', asAddress(contractAddress))
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        throw new BadRequestException('Unknown chain or contract address');
+      }
+      this.logger.error(`Failed to look up chain RPC URL: ${error.message}`);
+      throw new ServiceUnavailableException('Failed to look up chain RPC URL');
+    }
+
+    const provider = new ethers.JsonRpcProvider(chainRow.rpcUrl);
+    const iface = new ethers.Interface([
+      'function nonces(address) view returns (uint256)',
+    ]);
+    const contract = new ethers.Contract(contractAddress, iface, provider);
+    try {
+      return (await contract.nonces(borrower)) as bigint;
+    } catch (err) {
+      this.logger.error(
+        `Failed to read on-chain nonce for ${borrower}: ${String(err)}`,
+      );
+      throw new ServiceUnavailableException('Failed to read on-chain nonce');
+    }
+  }
+
+  async getLtvAttestation(
+    walletAddress: string,
+    collateralTokenAddress: string,
+    borrowTokenAddress: string,
+    contractAddress: string,
+    chainId: bigint,
+  ): Promise<{ maxLtvBps: number; expiry: number; sig: string }> {
+    const privateKey = this.configService.get<string>(
+      'SCORE_SIGNER_PRIVATE_KEY',
+    );
+    if (!privateKey) {
+      throw new ServiceUnavailableException('Score attestation not configured');
+    }
+    if (!ethers.isAddress(contractAddress)) {
+      throw new BadRequestException('Invalid contractAddress');
+    }
+
+    const { score, address: borrower } =
+      await this.getCreditScore(walletAddress);
+
+    // Fetch volatility for the two tokens (case-insensitive address lookup).
+    const rawTokenAddresses = [
+      collateralTokenAddress,
+      borrowTokenAddress,
+    ].filter((a): a is string => !!a && a !== ethers.ZeroAddress);
+    const invalidAddress = rawTokenAddresses.find(
+      (a): boolean => !ethers.isAddress(a),
+    );
+    if (invalidAddress !== undefined) {
+      throw new BadRequestException(`Invalid token address: ${invalidAddress}`);
+    }
+    const addresses = rawTokenAddresses.map((a) => ethers.getAddress(a));
+
+    let collateralVolatility =
+      !collateralTokenAddress || collateralTokenAddress === ethers.ZeroAddress
+        ? ETH_VOLATILITY
+        : DEFAULT_VOLATILITY;
+    let borrowVolatility =
+      !borrowTokenAddress || borrowTokenAddress === ethers.ZeroAddress
+        ? ETH_VOLATILITY
+        : DEFAULT_VOLATILITY;
+
+    if (addresses.length > 0) {
+      const { data: tokenRows } = await this.supabaseService.client
+        .from('tokens')
+        .select('address, volatility')
+        .in('address', addresses.map(asAddress));
+
+      if (tokenRows) {
+        const byAddress = new Map(
+          tokenRows.map((r) => [r.address.toLowerCase(), r.volatility]),
+        );
+        if (
+          collateralTokenAddress &&
+          collateralTokenAddress !== ethers.ZeroAddress
+        ) {
+          collateralVolatility =
+            byAddress.get(collateralTokenAddress.toLowerCase()) ??
+            DEFAULT_VOLATILITY;
+        }
+        if (borrowTokenAddress && borrowTokenAddress !== ethers.ZeroAddress) {
+          borrowVolatility =
+            byAddress.get(borrowTokenAddress.toLowerCase()) ??
+            DEFAULT_VOLATILITY;
+        }
+      }
+    }
+
+    const v = Math.max(collateralVolatility, borrowVolatility);
+    const base = 90 - v * 40;
+    const clamped = Math.max(300, Math.min(850, score));
+    const mult = 0.5 + ((clamped - 300) / 550) * 0.6;
+    const maxLtvBps = Math.max(
+      1,
+      Math.min(10000, Math.floor(base * mult * 100)),
+    );
+
+    const expiry = Math.floor(Date.now() / 1000) + ATTESTATION_TTL_S;
+    const verifyingContract = ethers.getAddress(contractAddress);
+
+    const nonce = await this.getBorrowerNonce(
+      borrower,
+      verifyingContract,
+      chainId,
+    );
+
+    const domain = {
+      name: 'Vouch',
+      version: '1',
+      chainId,
+      verifyingContract,
+    };
+    const collateralToken = ethers.getAddress(
+      collateralTokenAddress ?? ethers.ZeroAddress,
+    );
+    const borrowToken = ethers.getAddress(
+      borrowTokenAddress ?? ethers.ZeroAddress,
+    );
+    const value = {
+      borrower,
+      collateralToken,
+      borrowToken,
+      maxLtvBps,
+      expiry,
+      nonce,
+    };
+
+    const wallet = new ethers.Wallet(privateKey);
+    const sig = await wallet.signTypedData(
+      domain,
+      LTV_ATTESTATION_TYPES,
+      value,
+    );
+
+    return { maxLtvBps, expiry, sig };
+  }
+
+  async getAttestation(
+    walletAddress: string,
+    contractAddress: string,
+    chainId: bigint,
+  ): Promise<{ score: number; expiry: number; sig: string }> {
+    const privateKey = this.configService.get<string>(
+      'SCORE_SIGNER_PRIVATE_KEY',
+    );
+    if (!privateKey) {
+      throw new ServiceUnavailableException('Score attestation not configured');
+    }
+
+    if (!ethers.isAddress(contractAddress)) {
+      throw new BadRequestException('Invalid contractAddress');
+    }
+    const normalizedContractAddress = ethers.getAddress(contractAddress);
+
+    const { score, address: normalizedAddress } =
+      await this.getCreditScore(walletAddress);
+    const expiry = Math.floor(Date.now() / 1000) + ATTESTATION_TTL_S;
+
+    const msgHash = ethers.solidityPackedKeccak256(
+      ['address', 'uint16', 'uint256', 'address', 'uint256'],
+      [normalizedAddress, score, expiry, normalizedContractAddress, chainId],
+    );
+    const wallet = new ethers.Wallet(privateKey);
+    const sig = await wallet.signMessage(ethers.getBytes(msgHash));
+
+    return { score, expiry, sig };
   }
 }

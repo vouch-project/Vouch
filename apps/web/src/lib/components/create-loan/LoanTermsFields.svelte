@@ -64,15 +64,12 @@
   <p class="text-sm font-semibold text-foreground">Loan Terms</p>
   <div class="grid grid-cols-3 gap-3">
     <div class="flex flex-col gap-1.5">
-      <div class="flex items-baseline justify-between">
+      <div class="flex items-baseline justify-between min-h-[1.25rem]">
         <span class="text-xs text-muted-foreground font-medium">APR %</span>
         {#if recommendedApr !== null}
           {@const recommended = recommendedApr.toFixed(2)}
           <button
-            class="group flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors {interestRatePct ===
-            recommended
-              ? 'border-primary/40 bg-primary/15 text-primary'
-              : 'border-border bg-muted/40 text-muted-foreground hover:border-primary/40 hover:bg-primary/10 hover:text-primary'}"
+            class={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors ${interestRatePct === recommended ? 'border-primary/40 bg-primary/15 text-primary' : 'border-border bg-muted/40 text-muted-foreground hover:border-primary/40 hover:bg-primary/10 hover:text-primary'}`}
             onclick={() => (interestRatePct = recommended)}
             title="Use the recommended APR for your credit score and LTV"
             type="button"
@@ -80,6 +77,10 @@
             <Sparkles class="h-3 w-3" />
             {recommended}%
           </button>
+        {:else}
+          <span class="invisible flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold border-border">
+            <Sparkles class="h-3 w-3" />0%
+          </span>
         {/if}
       </div>
       <div class="relative">

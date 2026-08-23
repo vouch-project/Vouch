@@ -252,6 +252,168 @@ export class BlockchainListenerService implements OnModuleInit {
         );
       },
     );
+
+    void contract.on(
+      contract.getEvent('LendOfferCreated'),
+      (offerId, lender, principalToken, principalAmount, event) => {
+        this.enqueue(queueKey, () =>
+          this.handleLendOfferCreated(
+            offerId,
+            lender,
+            principalToken,
+            principalAmount,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+            contract,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      contract.getEvent('LendOfferAccepted'),
+      (offerId, loanId, borrower, event) => {
+        this.enqueue(queueKey, () =>
+          this.handleLendOfferAccepted(
+            offerId,
+            loanId,
+            borrower,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+            contract,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      contract.getEvent('LendOfferCancelled'),
+      (offerId, lender, event) => {
+        this.enqueue(queueKey, () =>
+          this.handleLendOfferCancelled(
+            offerId,
+            lender,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      contract.getEvent('LendOfferExpired'),
+      (offerId, event) => {
+        this.enqueue(queueKey, () =>
+          this.handleLendOfferExpired(
+            offerId,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      contract.getEvent('SignedLoanRequestFilled'),
+      (
+        loanId,
+        digest,
+        borrower,
+        lender,
+        collateralToken,
+        collateralAmount,
+        principalToken,
+        principalAmount,
+        timestamp,
+        event,
+      ) => {
+        this.enqueue(queueKey, () =>
+          this.handleSignedLoanRequestFilled(
+            loanId,
+            digest,
+            borrower,
+            lender,
+            collateralToken,
+            collateralAmount,
+            principalToken,
+            principalAmount,
+            timestamp,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+            contract,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      contract.getEvent('SignedLendOfferFilled'),
+      (
+        loanId,
+        digest,
+        lender,
+        borrower,
+        principalToken,
+        principalAmount,
+        collateralToken,
+        collateralAmount,
+        timestamp,
+        event,
+      ) => {
+        this.enqueue(queueKey, () =>
+          this.handleSignedLendOfferFilled(
+            loanId,
+            digest,
+            lender,
+            borrower,
+            principalToken,
+            principalAmount,
+            collateralToken,
+            collateralAmount,
+            timestamp,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+            contract,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      contract.getEvent('SignedLoanRequestCancelled'),
+      (digest, borrower, event) => {
+        this.enqueue(queueKey, () =>
+          this.handleSignedLoanRequestCancelled(
+            digest,
+            borrower,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
+      contract.getEvent('SignedLendOfferCancelled'),
+      (digest, lender, event) => {
+        this.enqueue(queueKey, () =>
+          this.handleSignedLendOfferCancelled(
+            digest,
+            lender,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+          ),
+        );
+      },
+    );
   }
 
   protected async handleLoanCreated(
@@ -271,27 +433,16 @@ export class BlockchainListenerService implements OnModuleInit {
     let durationSeconds = 0;
     let fundWindowSeconds = 0;
     try {
-      const details = await contract.getRepaymentDetails(loanId);
-      interestRateBps = Number(details.interestRateBps);
-      durationSeconds = Number(details.durationSeconds);
-      fundWindowSeconds = Number(details.fundDeadline - timestamp);
-    } catch (primaryError) {
+      const loan = await contract.loans(loanId);
+      interestRateBps = Number(loan.interestRateBps);
+      durationSeconds = Number(loan.durationSeconds);
+      fundWindowSeconds = Number(loan.fundDeadline - timestamp);
+    } catch (error) {
       this.logger.error(
-        'Failed to read loan terms from getRepaymentDetails; falling back to loans(loanId)',
-        primaryError,
+        'Failed to read loan terms from loans(); aborting handler',
+        error,
       );
-      try {
-        const loan = await contract.loans(loanId);
-        interestRateBps = Number(loan.interestRateBps);
-        durationSeconds = Number(loan.durationSeconds);
-        fundWindowSeconds = Number(loan.fundDeadline - timestamp);
-      } catch (fallbackError) {
-        this.logger.error(
-          'Failed to read loan terms from loans(); aborting handler',
-          fallbackError,
-        );
-        throw fallbackError;
-      }
+      throw error;
     }
 
     if (!Number.isSafeInteger(durationSeconds) || durationSeconds < 0) {
@@ -549,6 +700,374 @@ export class BlockchainListenerService implements OnModuleInit {
     } catch (error) {
       this.logger.error(
         `Failed to record protocol fee for loan ${loanId.toString()}`,
+        error,
+      );
+    }
+  }
+
+  protected async handleLendOfferCreated(
+    offerId: bigint,
+    lender: string,
+    principalToken: string,
+    principalAmount: bigint,
+    { blockNumber }: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+    contract: VouchVault,
+  ) {
+    let durationSeconds = 0;
+    let acceptWindowSeconds = 0;
+    let collateralRatioBps = 0;
+    let trustedRatioBps = 0;
+    let scoreThreshold = 0;
+    let maxLtvBps = 0;
+    let interestRateBps = 0;
+    let createdAt = new Date();
+
+    try {
+      const runner = contract.runner;
+      const provider: ethers.Provider | null =
+        runner &&
+        typeof (runner as Partial<ethers.Provider>).getBlock === 'function'
+          ? (runner as ethers.Provider)
+          : (runner?.provider ?? null);
+
+      const [offer, block] = await Promise.all([
+        contract.lendOffers(offerId),
+        provider ? provider.getBlock(blockNumber) : Promise.resolve(null),
+      ]);
+
+      const createdTimestamp =
+        block?.timestamp ?? Math.floor(Date.now() / 1000);
+      createdAt = new Date(createdTimestamp * 1000);
+
+      durationSeconds = Number(offer.durationSeconds);
+      acceptWindowSeconds = Number(offer.acceptDeadline) - createdTimestamp;
+      collateralRatioBps = Number(offer.collateralRatioBps);
+      trustedRatioBps = Number(offer.trustedRatioBps);
+      scoreThreshold = Number(offer.scoreThreshold);
+      maxLtvBps = Number(offer.maxLtvBps);
+      interestRateBps = Number(offer.interestRateBps);
+    } catch (err) {
+      this.logger.error('Failed to read lend offer details from chain', err);
+    }
+
+    try {
+      await this.loanService.createLendOffer({
+        offerId,
+        lenderAddress: lender,
+        principalTokenAddress: principalToken,
+        principalAmount,
+        collateralRatioBps,
+        trustedRatioBps,
+        scoreThreshold,
+        maxLtvBps,
+        interestRateBps,
+        durationSeconds,
+        acceptWindowSeconds,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        createdAt,
+      });
+      this.logger.log(`LendOffer ${offerId.toString()} created by ${lender}`);
+    } catch (error) {
+      this.logger.error('Failed to create lend offer in DB', error);
+    }
+  }
+
+  protected async handleLendOfferAccepted(
+    offerId: bigint,
+    loanId: bigint,
+    borrower: string,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+    contract: VouchVault,
+  ) {
+    try {
+      const runner = contract.runner;
+      const provider: ethers.Provider | null =
+        runner &&
+        typeof (runner as Partial<ethers.Provider>).getBlock === 'function'
+          ? (runner as ethers.Provider)
+          : (runner?.provider ?? null);
+
+      const [loan, receipt] = await Promise.all([
+        contract.loans(loanId),
+        provider
+          ? provider.getTransactionReceipt(transactionHash)
+          : Promise.resolve(null),
+      ]);
+
+      // Locate the actual Transfer log indices from the receipt. The collateral
+      // deposit transfer (borrower → vault) precedes the disbursement transfer
+      // (vault → borrower) in the same tx. Fall back to the LendOfferAccepted
+      // event's logIndex if the receipt is unavailable.
+      const transferTopic = ethers.id('Transfer(address,address,uint256)');
+      const transferLogs =
+        receipt?.logs.filter((l) => l.topics[0] === transferTopic) ?? [];
+      const collateralLogIndex =
+        transferLogs.find(
+          (l) =>
+            l.topics[2] ===
+            ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
+        )?.index ?? logIndex;
+      const disbursementLogIndex =
+        transferLogs.find(
+          (l) =>
+            l.topics[1] ===
+            ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
+        )?.index ?? (receipt?.logs?.at(-1)?.index ?? logIndex) + 1;
+
+      await this.loanService.acceptLendOffer({
+        offerId,
+        loanId,
+        borrowerAddress: borrower,
+        collateralTokenAddress: loan.collateralToken,
+        collateralAmount: loan.collateralAmount,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        collateralLogIndex,
+        disbursementLogIndex,
+        acceptedAt: new Date(Number(loan.fundedAt) * 1000),
+      });
+      this.logger.log(
+        `LendOffer ${offerId.toString()} accepted by ${borrower} → loan ${loanId.toString()}`,
+      );
+    } catch (error) {
+      this.logger.error('Failed to accept lend offer in DB', error);
+    }
+  }
+
+  protected async handleLendOfferCancelled(
+    offerId: bigint,
+    lender: string,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+  ) {
+    try {
+      await this.loanService.cancelLendOffer({
+        offerId,
+        lenderAddress: lender,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        cancelledAt: new Date(),
+      });
+      this.logger.log(`LendOffer ${offerId.toString()} cancelled by ${lender}`);
+    } catch (error) {
+      this.logger.error('Failed to cancel lend offer in DB', error);
+    }
+  }
+
+  protected async handleLendOfferExpired(
+    offerId: bigint,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+  ) {
+    try {
+      await this.loanService.expireLendOffer({
+        offerId,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        expiredAt: new Date(),
+      });
+      this.logger.log(`LendOffer ${offerId.toString()} expired`);
+    } catch (error) {
+      this.logger.error('Failed to expire lend offer in DB', error);
+    }
+  }
+
+  protected async handleSignedLoanRequestFilled(
+    loanId: bigint,
+    digest: string,
+    _borrower: string,
+    lender: string,
+    collateralToken: string,
+    collateralAmount: bigint,
+    _principalToken: string,
+    _principalAmount: bigint,
+    timestamp: bigint,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+    contract: VouchVault,
+  ) {
+    try {
+      const runner = contract.runner;
+      const provider: ethers.Provider | null =
+        runner &&
+        typeof (runner as Partial<ethers.Provider>).getBlock === 'function'
+          ? (runner as ethers.Provider)
+          : (runner?.provider ?? null);
+
+      const receipt = await (provider
+        ? provider.getTransactionReceipt(transactionHash)
+        : Promise.resolve(null));
+
+      const transferTopic = ethers.id('Transfer(address,address,uint256)');
+      const transferLogs =
+        receipt?.logs.filter((l) => l.topics[0] === transferTopic) ?? [];
+      const collateralLogIndex =
+        transferLogs.find(
+          (l) =>
+            l.topics[2] ===
+            ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
+        )?.index ?? logIndex;
+      const disbursementLogIndex =
+        transferLogs.find(
+          (l) =>
+            l.topics[1] ===
+            ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
+        )?.index ?? (receipt?.logs?.at(-1)?.index ?? logIndex) + 1;
+
+      await this.loanService.fillSignedOrder({
+        orderKind: 'request',
+        digest,
+        loanId,
+        fillerAddress: lender,
+        collateralTokenAddress: collateralToken,
+        collateralAmount,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        txHash: transactionHash,
+        blockNumber: BigInt(blockNumber),
+        blockHash,
+        collateralLogIndex: BigInt(collateralLogIndex),
+        disbursementLogIndex: BigInt(disbursementLogIndex),
+        filledAt: new Date(Number(timestamp) * 1000),
+      });
+      this.logger.log(
+        `SignedLoanRequest filled → loan ${loanId.toString()} (digest ${digest})`,
+      );
+    } catch (error) {
+      this.logger.error(
+        'Failed to record SignedLoanRequestFilled in DB',
+        error,
+      );
+    }
+  }
+
+  protected async handleSignedLendOfferFilled(
+    loanId: bigint,
+    digest: string,
+    _lender: string,
+    borrower: string,
+    _principalToken: string,
+    _principalAmount: bigint,
+    collateralToken: string,
+    collateralAmount: bigint,
+    timestamp: bigint,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+    contract: VouchVault,
+  ) {
+    try {
+      const runner = contract.runner;
+      const provider: ethers.Provider | null =
+        runner &&
+        typeof (runner as Partial<ethers.Provider>).getBlock === 'function'
+          ? (runner as ethers.Provider)
+          : (runner?.provider ?? null);
+
+      const receipt = await (provider
+        ? provider.getTransactionReceipt(transactionHash)
+        : Promise.resolve(null));
+
+      const transferTopic = ethers.id('Transfer(address,address,uint256)');
+      const transferLogs =
+        receipt?.logs.filter((l) => l.topics[0] === transferTopic) ?? [];
+      const collateralLogIndex =
+        collateralToken === ethers.ZeroAddress
+          ? logIndex
+          : (transferLogs.find(
+              (l) =>
+                l.topics[2] ===
+                ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
+            )?.index ?? logIndex);
+      const disbursementLogIndex =
+        transferLogs.find(
+          (l) =>
+            l.topics[1] ===
+            ethers.zeroPadValue(contractAddress.toLowerCase(), 32),
+        )?.index ?? (receipt?.logs?.at(-1)?.index ?? logIndex) + 1;
+
+      await this.loanService.fillSignedOrder({
+        orderKind: 'offer',
+        digest,
+        loanId,
+        fillerAddress: borrower,
+        collateralTokenAddress: collateralToken,
+        collateralAmount,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        txHash: transactionHash,
+        blockNumber: BigInt(blockNumber),
+        blockHash,
+        collateralLogIndex: BigInt(collateralLogIndex),
+        disbursementLogIndex: BigInt(disbursementLogIndex),
+        filledAt: new Date(Number(timestamp) * 1000),
+      });
+      this.logger.log(
+        `SignedLendOffer filled → loan ${loanId.toString()} (digest ${digest})`,
+      );
+    } catch (error) {
+      this.logger.error('Failed to record SignedLendOfferFilled in DB', error);
+    }
+  }
+
+  protected async handleSignedLoanRequestCancelled(
+    digest: string,
+    _borrower: string,
+    _log: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+  ) {
+    try {
+      await this.loanService.cancelSignedOrder({
+        digest,
+        networkId: network.chainId.toString(),
+        contractAddress,
+      });
+      this.logger.log(`SignedLoanRequest cancelled (digest ${digest})`);
+    } catch (error) {
+      this.logger.error(
+        'Failed to record SignedLoanRequestCancelled in DB',
+        error,
+      );
+    }
+  }
+
+  protected async handleSignedLendOfferCancelled(
+    digest: string,
+    _lender: string,
+    _log: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+  ) {
+    try {
+      await this.loanService.cancelSignedOrder({
+        digest,
+        networkId: network.chainId.toString(),
+        contractAddress,
+      });
+      this.logger.log(`SignedLendOffer cancelled (digest ${digest})`);
+    } catch (error) {
+      this.logger.error(
+        'Failed to record SignedLendOfferCancelled in DB',
         error,
       );
     }

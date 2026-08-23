@@ -18,6 +18,7 @@
     "test": "hardhat test",
     "clean": "hardhat clean",
     "fetch:chainlink-feeds": "hardhat run scripts/fetch-chainlink-feeds.ts",
+    "generate:score-signer": "hardhat run scripts/generate-score-signer.ts",
     "setup:sepolia-feeds": "hardhat run scripts/setup-sepolia-price-feeds.ts --network sepolia",
     "setup:sepolia-mocks": "hardhat run scripts/deploy-sepolia-mock-tokens.ts --network sepolia"
   },

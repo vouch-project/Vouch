@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { ethers, network, upgrades } from 'hardhat';
 import path from 'path';
-import type { VouchVault } from '../typechain-types';
+import type { VouchVault, VouchVaultLens } from '../typechain-types';
 
 /**
  * Read a variable from the loaded .env file content, falling back to the
@@ -9,7 +9,8 @@ import type { VouchVault } from '../typechain-types';
  */
 function readEnvVar(envContent: string, name: string): string | undefined {
   const match = envContent.match(new RegExp(`^${name}=(.*)$`, 'm'));
-  const value = match ? match[1].trim() : process.env[name]?.trim();
+  const raw = match ? match[1].trim() : process.env[name]?.trim();
+  const value = raw?.replace(/^["']|["']$/g, '');
   return value ? value : undefined;
 }
 
@@ -21,6 +22,19 @@ function readEnvVar(envContent: string, name: string): string | undefined {
  *   PROTOCOL_TREASURY_ADDRESS - wallet that receives protocol fees
  *   PROTOCOL_FEE_BPS          - fee in basis points (1000 = 10%, max 5000)
  */
+async function applyScoreSigner(vault: VouchVault, envContent: string): Promise<void> {
+  const signer = readEnvVar(envContent, 'SCORE_SIGNER_PRIVATE_KEY');
+  if (!signer) return;
+  const address = new ethers.Wallet(signer).address;
+  const current = await vault.scoreSigner();
+  if (current.toLowerCase() !== address.toLowerCase()) {
+    console.log(`Setting scoreSigner -> ${address}`);
+    await (await vault.setScoreSigner(address)).wait();
+  } else {
+    console.log(`scoreSigner already ${address}, skipping`);
+  }
+}
+
 async function applyProtocolConfig(vault: VouchVault, envContent: string): Promise<void> {
   const treasury = readEnvVar(envContent, 'PROTOCOL_TREASURY_ADDRESS');
   if (treasury) {
@@ -52,6 +66,39 @@ async function applyProtocolConfig(vault: VouchVault, envContent: string): Promi
   }
 }
 
+function setEnvVar(env: string, name: string, value: string): string {
+  const line = `${name}=${value}`;
+  if (new RegExp(`^${name}=`, 'm').test(env)) {
+    return env.replace(new RegExp(`^${name}=.*`, 'm'), line);
+  }
+  return env.trimEnd() + `\n${line}\n`;
+}
+
+async function deployLens(
+  vaultAddress: string,
+  env: string,
+  envPath: string,
+  lensEnvVarName: string,
+  skipIfExists = false,
+): Promise<void> {
+  if (skipIfExists) {
+    const existingLens = readEnvVar(env, lensEnvVarName);
+    if (existingLens) {
+      console.log(`VouchVaultLens already deployed at ${existingLens}, skipping`);
+      return;
+    }
+  }
+  console.log('Deploying VouchVaultLens...');
+  const LensFactory = await ethers.getContractFactory('VouchVaultLens');
+  const lens = (await LensFactory.deploy(vaultAddress)) as unknown as VouchVaultLens;
+  await lens.waitForDeployment();
+  const lensAddress = await lens.getAddress();
+  console.log(`VouchVaultLens deployed to: ${lensAddress}`);
+  const updated = setEnvVar(readFileSync(envPath, 'utf-8'), lensEnvVarName, lensAddress);
+  writeFileSync(envPath, updated, 'utf-8');
+  console.log(`✅ Saved ${lensEnvVarName} to ${envPath}`);
+}
+
 async function main() {
   const [deployer] = await ethers.getSigners();
   console.log(`Deploying contracts with the account: ${deployer.address}`);
@@ -62,10 +109,12 @@ async function main() {
   // Usage: UPGRADE=1 npx hardhat run scripts/deploy.ts --network sepolia
   const isUpgrade = process.env.UPGRADE === '1';
 
-  // .env path and variable — Sepolia deployments write to a separate key so
+  // .env path and variables — Sepolia deployments write to separate keys so
   // PUBLIC_VOUCH_VAULT_ADDRESS always holds the mainnet/local address.
   const envPath = path.resolve(__dirname, '../../../.env');
-  const envVarName = network.name === 'sepolia' ? 'SEPOLIA_VOUCH_VAULT_ADDRESS' : 'PUBLIC_VOUCH_VAULT_ADDRESS';
+  const isSepolia = network.name === 'sepolia';
+  const envVarName = isSepolia ? 'SEPOLIA_VOUCH_VAULT_ADDRESS' : 'PUBLIC_VOUCH_VAULT_ADDRESS';
+  const lensEnvVarName = isSepolia ? 'SEPOLIA_VOUCH_VAULT_LENS_ADDRESS' : 'PUBLIC_VOUCH_VAULT_LENS_ADDRESS';
   let env = '';
   let proxyAddress = '';
 
@@ -87,8 +136,11 @@ async function main() {
     const address = await upgraded.getAddress();
     console.log(`VouchVault (Proxy) upgraded at: ${address}`);
     // Re-apply protocol config in case env values changed.
-    await applyProtocolConfig((await ethers.getContractAt('VouchVault', address)) as unknown as VouchVault, env);
-    // No need to update .env, address stays the same
+    const upgradedVault = (await ethers.getContractAt('VouchVault', address)) as unknown as VouchVault;
+    await applyProtocolConfig(upgradedVault, env);
+    await applyScoreSigner(upgradedVault, env);
+    // Deploy lens if it hasn't been deployed yet (vault address unchanged after upgrade).
+    await deployLens(address, env, envPath, lensEnvVarName, true);
     return;
   }
 
@@ -101,26 +153,21 @@ async function main() {
   const address = await vault.getAddress();
   console.log(`VouchVault (Proxy) deployed to: ${address}`);
 
-  // Apply protocol config (treasury + fee) from environment variables.
-  await applyProtocolConfig((await ethers.getContractAt('VouchVault', address)) as unknown as VouchVault, env);
+  // Apply protocol config (treasury + fee) and score signer from environment variables.
+  const deployedVault = (await ethers.getContractAt('VouchVault', address)) as unknown as VouchVault;
+  await applyProtocolConfig(deployedVault, env);
+  await applyScoreSigner(deployedVault, env);
 
   // Inject contract address into root .env
-  const envLine = `${envVarName}=${address}`;
   if (!existsSync(envPath)) {
-    env = envLine;
+    env = `${envVarName}=${address}\n`;
   } else {
-    // Check if the variable already exists
-    if (new RegExp(`^${envVarName}=`, 'm').test(env)) {
-      // Replace existing line
-      env = env.replace(new RegExp(`^${envVarName}=.*`, 'm'), envLine);
-    } else {
-      // Append to the end, ensuring there is a newline first
-      env = env.trimEnd() + `\n${envLine}\n`;
-    }
+    env = setEnvVar(env, envVarName, address);
   }
-
   writeFileSync(envPath, env, 'utf-8');
   console.log(`✅ Saved ${envVarName} to ${envPath}`);
+
+  await deployLens(address, env, envPath, lensEnvVarName);
 }
 
 main().catch((error) => {
