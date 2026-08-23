@@ -872,7 +872,18 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     /// @param collateralToken  Collateral token provided by the borrower at fill time (address(0) = native ETH).
     /// @param collateralAmount Amount of ERC20 collateral to pull when collateralToken != address(0). Ignored for ETH collateral (uses msg.value).
     /// @param sig              EIP-712 signature from offer.lender over the offer hash.
-    function fillLendOffer(SignedLendOffer calldata offer, address collateralToken, uint256 collateralAmount, bytes calldata sig) external payable nonReentrant {
+    /// @param score            Borrower's credit score from the backend attestation (0 if not using score discount).
+    /// @param scoreExpiry      Attestation expiry timestamp. Ignored when scoreSig is empty.
+    /// @param scoreSig         Backend signature over (borrower, score, expiry). Pass empty bytes to skip score check and use base collateralRatioBps.
+    function fillLendOffer(
+        SignedLendOffer calldata offer,
+        address collateralToken,
+        uint256 collateralAmount,
+        bytes calldata sig,
+        uint16 score,
+        uint256 scoreExpiry,
+        bytes calldata scoreSig
+    ) external payable nonReentrant {
         if (offer.principalToken == address(0)) revert InvalidToken();
         if (offer.principalAmount == 0) revert ZeroValue();
         if (offer.collateralRatioBps < 10000) revert InvalidCollateralRatio();
@@ -910,9 +921,11 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
             if (received != _collateralAmount) revert FeeOnTransferNotSupported();
         }
 
-        // Signed offers fill at the base collateralRatioBps (no score attestation at fill time).
-        // collateralRatioBps is already a ratio in bps (>= 10000), pass it directly.
-        _checkCollateralValueRaw(offer.principalToken, offer.principalAmount, _collateralToken, _collateralAmount, offer.collateralRatioBps);
+        uint16 ratio = _effectiveRatioForSignedOffer(
+            offer.collateralRatioBps, offer.trustedRatioBps, offer.scoreThreshold,
+            score, scoreExpiry, scoreSig
+        );
+        _checkCollateralValueRaw(offer.principalToken, offer.principalAmount, _collateralToken, _collateralAmount, ratio);
 
         // Pull ERC20 principal from lender (fee-on-transfer guard), then disburse to borrower.
         uint256 pBefore = IERC20(offer.principalToken).balanceOf(address(this));
@@ -981,6 +994,28 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
         return offer.collateralRatioBps;
     }
 
+    /// @dev Same logic as _effectiveRatio but for the signed-offer (calldata) path.
+    function _effectiveRatioForSignedOffer(
+        uint16 collateralRatioBps,
+        uint16 trustedRatioBps,
+        uint16 scoreThreshold,
+        uint16 score,
+        uint256 expiry,
+        bytes calldata sig
+    ) internal view returns (uint16) {
+        if (
+            trustedRatioBps > 0 &&
+            sig.length > 0 &&
+            scoreSigner != address(0) &&
+            block.timestamp <= expiry &&
+            score >= scoreThreshold &&
+            _recoverScoreSigner(msg.sender, score, expiry, sig) == scoreSigner
+        ) {
+            return trustedRatioBps;
+        }
+        return collateralRatioBps;
+    }
+
     /// @dev Compute the minimum collateral USD value required given a specific ratio.
     function _minCollateralUsd(LendOffer storage offer, uint16 ratioBps) internal view returns (uint256) {
         uint256 principalPrice = _getPrice(offer.principalToken);
@@ -1006,7 +1041,7 @@ contract VouchVault is Initializable, OwnableUpgradeable, UUPSUpgradeable, EIP71
     ///      `ratioBps` is a collateral RATIO in basis points (>= 10000, e.g. 15384 = 153.84%),
     ///      matching the convention of `_minCollateralUsd`/`_checkCollateralValue`.
     ///      Used by fillLoanRequest (which converts maxLtvBps to an implied ratio first) and
-    ///      fillLendOffer (which passes collateralRatioBps directly).
+    ///      fillLendOffer (which resolves the ratio via _effectiveRatioForSignedOffer).
     function _checkCollateralValueRaw(
         address principalToken,
         uint256 principalAmount,

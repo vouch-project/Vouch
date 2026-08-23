@@ -1584,6 +1584,21 @@
         "internalType": "bytes",
         "name": "sig",
         "type": "bytes"
+      },
+      {
+        "internalType": "uint16",
+        "name": "score",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "scoreExpiry",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "scoreSig",
+        "type": "bytes"
       }
     ],
     "name": "fillLendOffer",

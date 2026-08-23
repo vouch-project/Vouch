@@ -200,11 +200,12 @@ struct SignedLendOffer {
 - Pulls the borrower's ERC20 collateral (pre-approved at sign time) and the lender's principal — ETH via `msg.value` when `principalToken == address(0)`, otherwise ERC20 `transferFrom`. Creates the loan and emits `SignedLoanRequestFilled`.
 - Reverts on: ETH collateral (`collateralToken == address(0)`), zero `principalAmount`, wrong signer, expired deadline, already-consumed digest, or collateral below the required ratio.
 
-#### fillLendOffer(SignedLendOffer offer, address collateralToken, uint256 collateralAmount, bytes sig) — payable
+#### fillLendOffer(SignedLendOffer offer, address collateralToken, uint256 collateralAmount, bytes sig, uint16 score, uint256 scoreExpiry, bytes scoreSig) — payable
 
-- Called by the **borrower**, who supplies `collateralToken` and `collateralAmount` (must satisfy `collateralRatioBps` at current prices). Recovers the signer, requires `signer == offer.lender`, checks `deadline` and the consumed marker.
+- Called by the **borrower**, who supplies `collateralToken` and `collateralAmount`. Recovers the signer, requires `signer == offer.lender`, checks `deadline` and the consumed marker.
 - Pulls the lender's ERC20 principal (pre-approved) and the borrower's collateral — ETH via `msg.value` when `collateralToken == address(0)`, otherwise ERC20 `transferFrom`. Creates the loan and emits `SignedLendOfferFilled`.
-- Reverts on: ETH principal (`principalToken == address(0)`), wrong signer, expired deadline, already-consumed digest, or insufficient collateral. Signed offers fill at the base `collateralRatioBps` (no score attestation is passed at fill).
+- **Score discount**: if `scoreSig` is non-empty, `score >= offer.scoreThreshold`, and the attestation is valid and unexpired, collateral is checked against `offer.trustedRatioBps` (the discounted ratio) instead of `offer.collateralRatioBps`. Pass `scoreSig = 0x` (empty) to skip the attestation check and fill at the base ratio.
+- Reverts on: ETH principal (`principalToken == address(0)`), wrong signer, expired deadline, already-consumed digest, or insufficient collateral.
 
 #### cancelSignedLoanRequest(SignedLoanRequest req) / cancelSignedLendOffer(SignedLendOffer offer)
 
