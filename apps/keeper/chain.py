@@ -26,7 +26,10 @@ def _abi_search_dirs() -> list[Path]:
     # Docker image: the extract-abi output is copied next to the app code (see Dockerfile).
     dirs.append(here.parent / "abi")
     # Local monorepo checkout: apps/keeper/chain.py -> repo root -> packages/abi.
-    dirs.append(here.parents[2] / "packages" / "abi")
+    # In the Docker image chain.py sits at /app/chain.py, so parents[2] doesn't exist;
+    # guard against that instead of letting IndexError kill startup.
+    if len(here.parents) > 2:
+        dirs.append(here.parents[2] / "packages" / "abi")
     return dirs
 
 
