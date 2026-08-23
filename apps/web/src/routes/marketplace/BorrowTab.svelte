@@ -78,6 +78,12 @@
       signedError = 'Unable to reconstruct request — unknown token on this chain.';
       return;
     }
+    const contractAddress = chainInfo.contractAddress;
+    const networkId = wallet.networkId;
+    if (!contractAddress || !networkId) {
+      signedError = 'Wallet not connected to a supported network.';
+      return;
+    }
     fillingDigest = row.digest;
     signedError = null;
     try {
@@ -85,8 +91,8 @@
         row.borrowerAddress,
         req.collateralToken,
         req.principalToken,
-        chainInfo.contractAddress!,
-        wallet.networkId!,
+        contractAddress,
+        networkId,
       );
       await fillLoanRequest(req, row.signature, attestation);
     } catch (e) {
