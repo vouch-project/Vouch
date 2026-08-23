@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
+    "dev": "sh -c 'test -d .venv || python3 -m venv .venv; .venv/bin/pip install -q -e . && exec .venv/bin/python main.py'",
     "test": "sh -c 'if [ -d tests ]; then pytest ./tests; else echo No tests in apps/keeper, skipping.; fi'"
   }
 }

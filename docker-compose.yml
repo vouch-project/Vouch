@@ -84,9 +84,12 @@ services:
       context: .
       dockerfile: apps/keeper/Dockerfile
     restart: unless-stopped
-    env_file: .env
+    env_file:
+      - .env
+      - path: /etc/vouch/secrets.env
+        required: false
     environment:
-      KEEPER_RPC_URL: ${RPC_URL}
+      KEEPER_RPC_URL: ${RPC_URL:-http://hardhat-node:8545}
 
   redis:
     image: redis:7

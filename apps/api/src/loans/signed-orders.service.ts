@@ -1,13 +1,47 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { asAddress } from '@vouch/database-types';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateSignedLendOfferDto } from './dto/create-signed-lend-offer.dto';
 import { CreateSignedLoanRequestDto } from './dto/create-signed-loan-request.dto';
 import { buildDomain, verifyLendOffer, verifyLoanRequest } from './eip712';
 
+const SIGNED_ORDER_TABLES = [
+  'signed_loan_requests',
+  'signed_lend_offers',
+] as const;
+
 @Injectable()
 export class SignedOrdersService {
+  private readonly logger = new Logger(SignedOrdersService.name);
+
   constructor(private readonly supabaseService: SupabaseService) {}
+
+  @Cron(CronExpression.EVERY_MINUTE)
+  async expireStaleOrders(): Promise<void> {
+    const now = new Date().toISOString();
+
+    await Promise.all(
+      SIGNED_ORDER_TABLES.map(async (table) => {
+        const { data, error } = await this.supabaseService.client
+          .from(table)
+          .update({ status: 'expired' })
+          .eq('status', 'open')
+          .lt('deadline', now)
+          .select('id');
+
+        if (error) {
+          this.logger.error(
+            `Failed to expire stale ${table}: ${error.message}`,
+          );
+          return;
+        }
+
+        if (data && data.length > 0)
+          this.logger.log(`Expired ${data.length} stale ${table} row(s)`);
+      }),
+    );
+  }
 
   async createLoanRequest(
     dto: CreateSignedLoanRequestDto,

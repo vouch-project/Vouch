@@ -3,8 +3,8 @@ from unittest.mock import MagicMock
 
 from web3.exceptions import ContractLogicError
 
-from db import ActionableLoan
-from main import HF_THRESHOLD, process_loan
+from db import ActionableLoan, ExpirableLendOffer
+from main import HF_THRESHOLD, process_lend_offer, process_loan
 
 HEALTHY = HF_THRESHOLD + 1
 SICK = HF_THRESHOLD - 1
@@ -85,3 +85,26 @@ def test_expire_loan_revert_does_not_crash() -> None:
     chain = MagicMock()
     chain.expire_loan.side_effect = Exception("revert: already expired")
     process_loan(loan, chain)  # must not raise
+
+
+# Lend offer tests
+
+def test_lend_offer_deadline_passed_calls_expire() -> None:
+    offer = ExpirableLendOffer(on_chain_offer_id=10, accept_deadline=PAST)
+    chain = MagicMock()
+    process_lend_offer(offer, chain)
+    chain.expire_lend_offer.assert_called_once_with(10)
+
+
+def test_lend_offer_within_deadline_no_expire() -> None:
+    offer = ExpirableLendOffer(on_chain_offer_id=11, accept_deadline=FUTURE)
+    chain = MagicMock()
+    process_lend_offer(offer, chain)
+    chain.expire_lend_offer.assert_not_called()
+
+
+def test_expire_lend_offer_revert_does_not_crash() -> None:
+    offer = ExpirableLendOffer(on_chain_offer_id=12, accept_deadline=PAST)
+    chain = MagicMock()
+    chain.expire_lend_offer.side_effect = Exception("revert: OfferNotActive")
+    process_lend_offer(offer, chain)  # must not raise
