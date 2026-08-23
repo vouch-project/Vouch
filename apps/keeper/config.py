@@ -7,7 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # /app (no repo root above it), so guard against not having enough parents; there config comes
 # from real environment variables anyway.
 _parents = Path(__file__).resolve().parents
-_ROOT_ENV = str(_parents[2] / ".env") if len(_parents) > 2 else None
+_root_candidate = _parents[2] / ".env" if len(_parents) > 2 else None
+_ROOT_ENV = str(_root_candidate) if _root_candidate and _root_candidate.is_file() else None
 
 
 class Settings(BaseSettings):
