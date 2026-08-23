@@ -7,8 +7,9 @@ import { ethers } from 'ethers';
  * with this private key, and the deploy script derives its address to set as
  * the on-chain `scoreSigner`. This just needs to be a random Ethereum key.
  *
- * Usage:
- *   npx ts-node packages/contracts/scripts/generate-score-signer.ts
+ * Usage (from packages/contracts):
+ *   pnpm generate:score-signer
+ *   # or directly: pnpm exec hardhat run scripts/generate-score-signer.ts
  */
 function main(): void {
   const wallet = ethers.Wallet.createRandom();
