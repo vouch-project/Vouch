@@ -19,7 +19,7 @@ _ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 # Oracle-health custom errors raised by VouchVault._getPrice / getHealthFactor. On testnets
 # (Sepolia especially) Chainlink feeds update infrequently, so these reverts are expected and
 # transient — not keeper faults. Callers log them quietly instead of as error-level tracebacks.
-# Keyed by 4-byte selector (keccak of the signature) so we can recognize them even when web3
+# Listed by signature; _match_tokens derives the selector so we recognize them even when web3
 # can't decode the ABI and only reports the raw selector (e.g. "0x19abf40e").
 _TRANSIENT_ORACLE_SIGS = (
     "NoPriceFeed()",
@@ -29,6 +29,8 @@ _TRANSIENT_ORACLE_SIGS = (
     "PriceTimestampInFuture()",
     "StalePrice()",
 )
+
+
 def _match_tokens(sig: str) -> tuple[str, list[str]]:
     """Build (error_name, lowercased match tokens) for a custom-error signature.
 
