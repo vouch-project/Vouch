@@ -99,9 +99,10 @@ struct Loan {
 > `getRepaymentDetails`) were moved to a separate, stateless companion contract,
 > `VouchVaultLens`, constructed with the vault address. Call them on a lens instance
 > (`VouchVaultLens(lensAddress).getRepaymentDetails(loanId)`), not on the vault. The lens reads
-> raw loan data via the vault's `getLoanRaw`, `deposits`, and `lockedEthCollateral` getters,
-> which remain on `VouchVault`. `getHealthFactor` remains callable on the vault (the lens also
-> forwards it).
+> raw loan data via the vault's auto-generated `loans`, `deposits`, and `lockedEthCollateral`
+> mapping getters, which remain on `VouchVault`. (`getLoanRaw` was removed to reclaim bytecode —
+> the public `loans` mapping already exposes the same struct.) `getHealthFactor` remains callable
+> on the vault (the lens also forwards it).
 
 #### balanceOf(address user) → uint256
 
