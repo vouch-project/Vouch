@@ -29,5 +29,9 @@ select = ["E", "F", "I", "N", "UP", "B"]
 python_version = "3.11"
 strict = true
 
+# Dependency-only install: the keeper runs via `python main.py` from its source dir, so it does not
+# need its modules packaged. An empty list disables setuptools' flat-layout auto-discovery (which
+# would otherwise error on the multiple top-level .py files) without requiring the source files to
+# exist at build time — the Dockerfile installs deps from pyproject.toml before copying the source.
 [tool.setuptools]
-py-modules = ["config", "main", "db", "chain"]
+py-modules = []
