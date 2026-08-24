@@ -271,12 +271,12 @@ export class SignedOrdersService {
 
     const { error } = await this.supabaseService.client
       .from('signed_loan_requests')
-      .update({ status: 'cancelled' })
+      .update({ status: 'stale' })
       .eq('digest', digest)
       .eq('status', 'open');
     if (error) throw error;
 
-    this.logger.log(`Marked stale signed_loan_request cancelled: ${digest}`);
+    this.logger.log(`Marked stale signed_loan_request stale: ${digest}`);
   }
 
   async reportStaleOffer(digest: string): Promise<void> {
@@ -323,11 +323,11 @@ export class SignedOrdersService {
 
     const { error } = await this.supabaseService.client
       .from('signed_lend_offers')
-      .update({ status: 'cancelled' })
+      .update({ status: 'stale' })
       .eq('digest', digest)
       .eq('status', 'open');
     if (error) throw error;
 
-    this.logger.log(`Marked stale signed_lend_offer cancelled: ${digest}`);
+    this.logger.log(`Marked stale signed_lend_offer stale: ${digest}`);
   }
 }
