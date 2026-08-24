@@ -100,13 +100,26 @@ const approveERC20IfNeeded = async (contract: VouchVault, tokenAddress: string, 
 };
 
 /**
- * Ensure the vault is approved to pull at least `amount` of `tokenAddress` from
- * the connected wallet. Used by the signer side (borrower's collateral / lender's
- * principal) so the counterparty can pull the committed asset at fill time.
+ * Ensure the vault allowance is at least `totalRequired` for `tokenAddress`.
+ * Callers must pass the sum of ALL currently open requests for this token plus
+ * the new request amount — not just the new amount alone — so stale allowances
+ * from cancelled requests don't inflate the cap.
+ * Capped at the user's actual balance so competing offers that intentionally
+ * over-commit collateral never approve more than the wallet holds.
  */
-export const ensureVaultAllowance = async (tokenAddress: string, amount: bigint): Promise<void> => {
+export const ensureVaultAllowance = async (tokenAddress: string, totalRequired: bigint): Promise<void> => {
   const contract = await getVouchVaultContract();
-  await approveERC20IfNeeded(contract, tokenAddress, amount);
+  const erc20 = new ethers.Contract(tokenAddress, ERC20_ABI, contract.runner);
+  const signer = await (contract.runner as ethers.JsonRpcSigner).getAddress();
+  const [allowance, balance]: [bigint, bigint] = await Promise.all([
+    erc20.allowance(signer, contract.target),
+    erc20.balanceOf(signer),
+  ]);
+  const newAllowance = totalRequired < balance ? totalRequired : balance;
+  if (newAllowance > allowance) {
+    const tx = await erc20.approve(contract.target, newAllowance);
+    await tx.wait();
+  }
 };
 
 /** Generate a cryptographically-random uint256 nonce for signed-order digest uniqueness. */
@@ -220,7 +233,14 @@ export const fillLoanRequest = async (
   let tx: ethers.TransactionResponse;
 
   if (isNativeTokenAddress(request.principalToken)) {
-    tx = await contract.fillLoanRequest(request, signature, attestation.maxLtvBps, attestation.expiry, attestation.sig, { value: request.principalAmount });
+    tx = await contract.fillLoanRequest(
+      request,
+      signature,
+      attestation.maxLtvBps,
+      attestation.expiry,
+      attestation.sig,
+      { value: request.principalAmount },
+    );
   } else {
     await approveERC20IfNeeded(contract, request.principalToken, request.principalAmount);
     tx = await contract.fillLoanRequest(request, signature, attestation.maxLtvBps, attestation.expiry, attestation.sig);
@@ -264,12 +284,29 @@ export const fillLendOffer = async (
   const { score, expiry: scoreExpiry, sig: scoreSig } = scoreAttestation;
 
   if (isNativeTokenAddress(collateralToken)) {
-    tx = await contract.fillLendOffer(offer, ethers.ZeroAddress, collateralAmount, signature, score, scoreExpiry, scoreSig, {
-      value: collateralAmount,
-    });
+    tx = await contract.fillLendOffer(
+      offer,
+      ethers.ZeroAddress,
+      collateralAmount,
+      signature,
+      score,
+      scoreExpiry,
+      scoreSig,
+      {
+        value: collateralAmount,
+      },
+    );
   } else {
     await approveERC20IfNeeded(contract, collateralToken, collateralAmount);
-    tx = await contract.fillLendOffer(offer, collateralToken, collateralAmount, signature, score, scoreExpiry, scoreSig);
+    tx = await contract.fillLendOffer(
+      offer,
+      collateralToken,
+      collateralAmount,
+      signature,
+      score,
+      scoreExpiry,
+      scoreSig,
+    );
   }
 
   const receipt = await tx.wait();

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { postSignedOffer } from '$api/signedOrders';
+  import { getSignedOffers, postSignedOffer } from '$api/signedOrders';
   import { Button } from '$lib/components/ui/button';
   import * as Card from '$lib/components/ui/card';
   import TokenAutocomplete from '$lib/components/ui/TokenAutocomplete.svelte';
@@ -138,7 +138,16 @@
           throw new Error(`Insufficient ${principalSymbol} balance: you have ${have} but need ${principalAmount}.`);
         }
         const deadline = Math.floor(Date.now() / 1000) + acceptWindowSeconds;
-        await ensureVaultAllowance(principalToken.address, principalParsed);
+        const activeOffers = await getSignedOffers();
+        const existingPrincipal = activeOffers
+          .filter(
+            (o) =>
+              o.status === 'open' &&
+              o.lenderAddress.toLowerCase() === wallet.address!.toLowerCase() &&
+              o.principalTokenId === principalToken.id,
+          )
+          .reduce((sum, o) => sum + BigInt(o.principalAmount), 0n);
+        await ensureVaultAllowance(principalToken.address, existingPrincipal + principalParsed);
         status = 'Waiting for wallet signature…';
         const offer: SignedLendOffer = {
           lender: wallet.address!,

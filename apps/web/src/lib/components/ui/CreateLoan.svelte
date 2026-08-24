@@ -1,7 +1,7 @@
 <script lang="ts">
   import { axiosApi } from '$api/axiosApi';
   import type { Token } from '$api/chain';
-  import { postSignedRequest } from '$api/signedOrders';
+  import { getSignedRequests, postSignedRequest } from '$api/signedOrders';
   import { DEPLOYMENT_ENV } from '$lib/env';
   import { fetchLtvAttestation } from '$lib/loans/creditScore';
   import { calculateHealthFactor } from '$lib/loans/loanMath';
@@ -229,7 +229,16 @@
           nonce,
           deadline: BigInt(deadline),
         };
-        await ensureVaultAllowance(terms.collateralToken.address, collateralParsed);
+        const activeRequests = await getSignedRequests();
+        const existingCollateral = activeRequests
+          .filter(
+            (r) =>
+              r.status === 'open' &&
+              r.borrowerAddress.toLowerCase() === wallet.address!.toLowerCase() &&
+              r.collateralTokenId === terms.collateralToken.id,
+          )
+          .reduce((sum, r) => sum + BigInt(r.collateralAmount), 0n);
+        await ensureVaultAllowance(terms.collateralToken.address, existingCollateral + collateralParsed);
         const { signature } = await signLoanRequest(req);
         await postSignedRequest({
           borrowerAddress: req.borrower,
