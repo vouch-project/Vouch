@@ -1,10 +1,27 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { asAddress } from '@vouch/database-types';
+import { ethers } from 'ethers';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateSignedLendOfferDto } from './dto/create-signed-lend-offer.dto';
 import { CreateSignedLoanRequestDto } from './dto/create-signed-loan-request.dto';
 import { buildDomain, verifyLendOffer, verifyLoanRequest } from './eip712';
+
+const BALANCE_OF_IFACE = new ethers.Interface([
+  'function balanceOf(address) view returns (uint256)',
+]);
+
+const readBalanceOf = async (
+  provider: ethers.JsonRpcProvider,
+  tokenAddr: string,
+  owner: string,
+): Promise<bigint> => {
+  const raw = await provider.call({
+    to: tokenAddr,
+    data: BALANCE_OF_IFACE.encodeFunctionData('balanceOf', [owner]),
+  });
+  return BALANCE_OF_IFACE.decodeFunctionResult('balanceOf', raw)[0] as bigint;
+};
 
 const SIGNED_ORDER_TABLES = [
   'signed_loan_requests',
@@ -196,5 +213,73 @@ export class SignedOrdersService {
       .gt('deadline', new Date().toISOString());
     if (error) throw error;
     return data;
+  }
+
+  async reportStaleRequest(digest: string): Promise<void> {
+    const { data: order } = await this.supabaseService.client
+      .from('signed_loan_requests')
+      .select(
+        `"borrowerAddress", "collateralAmount", collateralToken:tokens!collateralTokenId(address), chain:chains!chainId("rpcUrl", "wsRpcUrl")`,
+      )
+      .eq('digest', digest)
+      .eq('status', 'open')
+      .single();
+
+    if (!order) return;
+
+    const tokenAddr = order.collateralToken.address;
+    const chainRow = order.chain;
+    const rpcUrl = chainRow?.wsRpcUrl ?? chainRow?.rpcUrl;
+    if (!tokenAddr || !rpcUrl) return;
+
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const balance = await readBalanceOf(
+      provider,
+      tokenAddr,
+      order.borrowerAddress,
+    );
+    if (balance >= BigInt(order.collateralAmount)) return;
+
+    await this.supabaseService.client
+      .from('signed_loan_requests')
+      .update({ status: 'cancelled' })
+      .eq('digest', digest)
+      .eq('status', 'open');
+
+    this.logger.log(`Marked stale signed_loan_request cancelled: ${digest}`);
+  }
+
+  async reportStaleOffer(digest: string): Promise<void> {
+    const { data: order } = await this.supabaseService.client
+      .from('signed_lend_offers')
+      .select(
+        `"lenderAddress", "principalAmount", principalToken:tokens!principalTokenId(address), chain:chains!chainId("rpcUrl", "wsRpcUrl")`,
+      )
+      .eq('digest', digest)
+      .eq('status', 'open')
+      .single();
+
+    if (!order) return;
+
+    const tokenAddr = order.principalToken.address;
+    const chainRow = order.chain;
+    const rpcUrl = chainRow?.wsRpcUrl ?? chainRow?.rpcUrl;
+    if (!tokenAddr || !rpcUrl) return;
+
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const balance = await readBalanceOf(
+      provider,
+      tokenAddr,
+      order.lenderAddress,
+    );
+    if (balance >= BigInt(order.principalAmount)) return;
+
+    await this.supabaseService.client
+      .from('signed_lend_offers')
+      .update({ status: 'cancelled' })
+      .eq('digest', digest)
+      .eq('status', 'open');
+
+    this.logger.log(`Marked stale signed_lend_offer cancelled: ${digest}`);
   }
 }
