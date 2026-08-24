@@ -2,6 +2,7 @@
   import { axiosApi } from '$api/axiosApi';
   import type { Token } from '$api/chain';
   import { postSignedRequest } from '$api/signedOrders';
+  import { DEPLOYMENT_ENV } from '$lib/env';
   import { fetchLtvAttestation } from '$lib/loans/creditScore';
   import { calculateHealthFactor } from '$lib/loans/loanMath';
   import { maxLtv } from '$lib/ltv';
@@ -26,7 +27,7 @@
   let borrowAmount = $state('');
   let status = $state('');
   let selectedCollateralToken = $state('ETH');
-  let selectedBorrowToken = $state('MOCK');
+  let selectedBorrowToken = $state(DEPLOYMENT_ENV === 'local' ? 'MOCK' : 'USDC');
 
   let interestRatePct = $state('5');
   let durationDays = $state('30');
