@@ -1,7 +1,14 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { InjectRedis } from '@nestjs-modules/ioredis';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { asAddress } from '@vouch/database-types';
 import { ethers } from 'ethers';
+import type { Redis } from 'ioredis';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateSignedLendOfferDto } from './dto/create-signed-lend-offer.dto';
 import { CreateSignedLoanRequestDto } from './dto/create-signed-loan-request.dto';
@@ -32,7 +39,12 @@ const SIGNED_ORDER_TABLES = [
 export class SignedOrdersService {
   private readonly logger = new Logger(SignedOrdersService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  private readonly staleCheckTtlSec = 60;
+
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    @InjectRedis() private readonly redis: Redis,
+  ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async expireStaleOrders(): Promise<void> {
@@ -216,20 +228,38 @@ export class SignedOrdersService {
   }
 
   async reportStaleRequest(digest: string): Promise<void> {
-    const { data: order } = await this.supabaseService.client
-      .from('signed_loan_requests')
-      .select(
-        `"borrowerAddress", "collateralAmount", collateralToken:tokens!signed_loan_requests_collateralTokenId_fkey(address), chain:chains!signed_loan_requests_chainId_fkey("rpcUrl")`,
-      )
-      .eq('digest', digest)
-      .eq('status', 'open')
-      .single();
+    const { data: order, error: lookupError } =
+      await this.supabaseService.client
+        .from('signed_loan_requests')
+        .select(
+          `"borrowerAddress", "collateralAmount", collateralToken:tokens!signed_loan_requests_collateralTokenId_fkey(address), chain:chains!signed_loan_requests_chainId_fkey("rpcUrl")`,
+        )
+        .eq('digest', digest)
+        .eq('status', 'open')
+        .single();
 
-    if (!order) return;
+    if (lookupError) {
+      if (lookupError.code === 'PGRST116') return;
+      this.logger.error(
+        `DB lookup failed for request ${digest}: ${lookupError.message}`,
+      );
+      throw new InternalServerErrorException();
+    }
 
     const tokenAddr = order.collateralToken.address;
     const rpcUrl = order.chain.rpcUrl;
     if (!tokenAddr || !rpcUrl) return;
+
+    // Atomic per-digest cooldown: only one RPC call per digest per TTL window.
+    const cacheKey = `stale-check:request:${digest}`;
+    const acquired = await this.redis.set(
+      cacheKey,
+      '1',
+      'EX',
+      this.staleCheckTtlSec,
+      'NX',
+    );
+    if (!acquired) return;
 
     const provider = new ethers.JsonRpcProvider(rpcUrl);
     const balance = await readBalanceOf(
@@ -250,20 +280,38 @@ export class SignedOrdersService {
   }
 
   async reportStaleOffer(digest: string): Promise<void> {
-    const { data: order } = await this.supabaseService.client
-      .from('signed_lend_offers')
-      .select(
-        `"lenderAddress", "principalAmount", principalToken:tokens!signed_lend_offers_principalTokenId_fkey(address), chain:chains!signed_lend_offers_chainId_fkey("rpcUrl")`,
-      )
-      .eq('digest', digest)
-      .eq('status', 'open')
-      .single();
+    const { data: order, error: lookupError } =
+      await this.supabaseService.client
+        .from('signed_lend_offers')
+        .select(
+          `"lenderAddress", "principalAmount", principalToken:tokens!signed_lend_offers_principalTokenId_fkey(address), chain:chains!signed_lend_offers_chainId_fkey("rpcUrl")`,
+        )
+        .eq('digest', digest)
+        .eq('status', 'open')
+        .single();
 
-    if (!order) return;
+    if (lookupError) {
+      if (lookupError.code === 'PGRST116') return;
+      this.logger.error(
+        `DB lookup failed for offer ${digest}: ${lookupError.message}`,
+      );
+      throw new InternalServerErrorException();
+    }
 
     const tokenAddr = order.principalToken.address;
     const rpcUrl = order.chain.rpcUrl;
     if (!tokenAddr || !rpcUrl) return;
+
+    // Atomic per-digest cooldown: only one RPC call per digest per TTL window.
+    const cacheKey = `stale-check:offer:${digest}`;
+    const acquired = await this.redis.set(
+      cacheKey,
+      '1',
+      'EX',
+      this.staleCheckTtlSec,
+      'NX',
+    );
+    if (!acquired) return;
 
     const provider = new ethers.JsonRpcProvider(rpcUrl);
     const balance = await readBalanceOf(
