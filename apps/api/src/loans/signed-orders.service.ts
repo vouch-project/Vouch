@@ -219,7 +219,7 @@ export class SignedOrdersService {
     const { data: order } = await this.supabaseService.client
       .from('signed_loan_requests')
       .select(
-        `"borrowerAddress", "collateralAmount", collateralToken:tokens!collateralTokenId(address), chain:chains!chainId("rpcUrl", "wsRpcUrl")`,
+        `"borrowerAddress", "collateralAmount", collateralToken:tokens!signed_loan_requests_collateralTokenId_fkey(address), chain:chains!signed_loan_requests_chainId_fkey("rpcUrl")`,
       )
       .eq('digest', digest)
       .eq('status', 'open')
@@ -228,8 +228,7 @@ export class SignedOrdersService {
     if (!order) return;
 
     const tokenAddr = order.collateralToken.address;
-    const chainRow = order.chain;
-    const rpcUrl = chainRow?.wsRpcUrl ?? chainRow?.rpcUrl;
+    const rpcUrl = order.chain.rpcUrl;
     if (!tokenAddr || !rpcUrl) return;
 
     const provider = new ethers.JsonRpcProvider(rpcUrl);
@@ -240,11 +239,12 @@ export class SignedOrdersService {
     );
     if (balance >= BigInt(order.collateralAmount)) return;
 
-    await this.supabaseService.client
+    const { error } = await this.supabaseService.client
       .from('signed_loan_requests')
       .update({ status: 'cancelled' })
       .eq('digest', digest)
       .eq('status', 'open');
+    if (error) throw error;
 
     this.logger.log(`Marked stale signed_loan_request cancelled: ${digest}`);
   }
@@ -253,7 +253,7 @@ export class SignedOrdersService {
     const { data: order } = await this.supabaseService.client
       .from('signed_lend_offers')
       .select(
-        `"lenderAddress", "principalAmount", principalToken:tokens!principalTokenId(address), chain:chains!chainId("rpcUrl", "wsRpcUrl")`,
+        `"lenderAddress", "principalAmount", principalToken:tokens!signed_lend_offers_principalTokenId_fkey(address), chain:chains!signed_lend_offers_chainId_fkey("rpcUrl")`,
       )
       .eq('digest', digest)
       .eq('status', 'open')
@@ -262,8 +262,7 @@ export class SignedOrdersService {
     if (!order) return;
 
     const tokenAddr = order.principalToken.address;
-    const chainRow = order.chain;
-    const rpcUrl = chainRow?.wsRpcUrl ?? chainRow?.rpcUrl;
+    const rpcUrl = order.chain.rpcUrl;
     if (!tokenAddr || !rpcUrl) return;
 
     const provider = new ethers.JsonRpcProvider(rpcUrl);
@@ -274,11 +273,12 @@ export class SignedOrdersService {
     );
     if (balance >= BigInt(order.principalAmount)) return;
 
-    await this.supabaseService.client
+    const { error } = await this.supabaseService.client
       .from('signed_lend_offers')
       .update({ status: 'cancelled' })
       .eq('digest', digest)
       .eq('status', 'open');
+    if (error) throw error;
 
     this.logger.log(`Marked stale signed_lend_offer cancelled: ${digest}`);
   }
