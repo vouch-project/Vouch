@@ -103,3 +103,9 @@ export const getSignedRequests = async (signal?: AbortSignal): Promise<SignedReq
 
 export const getSignedOffers = async (signal?: AbortSignal): Promise<SignedOfferRow[]> =>
   (await axiosApi.get<SignedOfferRow[]>('/loans/signed-offers', { signal })).data;
+
+export const reportStaleRequest = (digest: string): Promise<void> =>
+  axiosApi.delete(`/loans/signed-requests/${encodeURIComponent(digest)}`).then(() => undefined);
+
+export const reportStaleOffer = (digest: string): Promise<void> =>
+  axiosApi.delete(`/loans/signed-offers/${encodeURIComponent(digest)}`).then(() => undefined);

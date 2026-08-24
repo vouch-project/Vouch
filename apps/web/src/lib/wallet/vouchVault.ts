@@ -56,6 +56,12 @@ export const ERC20_ABI = [
   'function balanceOf(address account) view returns (uint256)',
 ];
 
+export const getErc20Balance = async (tokenAddress: string, owner: string): Promise<bigint> => {
+  const contract = await getVouchVaultContract();
+  const erc20 = new ethers.Contract(tokenAddress, ERC20_ABI, contract.runner);
+  return erc20.balanceOf(owner);
+};
+
 const createErc20Loan = async (
   contract: VouchVault,
   token: Token,
