@@ -6,7 +6,7 @@
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
   import { ensureVaultAllowance, generateNonce, signLendOffer, type SignedLendOffer } from '$lib/wallet/signedOrders';
-  import { createLendOffer, isNativeTokenAddress } from '$lib/wallet/vouchVault';
+  import { createLendOffer, getErc20Balance, isNativeTokenAddress } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Loader2, Sparkles, Wallet } from '@lucide/svelte';
   import { ethers } from 'ethers';
@@ -131,6 +131,11 @@
         // Gasless path: the lender signs an offer committing ERC20 principal; the borrower chooses
         // the collateral token + amount at fill time when calling fillLendOffer.
         const principalParsed = ethers.parseUnits(principalAmount, principalToken.decimals ?? 18);
+        const balance = await getErc20Balance(principalToken.address, wallet.address!);
+        if (balance < principalParsed) {
+          const have = ethers.formatUnits(balance, principalToken.decimals ?? 18);
+          throw new Error(`Insufficient ${principalSymbol} balance: you have ${have} but need ${principalAmount}.`);
+        }
         const deadline = Math.floor(Date.now() / 1000) + acceptWindowSeconds;
         await ensureVaultAllowance(principalToken.address, principalParsed);
         status = 'Waiting for wallet signature…';
