@@ -1087,7 +1087,7 @@ export type Database = {
         | 'loan_due_soon'
         | 'credit_score_updated'
         | 'system';
-      signedOrderStatus: 'open' | 'filled' | 'cancelled' | 'expired';
+      signedOrderStatus: 'open' | 'filled' | 'cancelled' | 'expired' | 'stale';
       transactionStatus: 'pending' | 'confirmed' | 'failed';
       transactionType:
         | 'collateral_deposit'
@@ -1229,7 +1229,7 @@ export const Constants = {
         'credit_score_updated',
         'system',
       ],
-      signedOrderStatus: ['open', 'filled', 'cancelled', 'expired'],
+      signedOrderStatus: ['open', 'filled', 'cancelled', 'expired', 'stale'],
       transactionStatus: ['pending', 'confirmed', 'failed'],
       transactionType: [
         'collateral_deposit',

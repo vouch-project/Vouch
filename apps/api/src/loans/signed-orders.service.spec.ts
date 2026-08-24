@@ -1,3 +1,4 @@
+import { getRedisConnectionToken } from '@nestjs-modules/ioredis';
 import { Test } from '@nestjs/testing';
 import { ethers } from 'ethers';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -9,6 +10,7 @@ import { SignedOrdersService } from './signed-orders.service';
 describe('SignedOrdersService', () => {
   const rpc = jest.fn().mockResolvedValue({ error: null });
   const supabase = { client: { rpc } } as unknown as SupabaseService;
+  const redis = { set: jest.fn().mockResolvedValue('OK') };
   let service: SignedOrdersService;
 
   beforeEach(async () => {
@@ -17,6 +19,7 @@ describe('SignedOrdersService', () => {
       providers: [
         SignedOrdersService,
         { provide: SupabaseService, useValue: supabase },
+        { provide: getRedisConnectionToken('default'), useValue: redis },
       ],
     }).compile();
     service = mod.get(SignedOrdersService);

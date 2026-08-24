@@ -14,7 +14,7 @@
     signLoanRequest,
     type SignedLoanRequest,
   } from '$lib/wallet/signedOrders';
-  import { createLoan, isNativeTokenAddress } from '$lib/wallet/vouchVault';
+  import { createLoan, getErc20Balance, isNativeTokenAddress } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { ethers } from 'ethers';
   import CollateralBorrowFields from '../create-loan/CollateralBorrowFields.svelte';
@@ -204,6 +204,13 @@
       status = 'Waiting for wallet signature...';
       try {
         const collateralParsed = ethers.parseUnits(collateralAmount, terms.collateralToken.decimals ?? 18);
+        const balance = await getErc20Balance(terms.collateralToken.address, wallet.address!);
+        if (balance < collateralParsed) {
+          const have = ethers.formatUnits(balance, terms.collateralToken.decimals ?? 18);
+          throw new Error(
+            `Insufficient ${selectedCollateralToken} balance: you have ${have} but need ${collateralAmount}.`,
+          );
+        }
         const principalParsed = ethers.parseUnits(borrowAmount, terms.borrowToken.decimals ?? 18);
         const principalTokenAddress = isNativeTokenAddress(terms.borrowToken.address)
           ? ethers.ZeroAddress
@@ -316,6 +323,18 @@
     total={totalRepayment?.total ?? 0}
   />
 
+  {#if status}
+    <p
+      class="text-sm {statusIsSuccess
+        ? 'text-green-600'
+        : isSubmitting
+          ? 'text-muted-foreground'
+          : 'text-destructive'} text-center"
+    >
+      {status}
+    </p>
+  {/if}
+
   <button
     class="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-6 py-2.5 rounded-lg shadow transition disabled:opacity-60 disabled:cursor-not-allowed {ltvExceeded
       ? '!bg-destructive hover:!bg-destructive/90'
@@ -325,16 +344,4 @@
   >
     {isSubmitting ? 'Processing...' : ltvExceeded ? 'LTV Exceeded' : 'Create Loan'}
   </button>
-
-  {#if status}
-    <p
-      class="text-sm {statusIsSuccess
-        ? 'text-green-600'
-        : ltvExceeded || status.includes('exceeds')
-          ? 'text-destructive'
-          : 'text-muted-foreground'} text-center"
-    >
-      {status}
-    </p>
-  {/if}
 </form>
