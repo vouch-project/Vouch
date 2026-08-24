@@ -131,7 +131,11 @@
     actionError = null;
     try {
       if (row.isGasless) {
-        const signedRow = signedRequests.find((r) => r.digest === row.key)!;
+        const signedRow = signedRequests.find((r) => r.digest === row.key);
+        if (!signedRow) {
+          actionError = 'Request is no longer available.';
+          return;
+        }
         const req = toRequestStruct(signedRow);
         if (!req) {
           actionError = 'Unable to reconstruct request — unknown token on this chain.';
@@ -151,8 +155,10 @@
           networkId,
         );
         await fillLoanRequest(req, signedRow.signature, attestation);
+        signedRequests = signedRequests.filter((r) => r.digest !== signedRow.digest);
       } else {
-        const loan = loans.find((l) => l.id === row.key)!;
+        const loan = loans.find((l) => l.id === row.key);
+        if (!loan) return;
         if (loan.onChainLoanId == null || !loan.principalAmount) return;
         await fundLoan(
           ethers.getBigInt(loan.onChainLoanId),

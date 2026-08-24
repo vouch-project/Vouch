@@ -192,7 +192,11 @@
     actionError = null;
     try {
       if (row.isGasless) {
-        const signedRow = signedOffers.find((r) => r.digest === row.key)!;
+        const signedRow = signedOffers.find((r) => r.digest === row.key);
+        if (!signedRow) {
+          actionError = 'Offer is no longer available.';
+          return;
+        }
         const offer = toOfferStruct(signedRow);
         if (!offer || !row.principalToken) {
           actionError = 'Unable to reconstruct offer — unknown token on this chain.';
@@ -226,7 +230,8 @@
         await fillLendOffer(offer, colTokenAddress, colRaw, signedRow.signature, scoreAttestation);
         signedOffers = signedOffers.filter((r) => r.digest !== signedRow.digest);
       } else {
-        const onChainOffer = lendOffers.find((o) => o.id === row.key)!;
+        const onChainOffer = lendOffers.find((o) => o.id === row.key);
+        if (!onChainOffer) return;
         const colAmount = getRequiredCollateralFormatted(row, colSymbol);
         if (!colAmount) return;
         const att = attestations[row.key] ?? undefined;
