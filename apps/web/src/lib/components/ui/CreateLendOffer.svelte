@@ -3,6 +3,7 @@
   import { Button } from '$lib/components/ui/button';
   import * as Card from '$lib/components/ui/card';
   import TokenAutocomplete from '$lib/components/ui/TokenAutocomplete.svelte';
+  import { DEPLOYMENT_ENV } from '$lib/env';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { tokenPrices } from '$lib/stores/tokenPrices.svelte';
   import { ensureVaultAllowance, generateNonce, signLendOffer, type SignedLendOffer } from '$lib/wallet/signedOrders';
@@ -11,7 +12,7 @@
   import { Loader2, Sparkles, Wallet } from '@lucide/svelte';
   import { ethers } from 'ethers';
 
-  let principalSymbol = $state('MOCK');
+  let principalSymbol = $state(DEPLOYMENT_ENV === 'local' ? 'MOCK' : 'USDC');
   let principalAmount = $state('');
   let collateralRatioPct = $state('154');
   let trustedRatioPct = $state('125');
