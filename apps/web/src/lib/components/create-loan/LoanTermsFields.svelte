@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { chainInfo } from '$lib/stores/chainInfo.svelte';
   import { Sparkles } from '@lucide/svelte';
 
   let {
@@ -16,6 +17,10 @@
     inputClass: string;
     sectionClass: string;
   } = $props();
+
+  const interestRatePctNum = $derived(parseFloat(interestRatePct || '0'));
+  const lenderNetApr = $derived(interestRatePctNum * (1 - chainInfo.protocolFeeBps / 10000));
+  const platformFeeApr = $derived(interestRatePctNum * (chainInfo.protocolFeeBps / 10000));
 
   const handleAprInput = (e: Event) => {
     const input = e.target as HTMLInputElement;
@@ -98,6 +103,11 @@
           %
         </span>
       </div>
+      <span class="text-xs text-muted-foreground min-h-4">
+        {#if interestRatePctNum > 0}
+          {lenderNetApr.toFixed(2)}% lender yield · {platformFeeApr.toFixed(2)}% fee
+        {/if}
+      </span>
     </div>
 
     <div class="flex flex-col gap-1.5">

@@ -73,6 +73,10 @@
   const trustedRatioBps = $derived(Math.round(parseFloat(trustedRatioPct || '0') * 100));
   const scoreThresholdNum = $derived(Math.round(parseFloat(scoreThreshold || '0')));
   const rateBps = $derived(Math.round(parseFloat(ratePct || '0') * 100));
+  const grossRatePctNum = $derived(parseFloat(ratePct || '0'));
+  const netAprPct = $derived(grossRatePctNum * (1 - chainInfo.protocolFeeBps / 10000));
+  const feeAprPct = $derived(grossRatePctNum * (chainInfo.protocolFeeBps / 10000));
+
   const durationSeconds = $derived(Math.round(parseFloat(durationDays || '0') * 86400));
   const acceptWindowSeconds = $derived(Math.round(parseFloat(acceptWindowDays || '0') * 86400));
 
@@ -356,6 +360,11 @@
               %
             </span>
           </div>
+          <span class="text-xs text-muted-foreground min-h-4">
+            {#if grossRatePctNum > 0}
+              {netAprPct.toFixed(2)}% earned · {feeAprPct.toFixed(2)}% fee
+            {/if}
+          </span>
         </div>
 
         <div class="flex flex-col gap-1.5">
