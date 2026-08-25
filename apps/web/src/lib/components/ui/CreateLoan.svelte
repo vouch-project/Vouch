@@ -154,7 +154,7 @@
       return null;
     }
 
-    const liquidationThresholdBps = Math.max(1, Math.min(10000, Math.round(computedMaxLtv * 100)));
+    const liquidationThresholdBps = Math.max(1, Math.min(10000, Math.floor(computedMaxLtv * 100)));
     return {
       collateralToken,
       borrowToken,
