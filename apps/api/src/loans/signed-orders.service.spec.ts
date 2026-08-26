@@ -54,7 +54,13 @@ describe('SignedOrdersService', () => {
       nonce: base.nonce.toString(),
       deadline: base.deadline.toString(),
     });
-    const dto: CreateSignedLoanRequestDto = { ...base, signature };
+    const dto: CreateSignedLoanRequestDto = {
+      ...base,
+      signature,
+      ltvAttestationMaxLtvBps: base.maxLtvBps,
+      ltvAttestationExpiry: base.deadline,
+      ltvAttestationSig: '0xdeadbeef',
+    };
     await expect(service.createLoanRequest(dto)).rejects.toThrow(/signature/i);
     expect(rpc).not.toHaveBeenCalled();
   });
@@ -88,7 +94,13 @@ describe('SignedOrdersService', () => {
       nonce: base.nonce.toString(),
       deadline: base.deadline.toString(),
     });
-    const dto: CreateSignedLoanRequestDto = { ...base, signature };
+    const dto: CreateSignedLoanRequestDto = {
+      ...base,
+      signature,
+      ltvAttestationMaxLtvBps: base.maxLtvBps,
+      ltvAttestationExpiry: base.deadline,
+      ltvAttestationSig: '0xdeadbeef',
+    };
     const res = await service.createLoanRequest(dto);
     expect(res.digest).toMatch(/^0x[0-9a-f]{64}$/i);
     expect(rpc).toHaveBeenCalledWith(
@@ -126,7 +138,13 @@ describe('SignedOrdersService', () => {
       nonce: base.nonce.toString(),
       deadline: base.deadline.toString(),
     });
-    const dto: CreateSignedLoanRequestDto = { ...base, signature };
+    const dto: CreateSignedLoanRequestDto = {
+      ...base,
+      signature,
+      ltvAttestationMaxLtvBps: base.maxLtvBps,
+      ltvAttestationExpiry: base.deadline,
+      ltvAttestationSig: '0xdeadbeef',
+    };
     await expect(service.createLoanRequest(dto)).rejects.toThrow(/expired/i);
     expect(rpc).not.toHaveBeenCalled();
   });

@@ -190,6 +190,7 @@ export class ScoringService {
     borrowTokenAddress: string,
     contractAddress: string,
     chainId: bigint,
+    expiryOverride?: number,
   ): Promise<{ maxLtvBps: number; expiry: number; sig: string }> {
     const privateKey = this.configService.get<string>(
       'SCORE_SIGNER_PRIVATE_KEY',
@@ -261,7 +262,7 @@ export class ScoringService {
       Math.min(10000, Math.floor(base * mult * 100)),
     );
 
-    const expiry = Math.floor(Date.now() / 1000) + ATTESTATION_TTL_S;
+    const expiry = expiryOverride ?? Math.floor(Date.now() / 1000) + ATTESTATION_TTL_S;
     const verifyingContract = ethers.getAddress(contractAddress);
 
     const nonce = await this.getBorrowerNonce(

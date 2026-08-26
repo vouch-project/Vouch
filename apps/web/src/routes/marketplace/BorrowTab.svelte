@@ -147,13 +147,27 @@
           actionError = 'Wallet not connected to a supported network.';
           return;
         }
-        const attestation = await getLtvAttestation(
-          signedRow.borrowerAddress,
-          req.collateralToken,
-          req.principalToken,
-          contractAddress,
-          networkId,
-        );
+        const nowSec = Math.floor(Date.now() / 1000);
+        const storedAttestation =
+          signedRow.ltvAttestationMaxLtvBps != null &&
+          signedRow.ltvAttestationExpiry != null &&
+          signedRow.ltvAttestationSig != null &&
+          signedRow.ltvAttestationExpiry > nowSec
+            ? {
+                maxLtvBps: signedRow.ltvAttestationMaxLtvBps,
+                expiry: signedRow.ltvAttestationExpiry,
+                sig: signedRow.ltvAttestationSig,
+              }
+            : null;
+        const attestation =
+          storedAttestation ??
+          (await getLtvAttestation(
+            signedRow.borrowerAddress,
+            req.collateralToken,
+            req.principalToken,
+            contractAddress,
+            networkId,
+          ));
         await fillLoanRequest(req, signedRow.signature, attestation);
         signedRequests = signedRequests.filter((r) => r.digest !== signedRow.digest);
       } else {

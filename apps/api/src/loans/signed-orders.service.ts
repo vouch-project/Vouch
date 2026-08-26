@@ -111,6 +111,11 @@ export class SignedOrdersService {
     if (dto.maxLtvBps <= 0 || dto.maxLtvBps > 10000)
       throw new BadRequestException('Invalid maxLtvBps');
 
+    if (dto.ltvAttestationMaxLtvBps !== dto.maxLtvBps)
+      throw new BadRequestException('ltvAttestationMaxLtvBps must match maxLtvBps');
+    if (dto.ltvAttestationExpiry < dto.deadline)
+      throw new BadRequestException('ltvAttestationExpiry must be >= request deadline');
+
     const { error } = await this.supabaseService.client.rpc(
       'insert_signed_loan_request',
       {
@@ -128,6 +133,9 @@ export class SignedOrdersService {
         p_nonce: nonce.toString(),
         p_deadline: new Date(dto.deadline * 1000).toISOString(),
         p_signature: dto.signature,
+        p_ltv_attestation_max_ltv_bps: dto.ltvAttestationMaxLtvBps,
+        p_ltv_attestation_expiry: dto.ltvAttestationExpiry,
+        p_ltv_attestation_sig: dto.ltvAttestationSig,
       },
     );
     if (error) throw error;

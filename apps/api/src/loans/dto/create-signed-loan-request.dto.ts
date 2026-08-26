@@ -39,4 +39,13 @@ export class CreateSignedLoanRequestDto {
 
   @IsString()
   contractAddress!: string;
+
+  @IsNumber()
+  ltvAttestationMaxLtvBps!: number;
+
+  @IsNumber()
+  ltvAttestationExpiry!: number;
+
+  @IsString()
+  ltvAttestationSig!: string;
 }
