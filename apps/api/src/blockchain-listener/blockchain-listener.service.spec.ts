@@ -153,28 +153,31 @@ describe('BlockchainListenerService', () => {
         )
         .mockImplementation(() => badProvider);
 
-      // Override the injected supabase client so onModuleInit sees one WS chain
-      (service as unknown as Record<string, unknown>)['supabaseService'] = {
-        client: {
-          from: jest.fn().mockReturnValue({
-            select: jest.fn().mockResolvedValue({
-              data: [
-                {
-                  wsRpcUrl: 'ws://localhost:8545',
-                  rpcUrl: null,
-                  contractAddress: '0xcontract',
-                },
-              ],
-              error: null,
+      try {
+        // Override the injected supabase client so onModuleInit sees one WS chain
+        (service as unknown as Record<string, unknown>)['supabaseService'] = {
+          client: {
+            from: jest.fn().mockReturnValue({
+              select: jest.fn().mockResolvedValue({
+                data: [
+                  {
+                    wsRpcUrl: 'ws://localhost:8545',
+                    rpcUrl: null,
+                    contractAddress: '0xcontract',
+                  },
+                ],
+                error: null,
+              }),
             }),
-          }),
-        },
-      };
+          },
+        };
 
-      await service.onModuleInit();
+        await service.onModuleInit();
 
-      expect(destroy).toHaveBeenCalled();
-      wsSpy.mockRestore();
+        expect(destroy).toHaveBeenCalled();
+      } finally {
+        wsSpy.mockRestore();
+      }
     });
   });
 
