@@ -7,6 +7,11 @@ ALTER TABLE public.signed_loan_requests
   ADD COLUMN IF NOT EXISTS "ltvAttestationExpiry" bigint,
   ADD COLUMN IF NOT EXISTS "ltvAttestationSig" text;
 
+DROP FUNCTION IF EXISTS insert_signed_loan_request (
+    text, address, text, address, address, text, address, text,
+    integer, integer, integer, text, timestamptz, text
+);
+
 CREATE OR REPLACE FUNCTION insert_signed_loan_request (
     p_network_id text,
     p_contract_address address,
