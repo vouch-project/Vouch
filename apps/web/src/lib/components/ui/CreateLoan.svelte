@@ -201,7 +201,7 @@
         status = 'Connect your wallet to create a loan request.';
         return;
       }
-      status = 'Waiting for wallet signature...';
+      status = 'Fetching LTV attestation...';
       try {
         const collateralParsed = ethers.parseUnits(collateralAmount, terms.collateralToken.decimals ?? 18);
         const balance = await getErc20Balance(terms.collateralToken.address, wallet.address!);
@@ -247,6 +247,7 @@
           )
           .reduce((sum, r) => sum + BigInt(r.collateralAmount), 0n);
         await ensureVaultAllowance(terms.collateralToken.address, existingCollateral + collateralParsed);
+        status = 'Waiting for wallet signature...';
         const { signature } = await signLoanRequest(req);
         await postSignedRequest({
           borrowerAddress: req.borrower,
