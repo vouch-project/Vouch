@@ -80,7 +80,7 @@ export class BlockchainListenerService implements OnModuleInit {
         // Destroy any partially-initialised WebSocketProvider so its internal
         // reconnection loop doesn't keep firing unhandled errors that can crash
         // the process and kill the listeners for other chains.
-        void provider?.destroy();
+        void provider?.destroy?.();
       }
     }
   }
