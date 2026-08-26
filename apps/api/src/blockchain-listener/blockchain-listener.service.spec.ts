@@ -138,6 +138,49 @@ describe('BlockchainListenerService', () => {
     jest.spyOn(service['logger'], 'log').mockImplementation(() => undefined);
   });
 
+  describe('onModuleInit', () => {
+    it('calls destroy() on a WebSocketProvider whose getNetwork() rejects so its reconnection loop cannot leak', async () => {
+      const destroy = jest.fn();
+      const badProvider = {
+        getNetwork: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')),
+        destroy,
+      };
+
+      const wsSpy = jest
+        .spyOn(
+          ethers as unknown as Record<string, unknown>,
+          'WebSocketProvider',
+        )
+        .mockImplementation(() => badProvider);
+
+      try {
+        // Override the injected supabase client so onModuleInit sees one WS chain
+        (service as unknown as Record<string, unknown>)['supabaseService'] = {
+          client: {
+            from: jest.fn().mockReturnValue({
+              select: jest.fn().mockResolvedValue({
+                data: [
+                  {
+                    wsRpcUrl: 'ws://localhost:8545',
+                    rpcUrl: 'http://localhost:8545',
+                    contractAddress: '0xcontract',
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          },
+        };
+
+        await service.onModuleInit();
+
+        expect(destroy).toHaveBeenCalled();
+      } finally {
+        wsSpy.mockRestore();
+      }
+    });
+  });
+
   describe('handleLoanPartiallyRepaid', () => {
     it('forwards event data to loanService.partialRepay', async () => {
       await invoke();

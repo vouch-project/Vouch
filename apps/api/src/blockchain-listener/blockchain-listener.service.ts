@@ -48,8 +48,12 @@ export class BlockchainListenerService implements OnModuleInit {
 
     for (const config of chainConfigs) {
       const listenerUrl = config.wsRpcUrl ?? config.rpcUrl;
+      let provider:
+        | ethers.JsonRpcProvider
+        | ethers.WebSocketProvider
+        | undefined;
       try {
-        const provider = listenerUrl.startsWith('ws')
+        provider = listenerUrl.startsWith('ws')
           ? new ethers.WebSocketProvider(listenerUrl)
           : new ethers.JsonRpcProvider(listenerUrl, undefined, {
               polling: true,
@@ -73,6 +77,10 @@ export class BlockchainListenerService implements OnModuleInit {
         this.logger.error(
           `Failed to connect to RPC at ${listenerUrl}: ${(error as Error).message}`,
         );
+        // Destroy any partially-initialised WebSocketProvider so its internal
+        // reconnection loop doesn't keep firing unhandled errors that can crash
+        // the process and kill the listeners for other chains.
+        void provider?.destroy?.();
       }
     }
   }
