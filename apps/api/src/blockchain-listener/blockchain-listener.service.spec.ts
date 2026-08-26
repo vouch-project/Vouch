@@ -162,7 +162,7 @@ describe('BlockchainListenerService', () => {
                 data: [
                   {
                     wsRpcUrl: 'ws://localhost:8545',
-                    rpcUrl: null,
+                    rpcUrl: 'http://localhost:8545',
                     contractAddress: '0xcontract',
                   },
                 ],
