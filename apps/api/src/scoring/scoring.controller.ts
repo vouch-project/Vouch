@@ -68,8 +68,8 @@ export class ScoringController {
     }
     let expiryOverride: number | undefined;
     if (expiry !== undefined) {
-      expiryOverride = parseInt(expiry, 10);
-      if (!Number.isFinite(expiryOverride) || expiryOverride <= 0) {
+      expiryOverride = Number(expiry);
+      if (!Number.isInteger(expiryOverride) || expiryOverride <= 0) {
         throw new BadRequestException('expiry must be a positive integer (unix seconds)');
       }
     }

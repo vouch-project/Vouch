@@ -75,3 +75,15 @@ BEGIN
     ON CONFLICT (digest) DO NOTHING;
 END;
 $$;
+
+REVOKE ALL ON FUNCTION insert_signed_loan_request (
+    text, address, text, address, address, text, address, text,
+    integer, integer, integer, text, timestamptz, text,
+    integer, bigint, text
+) FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION insert_signed_loan_request (
+    text, address, text, address, address, text, address, text,
+    integer, integer, integer, text, timestamptz, text,
+    integer, bigint, text
+) TO service_role;
