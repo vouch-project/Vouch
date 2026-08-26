@@ -20,6 +20,9 @@ export type SignedRequestPayload = {
   signature: string;
   networkId: string;
   contractAddress: string;
+  ltvAttestationMaxLtvBps?: number;
+  ltvAttestationExpiry?: number;
+  ltvAttestationSig?: string;
 };
 
 export type SignedOfferPayload = {
@@ -63,6 +66,9 @@ export type SignedRequestRow = {
   filledLoanId: string | null;
   createdAt: string;
   updatedAt: string;
+  ltvAttestationMaxLtvBps: number | null;
+  ltvAttestationExpiry: number | null;
+  ltvAttestationSig: string | null;
 };
 
 export type SignedOfferRow = {

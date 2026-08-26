@@ -128,6 +128,9 @@ export class SignedOrdersService {
         p_nonce: nonce.toString(),
         p_deadline: new Date(dto.deadline * 1000).toISOString(),
         p_signature: dto.signature,
+        p_ltv_attestation_max_ltv_bps: dto.ltvAttestationMaxLtvBps ?? null,
+        p_ltv_attestation_expiry: dto.ltvAttestationExpiry ?? null,
+        p_ltv_attestation_sig: dto.ltvAttestationSig ?? null,
       },
     );
     if (error) throw error;

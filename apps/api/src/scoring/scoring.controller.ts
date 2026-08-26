@@ -50,6 +50,7 @@ export class ScoringController {
     @Query('borrowToken') borrowToken: string,
     @Query('contractAddress') contractAddress: string,
     @Query('chainId') chainId: string,
+    @Query('expiry') expiry?: string,
   ): Promise<{ maxLtvBps: number; expiry: number; sig: string }> {
     if (!collateralToken || !borrowToken || !contractAddress || !chainId) {
       throw new BadRequestException(
@@ -65,12 +66,20 @@ export class ScoringController {
     if (chainIdBigInt <= 0n) {
       throw new BadRequestException('chainId must be a positive integer');
     }
+    let expiryOverride: number | undefined;
+    if (expiry !== undefined) {
+      expiryOverride = parseInt(expiry, 10);
+      if (!Number.isFinite(expiryOverride) || expiryOverride <= 0) {
+        throw new BadRequestException('expiry must be a positive integer (unix seconds)');
+      }
+    }
     return this.scoringService.getLtvAttestation(
       address,
       collateralToken,
       borrowToken,
       contractAddress,
       chainIdBigInt,
+      expiryOverride,
     );
   }
 }

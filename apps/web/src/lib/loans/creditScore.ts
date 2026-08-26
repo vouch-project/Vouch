@@ -43,6 +43,7 @@ export const fetchLtvAttestation = async (
   borrowToken: string,
   contractAddress: string,
   chainId: bigint,
+  expiry?: number,
 ): Promise<LtvAttestation> => {
   const params = new URLSearchParams({
     collateralToken,
@@ -50,6 +51,7 @@ export const fetchLtvAttestation = async (
     contractAddress,
     chainId: chainId.toString(),
   });
+  if (expiry !== undefined) params.set('expiry', expiry.toString());
   const { data } = await axiosApi.get<LtvAttestation>(
     `/scoring/${encodeURIComponent(borrowerAddress)}/ltv-attestation?${params}`,
   );

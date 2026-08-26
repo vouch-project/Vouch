@@ -217,6 +217,14 @@
           : terms.borrowToken.address;
         const nonce = generateNonce();
         const deadline = Math.floor(Date.now() / 1000) + terms.fundWindowSeconds;
+        const ltvAttestation = await fetchLtvAttestation(
+          wallet.address,
+          terms.collateralToken.address,
+          principalTokenAddress,
+          chainInfo.contractAddress,
+          BigInt(wallet.networkId),
+          deadline,
+        );
         const req: SignedLoanRequest = {
           borrower: wallet.address,
           collateralToken: terms.collateralToken.address,
@@ -225,7 +233,7 @@
           principalAmount: principalParsed,
           interestRateBps: terms.interestRateBps,
           durationSeconds: BigInt(terms.durationSeconds),
-          maxLtvBps: terms.liquidationThresholdBps,
+          maxLtvBps: ltvAttestation.maxLtvBps,
           nonce,
           deadline: BigInt(deadline),
         };
@@ -248,12 +256,15 @@
           principalAmount: principalParsed.toString(),
           interestRateBps: terms.interestRateBps,
           durationSeconds: terms.durationSeconds,
-          maxLtvBps: terms.liquidationThresholdBps,
+          maxLtvBps: ltvAttestation.maxLtvBps,
           nonce: nonce.toString(),
           deadline,
           signature,
           networkId: String(wallet.networkId),
           contractAddress: chainInfo.contractAddress,
+          ltvAttestationMaxLtvBps: ltvAttestation.maxLtvBps,
+          ltvAttestationExpiry: ltvAttestation.expiry,
+          ltvAttestationSig: ltvAttestation.sig,
         });
         status = 'Loan request published!';
       } catch (err) {
