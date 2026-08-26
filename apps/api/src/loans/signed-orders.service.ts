@@ -113,7 +113,7 @@ export class SignedOrdersService {
 
     if (dto.ltvAttestationMaxLtvBps !== dto.maxLtvBps)
       throw new BadRequestException('ltvAttestationMaxLtvBps must match maxLtvBps');
-    if (dto.ltvAttestationExpiry <= dto.deadline)
+    if (dto.ltvAttestationExpiry < dto.deadline)
       throw new BadRequestException('ltvAttestationExpiry must be >= request deadline');
 
     const { error } = await this.supabaseService.client.rpc(

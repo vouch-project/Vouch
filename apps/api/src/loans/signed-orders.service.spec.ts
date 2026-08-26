@@ -58,7 +58,7 @@ describe('SignedOrdersService', () => {
       ...base,
       signature,
       ltvAttestationMaxLtvBps: base.maxLtvBps,
-      ltvAttestationExpiry: base.deadline + 1,
+      ltvAttestationExpiry: base.deadline,
       ltvAttestationSig: '0xdeadbeef',
     };
     await expect(service.createLoanRequest(dto)).rejects.toThrow(/signature/i);
@@ -98,7 +98,7 @@ describe('SignedOrdersService', () => {
       ...base,
       signature,
       ltvAttestationMaxLtvBps: base.maxLtvBps,
-      ltvAttestationExpiry: base.deadline + 1,
+      ltvAttestationExpiry: base.deadline,
       ltvAttestationSig: '0xdeadbeef',
     };
     const res = await service.createLoanRequest(dto);
@@ -142,7 +142,7 @@ describe('SignedOrdersService', () => {
       ...base,
       signature,
       ltvAttestationMaxLtvBps: base.maxLtvBps,
-      ltvAttestationExpiry: base.deadline + 1,
+      ltvAttestationExpiry: base.deadline,
       ltvAttestationSig: '0xdeadbeef',
     };
     await expect(service.createLoanRequest(dto)).rejects.toThrow(/expired/i);
