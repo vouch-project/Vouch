@@ -20,9 +20,9 @@ export type SignedRequestPayload = {
   signature: string;
   networkId: string;
   contractAddress: string;
-  ltvAttestationMaxLtvBps?: number;
-  ltvAttestationExpiry?: number;
-  ltvAttestationSig?: string;
+  ltvAttestationMaxLtvBps: number;
+  ltvAttestationExpiry: number;
+  ltvAttestationSig: string;
 };
 
 export type SignedOfferPayload = {

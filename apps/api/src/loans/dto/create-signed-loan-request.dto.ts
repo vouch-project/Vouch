@@ -1,4 +1,4 @@
-import { IsNumber, IsNumberString, IsOptional, IsString } from 'class-validator';
+import { IsNumber, IsNumberString, IsString } from 'class-validator';
 
 export class CreateSignedLoanRequestDto {
   @IsString()
@@ -40,15 +40,12 @@ export class CreateSignedLoanRequestDto {
   @IsString()
   contractAddress!: string;
 
-  @IsOptional()
   @IsNumber()
-  ltvAttestationMaxLtvBps?: number;
+  ltvAttestationMaxLtvBps!: number;
 
-  @IsOptional()
   @IsNumber()
-  ltvAttestationExpiry?: number;
+  ltvAttestationExpiry!: number;
 
-  @IsOptional()
   @IsString()
-  ltvAttestationSig?: string;
+  ltvAttestationSig!: string;
 }
