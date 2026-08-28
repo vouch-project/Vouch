@@ -51,19 +51,27 @@ def _log_health_factor_failure(loan_id: int) -> None:
 
 def process_loan(loan: ActionableLoan, chain: VaultChain) -> None:
     if loan.status == "active":
-        try:
-            hf = chain.get_health_factor(loan.on_chain_loan_id)
-        except Exception:
-            _log_health_factor_failure(loan.on_chain_loan_id)
-            return
-        if hf < HF_THRESHOLD:
+        now = datetime.now(UTC)
+        overdue = loan.due_at is not None and loan.due_at < now
+        reason: str
+        if overdue:
+            reason = "overdue"
+        else:
             try:
-                chain.liquidate(loan.on_chain_loan_id)
-                logger.info("liquidated loan %s (hf=%s)", loan.on_chain_loan_id, hf)
+                hf = chain.get_health_factor(loan.on_chain_loan_id)
             except Exception:
-                logger.warning(
-                    "liquidate failed for loan %s", loan.on_chain_loan_id, exc_info=True
-                )
+                _log_health_factor_failure(loan.on_chain_loan_id)
+                return
+            if hf >= HF_THRESHOLD:
+                return
+            reason = f"hf={hf}"
+        try:
+            if chain.liquidate(loan.on_chain_loan_id):
+                logger.info("liquidated loan %s (%s)", loan.on_chain_loan_id, reason)
+        except Exception:
+            logger.warning(
+                "liquidate failed for loan %s", loan.on_chain_loan_id, exc_info=True
+            )
 
     elif loan.status == "pending":
         now = datetime.now(UTC)

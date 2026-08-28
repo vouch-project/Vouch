@@ -13,6 +13,7 @@ class ActionableLoan:
     on_chain_loan_id: int
     status: str  # 'active' | 'pending'
     fund_deadline: datetime | None
+    due_at: datetime | None
 
 
 @dataclass
@@ -31,7 +32,7 @@ def _auth_headers(settings: Settings) -> dict[str, str]:
 def get_actionable_loans(settings: Settings) -> list[ActionableLoan]:
     headers = _auth_headers(settings)
     params = {
-        "select": "onChainLoanId,status,fundDeadline,chains!inner(networkId)",
+        "select": "onChainLoanId,status,fundDeadline,dueAt,chains!inner(networkId)",
         "status": "in.(active,pending)",
         "onChainLoanId": "not.is.null",
         "chains.networkId": f"eq.{settings.keeper_network_id}",
@@ -50,11 +51,15 @@ def get_actionable_loans(settings: Settings) -> list[ActionableLoan]:
             fund_deadline = datetime.fromisoformat(
                 row["fundDeadline"].replace("Z", "+00:00")
             )
+        due_at = None
+        if row.get("dueAt"):
+            due_at = datetime.fromisoformat(row["dueAt"].replace("Z", "+00:00"))
         loans.append(
             ActionableLoan(
                 on_chain_loan_id=int(row["onChainLoanId"]),
                 status=row["status"],
                 fund_deadline=fund_deadline,
+                due_at=due_at,
             )
         )
     return loans

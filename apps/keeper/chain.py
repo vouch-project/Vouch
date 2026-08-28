@@ -103,6 +103,23 @@ def _load_abi(name: str) -> list[dict[str, Any]]:
 _VAULT_ABI = _load_abi("VouchVault")
 _LENS_ABI = _load_abi("VouchVaultLens")
 
+_ERC20_ABI = [
+    {
+        "name": "approve",
+        "type": "function",
+        "inputs": [{"name": "spender", "type": "address"}, {"name": "amount", "type": "uint256"}],
+        "outputs": [{"name": "", "type": "bool"}],
+        "stateMutability": "nonpayable",
+    },
+    {
+        "name": "balanceOf",
+        "type": "function",
+        "inputs": [{"name": "account", "type": "address"}],
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+    },
+]
+
 
 class VaultChain:
     def __init__(self, settings: Settings) -> None:
@@ -123,28 +140,41 @@ class VaultChain:
         result: int = self._contract.functions.getHealthFactor(loan_id).call()
         return result
 
-    def liquidate(self, loan_id: int) -> None:
-        # The keeper funds liquidations with ETH (msg.value). For ERC20-principal loans the
-        # contract's liquidate() rejects msg.value and instead pulls `maxAmount` via an ERC20
-        # allowance, which requires the keeper to hold and approve that token — unsupported here.
-        # Skip them so we don't repeatedly broadcast guaranteed-to-revert txs and burn gas.
+    def liquidate(self, loan_id: int) -> bool:
         requested_principal_token: str = self._contract.functions.loans(loan_id).call()[11]
-        if requested_principal_token != _ZERO_ADDRESS:
-            logger.info(
-                "skipping loan %s: ERC20-principal (%s) liquidation not supported by keeper",
-                loan_id,
-                requested_principal_token,
-            )
-            return
-
-        # Fetch the outstanding debt (from the lens) to send as msg.value; contract refunds
-        # any surplus. maxAmount is ignored on the ETH path, so pass 0.
         details = self._lens.functions.getRepaymentDetails(loan_id).call()
         remaining: int = details[5]
+
+        if requested_principal_token != _ZERO_ADDRESS:
+            return self._liquidate_erc20(loan_id, requested_principal_token, remaining)
+
+        # ETH-principal: send msg.value; contract refunds any surplus. maxAmount is ignored.
         self._send_tx(
             self._contract.functions.liquidate(loan_id, 0, self._account.address),
             value=remaining,
         )
+        return True
+
+    def _liquidate_erc20(self, loan_id: int, token: str, max_amount: int) -> bool:
+        token_address = Web3.to_checksum_address(token)
+        erc20 = self._w3.eth.contract(address=token_address, abi=_ERC20_ABI)
+
+        balance: int = erc20.functions.balanceOf(self._account.address).call()
+        if balance < max_amount:
+            logger.warning(
+                "skipping loan %s: insufficient %s balance (have %s, need %s)",
+                loan_id,
+                token,
+                balance,
+                max_amount,
+            )
+            return False
+
+        self._send_tx(erc20.functions.approve(self._contract.address, max_amount))
+        self._send_tx(
+            self._contract.functions.liquidate(loan_id, max_amount, self._account.address)
+        )
+        return True
 
     def expire_loan(self, loan_id: int) -> None:
         self._send_tx(self._contract.functions.expireLoan(loan_id))
