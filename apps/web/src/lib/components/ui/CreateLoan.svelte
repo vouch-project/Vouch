@@ -17,7 +17,7 @@
   import { createLoan, getErc20Balance, isNativeTokenAddress } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { ethers } from 'ethers';
-  import { parseContractError } from '../../wallet/contractError';
+  import { parseContractError } from '$lib/wallet/contractError';
   import CollateralBorrowFields from '../create-loan/CollateralBorrowFields.svelte';
   import LoanTermsFields from '../create-loan/LoanTermsFields.svelte';
   import LtvIndicator from '../create-loan/LtvIndicator.svelte';

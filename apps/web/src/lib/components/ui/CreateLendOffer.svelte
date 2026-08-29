@@ -11,7 +11,7 @@
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Loader2, Sparkles, Wallet } from '@lucide/svelte';
   import { ethers } from 'ethers';
-  import { parseContractError } from '../../wallet/contractError';
+  import { parseContractError } from '$lib/wallet/contractError';
 
   let principalSymbol = $state(DEPLOYMENT_ENV === 'local' ? 'MOCK' : 'USDC');
   let principalAmount = $state('');

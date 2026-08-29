@@ -20,13 +20,7 @@
 
   const columns = $derived(getTableColumns(role));
 
-  const filteredSignedRequests = $derived(
-    signedRequests.filter((r) => {
-      if (filter === 'active') return false; // signed requests are not yet loans
-      if (filter === 'repaid') return r.status === 'filled';
-      return true;
-    }),
-  );
+  const filteredSignedRequests = $derived(filter === 'all' ? signedRequests : []);
 
   const isEmpty = $derived(loans.length === 0 && filteredSignedRequests.length === 0);
 </script>
