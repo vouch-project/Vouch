@@ -64,6 +64,12 @@ class TestableListener extends BlockchainListenerService {
   ) {
     return this.handleSignedLendOfferCancelled(...args);
   }
+
+  callHandleLoanLiquidated(
+    ...args: Parameters<BlockchainListenerService['handleLoanLiquidated']>
+  ) {
+    return this.handleLoanLiquidated(...args);
+  }
 }
 
 describe('BlockchainListenerService', () => {
@@ -75,6 +81,7 @@ describe('BlockchainListenerService', () => {
   let expire: jest.Mock;
   let fillSignedOrder: jest.Mock;
   let cancelSignedOrder: jest.Mock;
+  let liquidate: jest.Mock;
 
   const log = {
     transactionHash: '0xtx',
@@ -110,6 +117,7 @@ describe('BlockchainListenerService', () => {
     expire = jest.fn().mockResolvedValue(undefined);
     fillSignedOrder = jest.fn().mockResolvedValue(undefined);
     cancelSignedOrder = jest.fn().mockResolvedValue(undefined);
+    liquidate = jest.fn().mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -125,6 +133,7 @@ describe('BlockchainListenerService', () => {
             expire,
             fillSignedOrder,
             cancelSignedOrder,
+            liquidate,
           },
         },
       ],
@@ -526,6 +535,57 @@ describe('BlockchainListenerService', () => {
         networkId: '1',
         contractAddress: '0xcontract',
       });
+    });
+  });
+
+  describe('handleLoanLiquidated', () => {
+    const liquidateContract = {
+      loans: jest.fn().mockResolvedValue({
+        principalRepaid: 200n,
+        collateralReleased: 400n,
+      }),
+    } as unknown as VouchVault;
+
+    const invokeLiquidate = () =>
+      service.callHandleLoanLiquidated(
+        9n,
+        '0xliquidator',
+        1000n,
+        800n,
+        1700000000n,
+        log,
+        network,
+        '0xcontract',
+        liquidateContract,
+      );
+
+    it('reads repaid amounts from the contract and forwards all fields to loanService.liquidate', async () => {
+      await invokeLiquidate();
+
+      expect(liquidateContract.loans).toHaveBeenCalledWith(9n);
+      expect(liquidate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          onChainLoanId: 9n,
+          networkId: '1',
+          contractAddress: '0xcontract',
+          liquidatorAddress: '0xliquidator',
+          amountPaid: 1000n,
+          collateralSeized: 800n,
+          principalRepaid: 200n,
+          collateralReleased: 400n,
+          txHash: '0xtx',
+          blockNumber: 100,
+          blockHash: '0xblock',
+          logIndex: 0,
+          liquidatedAt: new Date(1700000000 * 1000),
+        }),
+      );
+    });
+
+    it('swallows errors without throwing', async () => {
+      liquidate.mockRejectedValueOnce(new Error('DB write failed'));
+
+      await expect(invokeLiquidate()).resolves.toBeUndefined();
     });
   });
 });

@@ -247,7 +247,15 @@ export class BlockchainListenerService implements OnModuleInit {
 
     void contract.on(
       contract.getEvent('LoanLiquidated'),
-      (loanId, liquidator, amountPaid, collateralSeized, _collateralReturned, timestamp, event) => {
+      (
+        loanId,
+        liquidator,
+        amountPaid,
+        collateralSeized,
+        _collateralReturned,
+        timestamp,
+        event,
+      ) => {
         this.enqueue(queueKey, () =>
           this.handleLoanLiquidated(
             loanId,
@@ -674,7 +682,7 @@ export class BlockchainListenerService implements OnModuleInit {
     }
   }
 
-  private async handleLoanLiquidated(
+  protected async handleLoanLiquidated(
     loanId: bigint,
     liquidator: string,
     amountPaid: bigint,
