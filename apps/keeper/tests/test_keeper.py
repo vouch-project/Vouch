@@ -13,7 +13,7 @@ PAST = NOW - timedelta(hours=1)
 FUTURE = NOW + timedelta(hours=24)
 
 
-def make_loan(loan_id: int = 1, status: str = "active", fund_deadline: object = None, due_at: object = None) -> ActionableLoan:
+def make_loan(loan_id: int = 1, status: str = "active", fund_deadline: datetime | None = None, due_at: datetime | None = None) -> ActionableLoan:
     return ActionableLoan(on_chain_loan_id=loan_id, status=status, fund_deadline=fund_deadline, due_at=due_at)
 
 

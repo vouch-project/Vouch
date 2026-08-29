@@ -134,6 +134,13 @@ _ERC20_ABI = [
         "stateMutability": "nonpayable",
     },
     {
+        "name": "allowance",
+        "type": "function",
+        "inputs": [{"name": "owner", "type": "address"}, {"name": "spender", "type": "address"}],
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+    },
+    {
         "name": "balanceOf",
         "type": "function",
         "inputs": [{"name": "account", "type": "address"}],
@@ -192,6 +199,11 @@ class VaultChain:
             )
             return False
 
+        # Some tokens (e.g. USDT) revert when setting a non-zero allowance over an existing
+        # non-zero one. Only reset if there's a stale allowance to clear.
+        existing: int = erc20.functions.allowance(self._account.address, self._contract.address).call()
+        if existing > 0:
+            self._send_tx(erc20.functions.approve(self._contract.address, 0))
         self._send_tx(erc20.functions.approve(self._contract.address, max_amount))
         self._send_tx(
             self._contract.functions.liquidate(loan_id, max_amount, self._account.address)
@@ -207,7 +219,7 @@ class VaultChain:
         self._send_tx(self._contract.functions.expireLendOffer(offer_id))
 
     def _send_tx(self, fn: ContractFunction, value: int = 0) -> None:
-        nonce = self._w3.eth.get_transaction_count(self._account.address)
+        nonce = self._w3.eth.get_transaction_count(self._account.address, "pending")
         tx_params: dict[str, Any] = {"from": self._account.address, "nonce": nonce}
         if value:
             tx_params["value"] = value

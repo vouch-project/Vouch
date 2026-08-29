@@ -49,7 +49,7 @@ const CONTRACT_ERRORS: Record<string, string> = {
  *  - NestJS API error responses
  *  - Generic ethers / JS errors
  */
-export function parseContractError(e: unknown, fallback: string): string {
+export const parseContractError = (e: unknown, fallback: string): string => {
   if (!e || typeof e !== 'object') return fallback;
 
   const err = e as {
@@ -80,11 +80,11 @@ export function parseContractError(e: unknown, fallback: string): string {
     // "execution reverted (unknown custom error) (action="estimateGas", ...)"
     //  → "execution reverted (unknown custom error)"
     const stripped = err.message
-      .replace(/^[\w-]+:\s*/, '')               // strip leading "Error: " etc.
-      .replace(/\s*\(action=.*$/s, '')           // strip ethers metadata dump
+      .replace(/^[\w-]+:\s*/, '') // strip leading "Error: " etc.
+      .replace(/\s*\(action=.*$/s, '') // strip ethers metadata dump
       .trim();
     return stripped || fallback;
   }
 
   return fallback;
-}
+};

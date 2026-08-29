@@ -342,9 +342,9 @@
         <Tabs.Trigger value="borrowed">
           Borrowed
           {#if borrowedData.loans.length + mySignedRequests.length > 0}
-            <Badge class="ml-1.5 h-5 min-w-5 text-xs" variant="secondary"
-              >{borrowedData.loans.length + mySignedRequests.length}</Badge
-            >
+            <Badge class="ml-1.5 h-5 min-w-5 text-xs" variant="secondary">
+              {borrowedData.loans.length + mySignedRequests.length}
+            </Badge>
           {/if}
         </Tabs.Trigger>
         <Tabs.Trigger value="lent">

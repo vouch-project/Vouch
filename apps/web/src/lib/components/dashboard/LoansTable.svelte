@@ -97,7 +97,7 @@
             <LoanRepayRow {loan} {onRepaid} {role} />
           {/each}
           {#each filteredSignedRequests as req (req.id)}
-            <LoanRepayRow {req} onRepaid={onRepaid} />
+            <LoanRepayRow {onRepaid} {req} />
           {/each}
         {/if}
       </Table.Body>
