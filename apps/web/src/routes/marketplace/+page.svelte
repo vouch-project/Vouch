@@ -51,7 +51,7 @@
       try {
         lendOffers = await data.streamed.lendOffersPromise;
       } catch (err) {
-        lendOffersError = err instanceof Error ? err.message : 'Failed to load offers';
+        lendOffersError = getErrorMessage(err);
       } finally {
         lendOffersLoading = false;
       }

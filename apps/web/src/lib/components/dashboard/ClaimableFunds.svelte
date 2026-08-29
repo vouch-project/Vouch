@@ -2,6 +2,7 @@
   import { Button } from '$lib/components/ui/button';
   import * as Card from '$lib/components/ui/card';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
+  import { parseContractError } from '$lib/wallet/contractError';
   import { getPendingPayments, withdrawPayments } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Coins, LoaderCircle } from '@lucide/svelte';
@@ -60,7 +61,7 @@
       await scan();
       onClaimed?.();
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Claim failed';
+      error = parseContractError(e, 'Claim failed');
     } finally {
       claiming = false;
     }

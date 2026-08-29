@@ -3,7 +3,7 @@
   import LoanRepayRow from '$lib/components/ui/LoanRepayRow.svelte';
   import * as Card from '$lib/components/ui/card';
   import * as Table from '$lib/components/ui/table';
-  import type { LoanFull } from '$lib/types';
+  import type { LoanFull, SignedRequestDashRow } from '$lib/types';
   import { cn } from '$lib/utils';
   import { LayoutDashboard } from '@lucide/svelte';
 
@@ -13,11 +13,22 @@
     filter: 'active' | 'repaid' | 'all';
     onRepaid: () => void;
     role?: 'borrower' | 'lender';
+    signedRequests?: SignedRequestDashRow[];
   };
 
-  let { loans, loading, filter, onRepaid, role = 'borrower' }: Props = $props();
+  let { loans, loading, filter, onRepaid, role = 'borrower', signedRequests = [] }: Props = $props();
 
   const columns = $derived(getTableColumns(role));
+
+  const filteredSignedRequests = $derived(
+    signedRequests.filter((r) => {
+      if (filter === 'active') return false; // signed requests are not yet loans
+      if (filter === 'repaid') return r.status === 'filled';
+      return true;
+    }),
+  );
+
+  const isEmpty = $derived(loans.length === 0 && filteredSignedRequests.length === 0);
 </script>
 
 <Card.Root class="border-border/50 overflow-hidden bg-card/60 backdrop-blur-sm">
@@ -53,7 +64,7 @@
               {/each}
             </Table.Row>
           {/each}
-        {:else if loans.length === 0}
+        {:else if isEmpty}
           <Table.Row>
             <Table.Cell class="h-56 text-center" colspan={columns.length}>
               <div class="flex flex-col items-center justify-center space-y-3">
@@ -84,6 +95,9 @@
         {:else}
           {#each loans as loan (loan.id)}
             <LoanRepayRow {loan} {onRepaid} {role} />
+          {/each}
+          {#each filteredSignedRequests as req (req.id)}
+            <LoanRepayRow {req} onRepaid={onRepaid} />
           {/each}
         {/if}
       </Table.Body>

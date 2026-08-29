@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 from pydantic import ValidationError
 
-from chain import VaultChain, transient_oracle_error_name
+from chain import VaultChain, already_settled_error_name, transient_oracle_error_name
 from config import Settings
 from db import (
     ActionableLoan,
@@ -69,9 +69,14 @@ def process_loan(loan: ActionableLoan, chain: VaultChain) -> None:
             if chain.liquidate(loan.on_chain_loan_id):
                 logger.info("liquidated loan %s (%s)", loan.on_chain_loan_id, reason)
         except Exception:
-            logger.warning(
-                "liquidate failed for loan %s", loan.on_chain_loan_id, exc_info=True
-            )
+            exc = sys.exc_info()[1]
+            name = already_settled_error_name(exc) if exc is not None else None
+            if name is not None:
+                logger.info("skipping loan %s: already settled (%s)", loan.on_chain_loan_id, name)
+            else:
+                logger.warning(
+                    "liquidate failed for loan %s", loan.on_chain_loan_id, exc_info=True
+                )
 
     elif loan.status == "pending":
         now = datetime.now(UTC)

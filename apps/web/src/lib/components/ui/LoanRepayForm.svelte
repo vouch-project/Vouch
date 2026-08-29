@@ -4,6 +4,7 @@
   import type { LoanFull } from '$lib/types';
   import { cn } from '$lib/utils';
   import { txExplorerUrl } from '$lib/wallet/explorer';
+  import { parseContractError } from '$lib/wallet/contractError';
   import { getRepaymentDetails, repayLoan, type RepaymentDetails } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { ExternalLink } from '@lucide/svelte';
@@ -71,11 +72,7 @@
       onPaid(await getRepaymentDetails(BigInt(onChainLoanId)));
     } catch (e: unknown) {
       txStatus = 'error';
-      if (e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'ACTION_REJECTED') {
-        txError = 'Transaction rejected.';
-      } else {
-        txError = e instanceof Error ? e.message : 'Transaction failed.';
-      }
+      txError = parseContractError(e, 'Transaction failed.');
     }
   };
 

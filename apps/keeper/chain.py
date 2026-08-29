@@ -30,6 +30,14 @@ _TRANSIENT_ORACLE_SIGS = (
     "StalePrice()",
 )
 
+# Errors that mean the loan is no longer liquidatable because the borrower already settled it.
+# These are a normal race condition (borrower repays between the HF check and the liquidation tx)
+# and should be handled quietly rather than logged as keeper faults.
+_ALREADY_SETTLED_SIGS = (
+    "LoanAlreadyRepaid()",
+    "LoanAlreadyLiquidated()",
+)
+
 
 def _match_tokens(sig: str) -> tuple[str, list[str]]:
     """Build (error_name, lowercased match tokens) for a custom-error signature.
@@ -46,6 +54,7 @@ def _match_tokens(sig: str) -> tuple[str, list[str]]:
 
 
 _TRANSIENT_ORACLE_MATCHERS = [_match_tokens(sig) for sig in _TRANSIENT_ORACLE_SIGS]
+_ALREADY_SETTLED_MATCHERS = [_match_tokens(sig) for sig in _ALREADY_SETTLED_SIGS]
 
 
 def transient_oracle_error_name(exc: BaseException) -> str | None:
@@ -57,6 +66,19 @@ def transient_oracle_error_name(exc: BaseException) -> str | None:
     """
     haystack = f"{getattr(exc, 'data', '')} {exc}".lower()
     for name, tokens in _TRANSIENT_ORACLE_MATCHERS:
+        if any(token in haystack for token in tokens):
+            return name
+    return None
+
+
+def already_settled_error_name(exc: BaseException) -> str | None:
+    """Return the error name if `exc` means the loan was already repaid or liquidated.
+
+    This is a normal race condition: the borrower repaid between the health-factor check and the
+    liquidation tx. Returns None for any other error.
+    """
+    haystack = f"{getattr(exc, 'data', '')} {exc}".lower()
+    for name, tokens in _ALREADY_SETTLED_MATCHERS:
         if any(token in haystack for token in tokens):
             return name
     return None
@@ -186,13 +208,13 @@ class VaultChain:
 
     def _send_tx(self, fn: ContractFunction, value: int = 0) -> None:
         nonce = self._w3.eth.get_transaction_count(self._account.address)
-        tx_params: dict[str, Any] = {
-            "from": self._account.address,
-            "nonce": nonce,
-            "gas": 200_000,
-        }
+        tx_params: dict[str, Any] = {"from": self._account.address, "nonce": nonce}
         if value:
             tx_params["value"] = value
+        # estimate_gas simulates the call and raises with the actual revert reason if
+        # it would fail, giving better diagnostics than a mined-but-reverted receipt.
+        estimated = fn.estimate_gas(tx_params)
+        tx_params["gas"] = int(estimated * 1.3)
         tx = fn.build_transaction(tx_params)
         signed = self._account.sign_transaction(tx)
         tx_hash = self._w3.eth.send_raw_transaction(signed.raw_transaction)

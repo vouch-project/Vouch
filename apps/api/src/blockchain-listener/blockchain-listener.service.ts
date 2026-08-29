@@ -246,6 +246,25 @@ export class BlockchainListenerService implements OnModuleInit {
     );
 
     void contract.on(
+      contract.getEvent('LoanLiquidated'),
+      (loanId, liquidator, amountPaid, collateralSeized, _collateralReturned, timestamp, event) => {
+        this.enqueue(queueKey, () =>
+          this.handleLoanLiquidated(
+            loanId,
+            liquidator,
+            amountPaid,
+            collateralSeized,
+            timestamp,
+            resolveEventLog(event),
+            network,
+            config.contractAddress,
+            contract,
+          ),
+        );
+      },
+    );
+
+    void contract.on(
       contract.getEvent('ProtocolFeeCollected'),
       (loanId, _token, amount, event) => {
         this.enqueue(queueKey, () =>
@@ -650,6 +669,44 @@ export class BlockchainListenerService implements OnModuleInit {
     } catch (error) {
       this.logger.error(
         `Failed to mark loan ${loanId.toString()} as repaid in DB`,
+        error,
+      );
+    }
+  }
+
+  private async handleLoanLiquidated(
+    loanId: bigint,
+    liquidator: string,
+    amountPaid: bigint,
+    collateralSeized: bigint,
+    timestamp: bigint,
+    { transactionHash, blockNumber, blockHash, index: logIndex }: ethers.Log,
+    network: ethers.Network,
+    contractAddress: string,
+    contract: VouchVault,
+  ) {
+    try {
+      const { principalRepaid, collateralReleased } =
+        await this.readRepaidAmounts(contract, loanId);
+      await this.loanService.liquidate({
+        onChainLoanId: loanId,
+        networkId: network.chainId.toString(),
+        contractAddress,
+        liquidatorAddress: liquidator,
+        amountPaid,
+        collateralSeized,
+        principalRepaid,
+        collateralReleased,
+        txHash: transactionHash,
+        blockNumber,
+        blockHash,
+        logIndex,
+        liquidatedAt: new Date(Number(timestamp) * 1000),
+      });
+      this.logger.log(`Loan ${loanId.toString()} liquidated by ${liquidator}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to mark loan ${loanId.toString()} as liquidated in DB`,
         error,
       );
     }
