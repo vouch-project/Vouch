@@ -11,6 +11,7 @@
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { Loader2, Sparkles, Wallet } from '@lucide/svelte';
   import { ethers } from 'ethers';
+  import { parseContractError } from '$lib/wallet/contractError';
 
   let principalSymbol = $state(DEPLOYMENT_ENV === 'local' ? 'MOCK' : 'USDC');
   let principalAmount = $state('');
@@ -99,25 +100,6 @@
     'border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring transition w-full bg-background';
   const sectionClass = 'flex flex-col gap-3 p-4 rounded-lg border border-border/60 bg-muted/20';
 
-  /** Map a wallet/API error to a user-facing message (distinguishes user-rejection & API 400). */
-  const orderErrorMessage = (e: unknown, fallback: string): string => {
-    if (e && typeof e === 'object') {
-      const err = e as {
-        code?: unknown;
-        reason?: unknown;
-        response?: { data?: { message?: unknown } };
-        message?: unknown;
-      };
-      if (err.code === 'ACTION_REJECTED') return 'Signature rejected by user.';
-      const apiMsg = err.response?.data?.message;
-      if (typeof apiMsg === 'string') return apiMsg;
-      if (Array.isArray(apiMsg)) return apiMsg.join(', ');
-      if (typeof err.reason === 'string' && err.reason) return err.reason;
-      if (typeof err.message === 'string') return err.message.replace(/^[\w-]+:\s*/, '') || fallback;
-    }
-    return fallback;
-  };
-
   const handleSubmit = async () => {
     if (!principalToken) return;
     if (!wallet.address || wallet.networkId == null || !chainInfo.contractAddress) {
@@ -196,7 +178,7 @@
         status = 'Offer created!';
       }
     } catch (e) {
-      errorMsg = orderErrorMessage(e, 'Transaction failed');
+      errorMsg = parseContractError(e, 'Transaction failed');
     } finally {
       submitting = false;
     }

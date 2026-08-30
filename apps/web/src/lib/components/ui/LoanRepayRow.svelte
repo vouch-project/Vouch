@@ -1,26 +1,35 @@
 <script lang="ts">
+  import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import LoanRepayForm from '$lib/components/ui/LoanRepayForm.svelte';
   import LoanStatusBadge from '$lib/components/ui/LoanStatusBadge.svelte';
   import * as Table from '$lib/components/ui/table';
   import { formatUint256 } from '$lib/formatUint256';
-  import { computeProgressPct, computeRemaining, computeTotalDue, formatDueDateLabel } from '$lib/loans/loanMath';
+  import { computeProgressPct, computeRemaining, computeTotalDue, formatDueDateLabel, formatLoanTerm, intervalToSeconds } from '$lib/loans/loanMath';
   import { chainInfo } from '$lib/stores/chainInfo.svelte';
-  import type { LoanFull } from '$lib/types';
+  import type { LoanFull, SignedRequestDashRow } from '$lib/types';
   import { cn } from '$lib/utils';
+  import { cancelSignedLoanRequest, type SignedLoanRequest } from '$lib/wallet/signedOrders';
+  import { parseContractError } from '$lib/wallet/contractError';
   import { cancelLoan, getHealthFactor, getRepaymentDetails, type RepaymentDetails } from '$lib/wallet/vouchVault';
-  import { Check, Copy } from '@lucide/svelte';
+  import { AlertCircle, Check, CheckCircle2, Copy, XCircle, Zap } from '@lucide/svelte';
   import { ethers } from 'ethers';
   import { tableColumns } from '../dashboard/columns';
   import HealthFactorBadge from './HealthFactorBadge.svelte';
 
   type Props = {
-    loan: LoanFull;
+    loan?: LoanFull;
+    req?: SignedRequestDashRow;
     onRepaid?: () => void;
     role?: 'borrower' | 'lender';
   };
 
-  let { loan, onRepaid, role = 'borrower' }: Props = $props();
+  let { loan: loanProp, req, onRepaid, role = 'borrower' }: Props = $props();
+
+  // Non-null alias used by all loan-branch $derived expressions.
+  // Safe because every value derived from `loan` is only read inside the
+  // `{:else if loan}` template block which only renders when loan is defined.
+  const loan = $derived(loanProp!);
 
   let copiedAddress = $state<string | null>(null);
 
@@ -98,7 +107,7 @@
     // Hydrate from chain for active loans (live remaining/accrued) and for repaid
     // loans (so the row shows the real amount repaid / total due even when the DB
     // repayment transactions haven't been mirrored locally).
-    if (loan.onChainLoanId === null) return;
+    if (!loanProp || loan.onChainLoanId === null) return;
     if (loan.status !== 'active' && loan.status !== 'repaid') return;
 
     const onChainLoanId = BigInt(loan.onChainLoanId);
@@ -109,7 +118,7 @@
           chainError = '';
         })
         .catch((e) => {
-          chainError = (e as Error).message;
+          chainError = parseContractError(e, 'Failed to load chain state.');
         });
 
     // Fetch immediately. Repaid loans are terminal, so a single fetch suffices;
@@ -122,7 +131,7 @@
   });
 
   $effect(() => {
-    if (loan.onChainLoanId === null || (loan.status !== 'active' && loan.status !== 'pending')) {
+    if (!loanProp || loan.onChainLoanId === null || (loan.status !== 'active' && loan.status !== 'pending')) {
       healthFactor = null;
       hfLoading = false;
       return;
@@ -241,184 +250,285 @@
     cancelError = '';
     try {
       await cancelLoan(BigInt(loan.onChainLoanId));
-      onRepaid?.(); // reuse the row-refresh hook so the parent reloads the list
+      onRepaid?.();
     } catch (e) {
-      cancelError = (e as Error).message;
+      cancelError = parseContractError(e, 'Cancel failed.');
+    } finally {
+      cancelling = false;
+    }
+  };
+
+  const handleCancelRequest = async () => {
+    if (!req) return;
+    cancelling = true;
+    cancelError = '';
+    try {
+      const reqStruct: SignedLoanRequest = {
+        borrower: req.borrowerAddress,
+        collateralToken: req.collateralToken?.address ?? ethers.ZeroAddress,
+        collateralAmount: BigInt(req.collateralAmount),
+        principalToken: req.principalToken?.address ?? ethers.ZeroAddress,
+        principalAmount: BigInt(req.principalAmount),
+        interestRateBps: req.interestRateBps,
+        durationSeconds: BigInt(intervalToSeconds(req.duration)),
+        maxLtvBps: req.maxLtvBps,
+        nonce: BigInt(req.nonce),
+        deadline: BigInt(Math.floor(Date.parse(req.deadline) / 1000)),
+      };
+      await cancelSignedLoanRequest(reqStruct);
+      onRepaid?.();
+    } catch (e) {
+      cancelError = parseContractError(e, 'Cancel failed.');
     } finally {
       cancelling = false;
     }
   };
 </script>
 
-<Table.Row
-  class={cn(
-    'hover:bg-muted/10 transition-colors',
-    (isRepaid || isExpired) && 'opacity-60',
-    isOverdue && 'bg-destructive/5',
-  )}
->
-  <!-- Loan # -->
-  <Table.Cell class="pl-4 sm:pl-6 py-3 font-bold whitespace-nowrap">
-    #{loan.onChainLoanId ?? '—'}
-    <div class="text-[10px] font-normal text-muted-foreground">
-      {#if loan.fundedAt}
-        Funded {new Date(loan.fundedAt).toLocaleDateString()}
+{#if req}
+  <!-- ── Signed loan request row ─────────────────────────────────────────── -->
+  <Table.Row class="hover:bg-muted/10 transition-colors opacity-90">
+    <Table.Cell class="pl-4 sm:pl-6 py-3 font-bold whitespace-nowrap">
+      <div class="flex items-center gap-1.5">
+        <Zap class="h-3.5 w-3.5 text-amber-500 shrink-0" />
+        <span>Request</span>
+      </div>
+      <div class="text-[10px] font-normal text-muted-foreground">
+        Expires {new Date(req.deadline).toLocaleDateString()}
+      </div>
+    </Table.Cell>
+
+    <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
+      {formatUint256(req.principalAmount, req.principalToken?.decimals ?? 18)}
+      <span class="text-muted-foreground text-xs">{req.principalToken?.symbol ?? ''}</span>
+    </Table.Cell>
+
+    <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
+      {formatUint256(req.collateralAmount, req.collateralToken?.decimals ?? 18)}
+      <span class="text-muted-foreground text-xs">{req.collateralToken?.symbol ?? ''}</span>
+    </Table.Cell>
+
+    <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
+      <span class="font-medium">{(req.interestRateBps / 100).toFixed(2)}% APR</span>
+      <div class="text-xs text-muted-foreground">{formatLoanTerm(req.duration)} term</div>
+    </Table.Cell>
+
+    <Table.Cell class="px-2 sm:px-4 py-3 text-center text-muted-foreground text-sm">—</Table.Cell>
+
+    <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm text-muted-foreground">
+      Deadline {new Date(req.deadline).toLocaleDateString()}
+    </Table.Cell>
+
+    <Table.Cell class="px-2 sm:px-4 py-3 whitespace-nowrap text-center">
+      <HealthFactorBadge healthFactor={null} loading={false} />
+    </Table.Cell>
+
+    <Table.Cell class="px-2 sm:px-4 py-3 whitespace-nowrap text-center">
+      {#if req.status === 'open' || req.status === 'stale'}
+        <Badge class="text-xs gap-1" variant="secondary">
+          <AlertCircle class="h-3 w-3" /> Open
+        </Badge>
+      {:else if req.status === 'cancelled'}
+        <Badge class="text-muted-foreground text-xs gap-1" variant="outline">
+          <XCircle class="h-3 w-3" /> Cancelled
+        </Badge>
+      {:else if req.status === 'expired'}
+        <Badge class="text-muted-foreground text-xs gap-1" variant="outline">
+          <XCircle class="h-3 w-3" /> Expired
+        </Badge>
       {:else}
-        Awaiting funding
+        <Badge class="text-primary border-primary/40 text-xs gap-1" variant="outline">
+          <CheckCircle2 class="h-3 w-3" /> Filled
+        </Badge>
       {/if}
-    </div>
-  </Table.Cell>
+    </Table.Cell>
 
-  <!-- Principal -->
-  <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
-    {formatUint256(loan.principalAmount ?? '0', principalDecimals)}
-    <span class="text-muted-foreground text-xs">{principalSymbol}</span>
-    {#if principalRepaidSoFar > 0n}
-      <div class="text-[10px] text-muted-foreground">
-        {formatUint256(principalRepaidSoFar.toString(), principalDecimals)} returned
-      </div>
-    {/if}
-  </Table.Cell>
-
-  <!-- Collateral -->
-  <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
-    {formatUint256(loan.collateralAmount ?? '0', collateralDecimals)}
-    <span class="text-muted-foreground text-xs">{collateralSymbol}</span>
-    {#if collateralReleasedSoFar > 0n}
-      <div class="text-[10px] text-muted-foreground">
-        {formatUint256(collateralReleasedSoFar.toString(), collateralDecimals)} released
-      </div>
-    {/if}
-  </Table.Cell>
-
-  <!-- Interest -->
-  <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
-    <span
-      class="font-medium"
-      title={isLenderView ? `Net of ${(chainInfo.protocolFeeBps / 100).toFixed(2)}% current protocol fee` : undefined}
-    >
-      {displayAprPct.toFixed(2)}% APR
-    </span>
-    <div class="text-xs text-muted-foreground">
-      +{formatUint256(displayInterestAmount.toString(), principalDecimals)}
-      {interestLabel}
-    </div>
-    {#if isLenderView && lenderNetInterestEarned > 0n && lenderNetInterestRemaining > 0n}
-      <div class="text-[10px] text-muted-foreground/80">
-        +{formatUint256(lenderNetInterestRemaining.toString(), principalDecimals)} still accruing
-      </div>
-    {/if}
-  </Table.Cell>
-
-  <!-- Repaid so far -->
-  <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
-    <div class="flex flex-col gap-1">
-      <span title={isLenderView ? 'Net of protocol fee — what you receive (principal + net interest)' : undefined}>
-        {formatUint256(shownAmountRepaid.toString(), principalDecimals)}
-        /
-        {formatUint256(shownTotalDue.toString(), principalDecimals)}
-        <span class="text-muted-foreground text-xs">({shownProgressPct}%)</span>
-      </span>
-      <div class="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-        <div
-          style:width="{shownProgressPct}%"
-          class={cn(
-            'h-full transition-all',
-            shownProgressPct === 100 ? 'bg-primary' : isOverdue ? 'bg-destructive' : 'bg-primary/70',
-          )}
-        ></div>
-      </div>
-    </div>
-  </Table.Cell>
-
-  <!-- Due date -->
-  <Table.Cell
-    class={cn('px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm', isOverdue && 'text-destructive font-semibold')}
-  >
-    {#if isRepaid && loan.repaidAt}
-      Repaid {new Date(loan.repaidAt).toLocaleDateString()}
-    {:else}
-      {dueDateLabel}
-    {/if}
-  </Table.Cell>
-
-  <!-- Health Factor -->
-  <Table.Cell class="px-2 sm:px-4 py-3 whitespace-nowrap text-center">
-    <HealthFactorBadge {healthFactor} loading={hfLoading} />
-  </Table.Cell>
-
-  <!-- Status -->
-  <Table.Cell class="px-2 sm:px-4 py-3 whitespace-nowrap text-center">
-    <LoanStatusBadge {isOverdue} {isPending} {isRepaid} status={loan.status} />
-  </Table.Cell>
-
-  <!-- Action / Counterparty -->
-  <Table.Cell class="pr-4 sm:pr-6 py-3 text-right whitespace-nowrap">
-    {#if role === 'lender'}
-      <!-- Lenders watch their funded loans; repayment/cancellation are borrower actions.
-           Surface the counterparty they lent to instead. -->
-      {#if loan.borrowerAddress}
-        <button
-          class="group/addr inline-flex items-center gap-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
-          onclick={() => copyAddress(loan.borrowerAddress as string)}
-          title={copiedAddress === loan.borrowerAddress ? 'Copied!' : `${loan.borrowerAddress} (click to copy)`}
-          type="button"
+    <Table.Cell class="pr-4 sm:pr-6 py-3 text-right whitespace-nowrap">
+      {#if req.status === 'open' || req.status === 'stale'}
+        <Button
+          class="font-bold h-8 px-3 text-xs"
+          disabled={cancelling}
+          onclick={handleCancelRequest}
+          size="sm"
+          variant="destructive"
         >
-          {loan.borrowerAddress.slice(0, 5)}…
-          {#if copiedAddress === loan.borrowerAddress}
-            <Check class="h-3 w-3 shrink-0 text-green-500" />
-          {:else}
-            <Copy class="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover/addr:opacity-100" />
-          {/if}
-        </button>
-      {:else}
-        <span class="font-mono text-xs text-muted-foreground">—</span>
-      {/if}
-    {:else if isActive}
-      <Button
-        class="font-bold h-8 px-3 text-xs"
-        onclick={() => (expanded = !expanded)}
-        size="sm"
-        variant={isOverdue ? 'destructive' : 'default'}
-      >
-        {expanded ? 'Close' : 'Repay'}
-      </Button>
-    {:else if isPending && loan.onChainLoanId !== null}
-      <Button
-        class="font-bold h-8 px-3 text-xs"
-        disabled={cancelling}
-        onclick={handleCancel}
-        size="sm"
-        variant="destructive"
-      >
-        {cancelling ? 'Cancelling…' : 'Cancel'}
-      </Button>
-      {#if cancelError}
-        <p class="text-[10px] text-destructive">{cancelError}</p>
-      {/if}
-    {/if}
-  </Table.Cell>
-</Table.Row>
-
-{#if expanded && isActive && loan.onChainLoanId !== null}
-  <Table.Row class="bg-muted/20 hover:bg-muted/20">
-    <Table.Cell class="px-4 sm:px-6 py-4" colspan={tableColumns.length}>
-      {#if chainError}
-        <p class="text-xs text-destructive">{chainError}</p>
-      {:else}
-        <LoanRepayForm
-          {isEthPrincipal}
-          {isOverdue}
-          onChainLoanId={loan.onChainLoanId}
-          onClose={() => (expanded = false)}
-          onPaid={handlePaid}
-          {principalDecimals}
-          {principalSymbol}
-          principalTokenAddress={loan.principalToken?.address}
-          remaining={displayRemaining}
-          {repaymentTxs}
-        />
+          {cancelling ? 'Cancelling…' : 'Cancel'}
+        </Button>
+        {#if cancelError}
+          <p class="text-[10px] text-destructive">{cancelError}</p>
+        {/if}
       {/if}
     </Table.Cell>
   </Table.Row>
+{:else if loanProp}
+  <!-- ── Loan row ────────────────────────────────────────────────────────── -->
+  <Table.Row
+    class={cn(
+      'hover:bg-muted/10 transition-colors',
+      (isRepaid || isExpired) && 'opacity-60',
+      isOverdue && 'bg-destructive/5',
+    )}
+  >
+    <Table.Cell class="pl-4 sm:pl-6 py-3 font-bold whitespace-nowrap">
+      #{loan.onChainLoanId ?? '—'}
+      <div class="text-[10px] font-normal text-muted-foreground">
+        {#if loan.fundedAt}
+          Funded {new Date(loan.fundedAt).toLocaleDateString()}
+        {:else if loan.status === 'pending'}
+          Awaiting funding
+        {:else}
+          Created {new Date(loan.createdAt).toLocaleDateString()}
+        {/if}
+      </div>
+    </Table.Cell>
+
+    <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
+      {formatUint256(loan.principalAmount ?? '0', principalDecimals)}
+      <span class="text-muted-foreground text-xs">{principalSymbol}</span>
+      {#if principalRepaidSoFar > 0n}
+        <div class="text-[10px] text-muted-foreground">
+          {formatUint256(principalRepaidSoFar.toString(), principalDecimals)} returned
+        </div>
+      {/if}
+    </Table.Cell>
+
+    <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
+      {formatUint256(loan.collateralAmount ?? '0', collateralDecimals)}
+      <span class="text-muted-foreground text-xs">{collateralSymbol}</span>
+      {#if collateralReleasedSoFar > 0n}
+        <div class="text-[10px] text-muted-foreground">
+          {formatUint256(collateralReleasedSoFar.toString(), collateralDecimals)} released
+        </div>
+      {/if}
+    </Table.Cell>
+
+    <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
+      <span
+        class="font-medium"
+        title={isLenderView ? `Net of ${(chainInfo.protocolFeeBps / 100).toFixed(2)}% current protocol fee` : undefined}
+      >
+        {displayAprPct.toFixed(2)}% APR
+      </span>
+      <div class="text-xs text-muted-foreground">
+        +{formatUint256(displayInterestAmount.toString(), principalDecimals)}
+        {interestLabel}
+      </div>
+      {#if isLenderView && lenderNetInterestEarned > 0n && lenderNetInterestRemaining > 0n}
+        <div class="text-[10px] text-muted-foreground/80">
+          +{formatUint256(lenderNetInterestRemaining.toString(), principalDecimals)} still accruing
+        </div>
+      {/if}
+    </Table.Cell>
+
+    <Table.Cell class="px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm">
+      {#if isExpired && shownAmountRepaid === 0n}
+        <span class="text-muted-foreground">—</span>
+      {:else}
+        <div class="flex flex-col gap-1">
+          <span title={isLenderView ? 'Net of protocol fee — what you receive (principal + net interest)' : undefined}>
+            {formatUint256(shownAmountRepaid.toString(), principalDecimals)}
+            /
+            {formatUint256(shownTotalDue.toString(), principalDecimals)}
+            <span class="text-muted-foreground text-xs">({shownProgressPct}%)</span>
+          </span>
+          <div class="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+            <div
+              style:width="{shownProgressPct}%"
+              class={cn(
+                'h-full transition-all',
+                shownProgressPct === 100 ? 'bg-primary' : isOverdue ? 'bg-destructive' : 'bg-primary/70',
+              )}
+            ></div>
+          </div>
+        </div>
+      {/if}
+    </Table.Cell>
+
+    <Table.Cell
+      class={cn('px-2 sm:px-4 py-3 text-center whitespace-nowrap text-sm', isOverdue && 'text-destructive font-semibold')}
+    >
+      {#if isRepaid && loan.repaidAt}
+        Repaid {new Date(loan.repaidAt).toLocaleDateString()}
+      {:else if !loan.fundedAt && loan.fundDeadline}
+        Deadline {new Date(loan.fundDeadline).toLocaleDateString()}
+      {:else}
+        {dueDateLabel}
+      {/if}
+    </Table.Cell>
+
+    <Table.Cell class="px-2 sm:px-4 py-3 whitespace-nowrap text-center">
+      <HealthFactorBadge {healthFactor} loading={hfLoading} />
+    </Table.Cell>
+
+    <Table.Cell class="px-2 sm:px-4 py-3 whitespace-nowrap text-center">
+      <LoanStatusBadge {isOverdue} {isPending} {isRepaid} status={loan.status} />
+    </Table.Cell>
+
+    <Table.Cell class="pr-4 sm:pr-6 py-3 text-right whitespace-nowrap">
+      {#if role === 'lender'}
+        {#if loan.borrowerAddress}
+          <button
+            class="group/addr inline-flex items-center gap-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
+            onclick={() => copyAddress(loan.borrowerAddress as string)}
+            title={copiedAddress === loan.borrowerAddress ? 'Copied!' : `${loan.borrowerAddress} (click to copy)`}
+            type="button"
+          >
+            {loan.borrowerAddress.slice(0, 5)}…
+            {#if copiedAddress === loan.borrowerAddress}
+              <Check class="h-3 w-3 shrink-0 text-green-500" />
+            {:else}
+              <Copy class="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover/addr:opacity-100" />
+            {/if}
+          </button>
+        {:else}
+          <span class="font-mono text-xs text-muted-foreground">—</span>
+        {/if}
+      {:else if isActive}
+        <Button
+          class="font-bold h-8 px-3 text-xs"
+          onclick={() => (expanded = !expanded)}
+          size="sm"
+          variant={isOverdue ? 'destructive' : 'default'}
+        >
+          {expanded ? 'Close' : 'Repay'}
+        </Button>
+      {:else if isPending && loan.onChainLoanId !== null}
+        <Button
+          class="font-bold h-8 px-3 text-xs"
+          disabled={cancelling}
+          onclick={handleCancel}
+          size="sm"
+          variant="destructive"
+        >
+          {cancelling ? 'Cancelling…' : 'Cancel'}
+        </Button>
+        {#if cancelError}
+          <p class="text-[10px] text-destructive">{cancelError}</p>
+        {/if}
+      {/if}
+    </Table.Cell>
+  </Table.Row>
+
+  {#if expanded && isActive && loan.onChainLoanId !== null}
+    <Table.Row class="bg-muted/20 hover:bg-muted/20">
+      <Table.Cell class="px-4 sm:px-6 py-4" colspan={tableColumns.length}>
+        {#if chainError}
+          <p class="text-xs text-destructive">{chainError}</p>
+        {:else}
+          <LoanRepayForm
+            {isEthPrincipal}
+            {isOverdue}
+            onChainLoanId={loan.onChainLoanId}
+            onClose={() => (expanded = false)}
+            onPaid={handlePaid}
+            {principalDecimals}
+            {principalSymbol}
+            principalTokenAddress={loan.principalToken?.address}
+            remaining={displayRemaining}
+            {repaymentTxs}
+          />
+        {/if}
+      </Table.Cell>
+    </Table.Row>
+  {/if}
 {/if}

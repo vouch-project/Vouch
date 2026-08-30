@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 from pydantic import ValidationError
 
-from chain import VaultChain, transient_oracle_error_name
+from chain import VaultChain, already_settled_error_name, transient_oracle_error_name
 from config import Settings
 from db import (
     ActionableLoan,
@@ -51,16 +51,29 @@ def _log_health_factor_failure(loan_id: int) -> None:
 
 def process_loan(loan: ActionableLoan, chain: VaultChain) -> None:
     if loan.status == "active":
-        try:
-            hf = chain.get_health_factor(loan.on_chain_loan_id)
-        except Exception:
-            _log_health_factor_failure(loan.on_chain_loan_id)
-            return
-        if hf < HF_THRESHOLD:
+        now = datetime.now(UTC)
+        overdue = loan.due_at is not None and loan.due_at < now
+        reason: str
+        if overdue:
+            reason = "overdue"
+        else:
             try:
-                chain.liquidate(loan.on_chain_loan_id)
-                logger.info("liquidated loan %s (hf=%s)", loan.on_chain_loan_id, hf)
+                hf = chain.get_health_factor(loan.on_chain_loan_id)
             except Exception:
+                _log_health_factor_failure(loan.on_chain_loan_id)
+                return
+            if hf >= HF_THRESHOLD:
+                return
+            reason = f"hf={hf}"
+        try:
+            if chain.liquidate(loan.on_chain_loan_id):
+                logger.info("liquidated loan %s (%s)", loan.on_chain_loan_id, reason)
+        except Exception:
+            exc = sys.exc_info()[1]
+            name = already_settled_error_name(exc) if exc is not None else None
+            if name is not None:
+                logger.info("skipping loan %s: already settled (%s)", loan.on_chain_loan_id, name)
+            else:
                 logger.warning(
                     "liquidate failed for loan %s", loan.on_chain_loan_id, exc_info=True
                 )

@@ -503,6 +503,9 @@ export type Database = {
           filledLoanId: string | null;
           id: string;
           interestRateBps: number;
+          ltvAttestationExpiry: number | null;
+          ltvAttestationMaxLtvBps: number | null;
+          ltvAttestationSig: string | null;
           maxLtvBps: number;
           nonce: string;
           principalAmount: string;
@@ -523,6 +526,9 @@ export type Database = {
           filledLoanId?: string | null;
           id?: string;
           interestRateBps: number;
+          ltvAttestationExpiry?: number | null;
+          ltvAttestationMaxLtvBps?: number | null;
+          ltvAttestationSig?: string | null;
           maxLtvBps: number;
           nonce: string;
           principalAmount: string;
@@ -543,6 +549,9 @@ export type Database = {
           filledLoanId?: string | null;
           id?: string;
           interestRateBps?: number;
+          ltvAttestationExpiry?: number | null;
+          ltvAttestationMaxLtvBps?: number | null;
+          ltvAttestationSig?: string | null;
           maxLtvBps?: number;
           nonce?: string;
           principalAmount?: string;
@@ -1014,12 +1023,33 @@ export type Database = {
           p_digest: string;
           p_duration_seconds: number;
           p_interest_rate_bps: number;
+          p_ltv_attestation_expiry?: number;
+          p_ltv_attestation_max_ltv_bps?: number;
+          p_ltv_attestation_sig?: string;
           p_max_ltv_bps: number;
           p_network_id: string;
           p_nonce: string;
           p_principal_amount: string;
           p_principal_token_address: unknown;
           p_signature: string;
+        };
+        Returns: undefined;
+      };
+      liquidate_loan_with_transaction: {
+        Args: {
+          p_amount_paid: string;
+          p_block_hash: string;
+          p_block_number: unknown;
+          p_collateral_released: string;
+          p_collateral_seized: string;
+          p_contract_address: unknown;
+          p_liquidated_at: string;
+          p_liquidator_address: unknown;
+          p_log_index: unknown;
+          p_network_id: string;
+          p_on_chain_loan_id: unknown;
+          p_principal_repaid: string;
+          p_tx_hash: string;
         };
         Returns: undefined;
       };

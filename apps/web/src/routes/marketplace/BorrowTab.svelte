@@ -402,9 +402,9 @@
                     >
                       {risk.label}
                     </Badge>
-                    <span class="text-[9px] text-muted-foreground hidden lg:inline"
-                      >HF {hf.healthFactor.toFixed(2)}</span
-                    >
+                    <span class="text-[9px] text-muted-foreground hidden lg:inline">
+                      HF {hf.healthFactor.toFixed(2)}
+                    </span>
                   </div>
                 {:else}
                   <div class="h-4 w-10 bg-muted animate-pulse rounded"></div>

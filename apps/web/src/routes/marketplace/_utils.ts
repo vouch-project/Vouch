@@ -1,4 +1,5 @@
 import type { Token } from '$api/chain';
+import { parseContractError } from '$lib/wallet/contractError';
 import { chainInfo } from '$lib/stores/chainInfo.svelte';
 import { isNativeTokenAddress } from '$lib/wallet/vouchVault';
 import { ethers } from 'ethers';
@@ -8,16 +9,8 @@ export const truncateAddress = (addr: string): string => {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 };
 
-export const getErrorMessage = (e: unknown): string => {
-  if (e instanceof Error) {
-    const err = e as { code?: unknown; reason?: unknown };
-    if (err.code === 'ACTION_REJECTED') return 'Transaction rejected.';
-    if (typeof err.reason === 'string' && err.reason) return err.reason;
-    const msg = e.message.replace(/^[\w-]+:\s*/, '');
-    return msg || 'An unexpected error occurred.';
-  }
-  return 'An unexpected error occurred.';
-};
+export const getErrorMessage = (e: unknown): string =>
+  parseContractError(e, 'An unexpected error occurred.');
 
 export const findToken = (tokenId: string | null): Token | null => {
   if (!tokenId) return chainInfo.tokens?.find((t) => isNativeTokenAddress(t.address)) ?? null;

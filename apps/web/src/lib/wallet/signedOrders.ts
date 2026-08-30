@@ -1,7 +1,13 @@
+import { reportStaleOffer, reportStaleRequest } from '$api/signedOrders';
 import type { VouchVault } from '@vouch/contracts';
 import { ethers } from 'ethers';
-import { reportStaleOffer, reportStaleRequest } from '$api/signedOrders';
-import { ERC20_ABI, getErc20Balance, getVouchVaultContract, isNativeTokenAddress, type ScoreAttestation } from './vouchVault';
+import {
+  ERC20_ABI,
+  getErc20Balance,
+  getVouchVaultContract,
+  isNativeTokenAddress,
+  type ScoreAttestation,
+} from './vouchVault';
 
 // ---------------------------------------------------------------------------
 // EIP-712 domain meta (chain-id + contract address added at runtime)
@@ -224,7 +230,11 @@ export const fillLoanRequest = async (
     const balance = await getErc20Balance(request.collateralToken, request.borrower);
     if (balance < request.collateralAmount) {
       const domain = await buildDomain(contract);
-      const digest = ethers.TypedDataEncoder.hash(domain, LOAN_REQUEST_TYPES as unknown as Record<string, ethers.TypedDataField[]>, request);
+      const digest = ethers.TypedDataEncoder.hash(
+        domain,
+        LOAN_REQUEST_TYPES as unknown as Record<string, ethers.TypedDataField[]>,
+        request,
+      );
       reportStaleRequest(digest).catch(() => {});
       throw new Error('This loan request is stale: the borrower no longer holds enough collateral to back it.');
     }
@@ -274,7 +284,11 @@ export const fillLendOffer = async (
     const balance = await getErc20Balance(offer.principalToken, offer.lender);
     if (balance < offer.principalAmount) {
       const domain = await buildDomain(contract);
-      const digest = ethers.TypedDataEncoder.hash(domain, LEND_OFFER_TYPES as unknown as Record<string, ethers.TypedDataField[]>, offer);
+      const digest = ethers.TypedDataEncoder.hash(
+        domain,
+        LEND_OFFER_TYPES as unknown as Record<string, ethers.TypedDataField[]>,
+        offer,
+      );
       reportStaleOffer(digest).catch(() => {});
       throw new Error('This lend offer is stale: the lender no longer holds enough tokens to fund it.');
     }

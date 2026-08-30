@@ -17,6 +17,7 @@
   import { createLoan, getErc20Balance, isNativeTokenAddress } from '$lib/wallet/vouchVault';
   import { wallet } from '$lib/wallet/wallet.svelte';
   import { ethers } from 'ethers';
+  import { parseContractError } from '$lib/wallet/contractError';
   import CollateralBorrowFields from '../create-loan/CollateralBorrowFields.svelte';
   import LoanTermsFields from '../create-loan/LoanTermsFields.svelte';
   import LtvIndicator from '../create-loan/LtvIndicator.svelte';
@@ -165,25 +166,6 @@
     };
   };
 
-  /** Map a wallet/API error to a user-facing message (distinguishes user-rejection & API 400). */
-  const orderErrorMessage = (e: unknown, fallback: string): string => {
-    if (e && typeof e === 'object') {
-      const err = e as {
-        code?: unknown;
-        info?: { error?: { message?: string } };
-        response?: { data?: { message?: unknown } };
-        message?: unknown;
-      };
-      if (err.code === 'ACTION_REJECTED') return 'Signature rejected by user.';
-      const apiMsg = err.response?.data?.message;
-      if (typeof apiMsg === 'string') return apiMsg;
-      if (Array.isArray(apiMsg)) return apiMsg.join(', ');
-      if (err.info?.error?.message) return err.info.error.message;
-      if (typeof err.message === 'string') return err.message.replace(/^[\w-]+:\s*/, '') || fallback;
-    }
-    return fallback;
-  };
-
   const collateralIsErc20 = $derived(
     !isNativeTokenAddress(chainInfo.tokens.find((t) => t.symbol === selectedCollateralToken)?.address ?? ''),
   );
@@ -269,7 +251,7 @@
         });
         status = 'Loan request published!';
       } catch (err) {
-        status = orderErrorMessage(err, 'Failed to publish loan request.');
+        status = parseContractError(err, 'Failed to publish loan request.');
       }
     } else {
       if (!wallet.address || wallet.networkId == null || !chainInfo.contractAddress) {
@@ -299,7 +281,7 @@
         );
         status = 'Loan created!';
       } catch (err) {
-        status = orderErrorMessage(err, 'Transaction failed');
+        status = parseContractError(err, 'Transaction failed');
       }
     }
   };

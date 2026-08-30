@@ -30,6 +30,14 @@ _TRANSIENT_ORACLE_SIGS = (
     "StalePrice()",
 )
 
+# Errors that mean the loan is no longer liquidatable because the borrower already settled it.
+# These are a normal race condition (borrower repays between the HF check and the liquidation tx)
+# and should be handled quietly rather than logged as keeper faults.
+_ALREADY_SETTLED_SIGS = (
+    "LoanAlreadyRepaid()",
+    "LoanAlreadyLiquidated()",
+)
+
 
 def _match_tokens(sig: str) -> tuple[str, list[str]]:
     """Build (error_name, lowercased match tokens) for a custom-error signature.
@@ -46,6 +54,7 @@ def _match_tokens(sig: str) -> tuple[str, list[str]]:
 
 
 _TRANSIENT_ORACLE_MATCHERS = [_match_tokens(sig) for sig in _TRANSIENT_ORACLE_SIGS]
+_ALREADY_SETTLED_MATCHERS = [_match_tokens(sig) for sig in _ALREADY_SETTLED_SIGS]
 
 
 def transient_oracle_error_name(exc: BaseException) -> str | None:
@@ -57,6 +66,19 @@ def transient_oracle_error_name(exc: BaseException) -> str | None:
     """
     haystack = f"{getattr(exc, 'data', '')} {exc}".lower()
     for name, tokens in _TRANSIENT_ORACLE_MATCHERS:
+        if any(token in haystack for token in tokens):
+            return name
+    return None
+
+
+def already_settled_error_name(exc: BaseException) -> str | None:
+    """Return the error name if `exc` means the loan was already repaid or liquidated.
+
+    This is a normal race condition: the borrower repaid between the health-factor check and the
+    liquidation tx. Returns None for any other error.
+    """
+    haystack = f"{getattr(exc, 'data', '')} {exc}".lower()
+    for name, tokens in _ALREADY_SETTLED_MATCHERS:
         if any(token in haystack for token in tokens):
             return name
     return None
@@ -103,6 +125,30 @@ def _load_abi(name: str) -> list[dict[str, Any]]:
 _VAULT_ABI = _load_abi("VouchVault")
 _LENS_ABI = _load_abi("VouchVaultLens")
 
+_ERC20_ABI = [
+    {
+        "name": "approve",
+        "type": "function",
+        "inputs": [{"name": "spender", "type": "address"}, {"name": "amount", "type": "uint256"}],
+        "outputs": [{"name": "", "type": "bool"}],
+        "stateMutability": "nonpayable",
+    },
+    {
+        "name": "allowance",
+        "type": "function",
+        "inputs": [{"name": "owner", "type": "address"}, {"name": "spender", "type": "address"}],
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+    },
+    {
+        "name": "balanceOf",
+        "type": "function",
+        "inputs": [{"name": "account", "type": "address"}],
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+    },
+]
+
 
 class VaultChain:
     def __init__(self, settings: Settings) -> None:
@@ -123,28 +169,46 @@ class VaultChain:
         result: int = self._contract.functions.getHealthFactor(loan_id).call()
         return result
 
-    def liquidate(self, loan_id: int) -> None:
-        # The keeper funds liquidations with ETH (msg.value). For ERC20-principal loans the
-        # contract's liquidate() rejects msg.value and instead pulls `maxAmount` via an ERC20
-        # allowance, which requires the keeper to hold and approve that token — unsupported here.
-        # Skip them so we don't repeatedly broadcast guaranteed-to-revert txs and burn gas.
+    def liquidate(self, loan_id: int) -> bool:
         requested_principal_token: str = self._contract.functions.loans(loan_id).call()[11]
-        if requested_principal_token != _ZERO_ADDRESS:
-            logger.info(
-                "skipping loan %s: ERC20-principal (%s) liquidation not supported by keeper",
-                loan_id,
-                requested_principal_token,
-            )
-            return
-
-        # Fetch the outstanding debt (from the lens) to send as msg.value; contract refunds
-        # any surplus. maxAmount is ignored on the ETH path, so pass 0.
         details = self._lens.functions.getRepaymentDetails(loan_id).call()
         remaining: int = details[5]
+
+        if requested_principal_token != _ZERO_ADDRESS:
+            return self._liquidate_erc20(loan_id, requested_principal_token, remaining)
+
+        # ETH-principal: send msg.value; contract refunds any surplus. maxAmount is ignored.
         self._send_tx(
             self._contract.functions.liquidate(loan_id, 0, self._account.address),
             value=remaining,
         )
+        return True
+
+    def _liquidate_erc20(self, loan_id: int, token: str, max_amount: int) -> bool:
+        token_address = Web3.to_checksum_address(token)
+        erc20 = self._w3.eth.contract(address=token_address, abi=_ERC20_ABI)
+
+        balance: int = erc20.functions.balanceOf(self._account.address).call()
+        if balance < max_amount:
+            logger.warning(
+                "skipping loan %s: insufficient %s balance (have %s, need %s)",
+                loan_id,
+                token,
+                balance,
+                max_amount,
+            )
+            return False
+
+        # Some tokens (e.g. USDT) revert when setting a non-zero allowance over an existing
+        # non-zero one. Only reset if there's a stale allowance to clear.
+        existing: int = erc20.functions.allowance(self._account.address, self._contract.address).call()
+        if existing > 0:
+            self._send_tx(erc20.functions.approve(self._contract.address, 0))
+        self._send_tx(erc20.functions.approve(self._contract.address, max_amount))
+        self._send_tx(
+            self._contract.functions.liquidate(loan_id, max_amount, self._account.address)
+        )
+        return True
 
     def expire_loan(self, loan_id: int) -> None:
         self._send_tx(self._contract.functions.expireLoan(loan_id))
@@ -155,14 +219,14 @@ class VaultChain:
         self._send_tx(self._contract.functions.expireLendOffer(offer_id))
 
     def _send_tx(self, fn: ContractFunction, value: int = 0) -> None:
-        nonce = self._w3.eth.get_transaction_count(self._account.address)
-        tx_params: dict[str, Any] = {
-            "from": self._account.address,
-            "nonce": nonce,
-            "gas": 200_000,
-        }
+        nonce = self._w3.eth.get_transaction_count(self._account.address, "pending")
+        tx_params: dict[str, Any] = {"from": self._account.address, "nonce": nonce}
         if value:
             tx_params["value"] = value
+        # estimate_gas simulates the call and raises with the actual revert reason if
+        # it would fail, giving better diagnostics than a mined-but-reverted receipt.
+        estimated = fn.estimate_gas(tx_params)
+        tx_params["gas"] = int(estimated * 1.3)
         tx = fn.build_transaction(tx_params)
         signed = self._account.sign_transaction(tx)
         tx_hash = self._w3.eth.send_raw_transaction(signed.raw_transaction)

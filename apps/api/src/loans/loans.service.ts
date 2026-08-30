@@ -11,6 +11,7 @@ import { ExpireLendOfferDto } from './dto/expire-lend-offer.dto';
 import { ExpireLoanDto } from './dto/expire-loan.dto';
 import { FillSignedOrderDto } from './dto/fill-signed-order.dto';
 import { FundLoanDto } from './dto/fund-loan.dto';
+import { LiquidateLoanDto } from './dto/liquidate-loan.dto';
 import { PartialRepayLoanDto } from './dto/partial-repay-loan.dto';
 import { RecordProtocolFeeDto } from './dto/record-protocol-fee.dto';
 import { RepayLoanDto } from './dto/repay-loan.dto';
@@ -132,6 +133,42 @@ export class LoansService {
       },
     );
 
+    if (error) throw error;
+  }
+
+  async liquidate({
+    onChainLoanId,
+    networkId,
+    contractAddress,
+    liquidatorAddress,
+    amountPaid,
+    collateralSeized,
+    principalRepaid,
+    collateralReleased,
+    txHash,
+    blockNumber,
+    blockHash,
+    logIndex,
+    liquidatedAt,
+  }: LiquidateLoanDto) {
+    const { error } = await this.supabaseService.client.rpc(
+      'liquidate_loan_with_transaction',
+      {
+        p_network_id: networkId,
+        p_contract_address: asAddress(contractAddress),
+        p_on_chain_loan_id: onChainLoanId.toString(),
+        p_liquidator_address: asAddress(liquidatorAddress),
+        p_amount_paid: amountPaid.toString(),
+        p_collateral_seized: collateralSeized.toString(),
+        p_principal_repaid: principalRepaid.toString(),
+        p_collateral_released: collateralReleased.toString(),
+        p_tx_hash: txHash,
+        p_block_number: blockNumber.toString(),
+        p_block_hash: blockHash,
+        p_log_index: logIndex.toString(),
+        p_liquidated_at: liquidatedAt.toISOString(),
+      },
+    );
     if (error) throw error;
   }
 

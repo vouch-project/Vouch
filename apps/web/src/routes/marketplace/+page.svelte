@@ -51,7 +51,7 @@
       try {
         lendOffers = await data.streamed.lendOffersPromise;
       } catch (err) {
-        lendOffersError = err instanceof Error ? err.message : 'Failed to load offers';
+        lendOffersError = getErrorMessage(err);
       } finally {
         lendOffersLoading = false;
       }
@@ -59,11 +59,15 @@
   });
 
   $effect(() => {
-    void data.streamed.signedRequestsPromise.then((rows) => { signedRequests = rows; });
+    void data.streamed.signedRequestsPromise.then((rows) => {
+      signedRequests = rows;
+    });
   });
 
   $effect(() => {
-    void data.streamed.signedOffersPromise.then((rows) => { signedOffers = rows; });
+    void data.streamed.signedOffersPromise.then((rows) => {
+      signedOffers = rows;
+    });
   });
 
   // Fetch scores for signed-request borrowers not covered by the loans score fetch.
@@ -173,8 +177,16 @@
         .channel('public:marketplace')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'loans' }, () => void fetchLoans())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'lend_offers' }, () => void fetchLendOffers())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'signed_loan_requests' }, () => void fetchSignedRequests())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'signed_lend_offers' }, () => void fetchSignedOffers())
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'signed_loan_requests' },
+          () => void fetchSignedRequests(),
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'signed_lend_offers' },
+          () => void fetchSignedOffers(),
+        )
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') console.log('Realtime subscribed to marketplace changes.');
         });
@@ -199,7 +211,9 @@
       >
         Marketplace
       </h1>
-      <p class="text-xl text-muted-foreground font-medium">Secure peer-to-peer lending with collateralized protection.</p>
+      <p class="text-xl text-muted-foreground font-medium">
+        Secure peer-to-peer lending with collateralized protection.
+      </p>
     </div>
 
     <div class="flex items-center gap-3">
@@ -227,7 +241,10 @@
           {#if realtimeActive}
             <span class="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-green-400 opacity-75"></span>
           {/if}
-          <span class={cn('relative inline-flex h-2 w-2 rounded-full', realtimeActive ? 'bg-green-500' : 'bg-gray-400')}
+          <span
+            class="relative inline-flex h-2 w-2 rounded-full"
+            class:bg-gray-400={!realtimeActive}
+            class:bg-green-500={realtimeActive}
           ></span>
         </div>
         {realtimeActive ? 'Live Updates' : 'Realtime Off'}
@@ -249,11 +266,11 @@
     </div>
 
     <Tabs.Content value="borrow">
-      <BorrowTab {loans} {scores} {signedRequests} loading={loansLoading} errorMsg={loansError} />
+      <BorrowTab errorMsg={loansError} loading={loansLoading} {loans} {scores} {signedRequests} />
     </Tabs.Content>
 
     <Tabs.Content value="lend">
-      <LendTab {lendOffers} {signedOffers} loading={lendOffersLoading} error={lendOffersError} />
+      <LendTab error={lendOffersError} {lendOffers} loading={lendOffersLoading} {signedOffers} />
     </Tabs.Content>
   </Tabs.Root>
 </div>
