@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { VouchVault } from '@vouch/contracts';
 import { VouchVault__factory } from '@vouch/contracts';
@@ -6,6 +11,7 @@ import type { Tables } from '@vouch/database-types';
 import { ethers } from 'ethers';
 import { LoansService } from '../loans/loans.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { RetryingJsonRpcProvider, sleep, withRetry } from './rpc-retry';
 import { SerialQueue } from './serial-queue';
 
 type ChainConfig = Tables<'chains'>;
@@ -21,7 +27,9 @@ const resolveEventLog = (
   event instanceof ethers.ContractEventPayload ? event.log : event;
 
 @Injectable()
-export class BlockchainListenerService implements OnModuleInit {
+export class BlockchainListenerService
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(BlockchainListenerService.name);
   private chains: {
     config: ChainConfig;
@@ -29,6 +37,10 @@ export class BlockchainListenerService implements OnModuleInit {
     contract: VouchVault;
     network: ethers.Network;
   }[] = [];
+  private readonly heartbeatTimers = new Map<
+    string,
+    ReturnType<typeof setInterval>
+  >();
 
   constructor(
     private readonly configService: ConfigService,
@@ -47,42 +59,108 @@ export class BlockchainListenerService implements OnModuleInit {
     }
 
     for (const config of chainConfigs) {
-      const listenerUrl = config.wsRpcUrl ?? config.rpcUrl;
-      let provider:
-        | ethers.JsonRpcProvider
-        | ethers.WebSocketProvider
-        | undefined;
-      try {
-        provider = listenerUrl.startsWith('ws')
-          ? new ethers.WebSocketProvider(listenerUrl)
-          : new ethers.JsonRpcProvider(listenerUrl, undefined, {
-              polling: true,
-            });
-        const network = await provider.getNetwork();
-
-        this.logger.log(
-          `Connected to chain: ${network.chainId} (${network.name}) [${listenerUrl}]`,
-        );
-
-        if (provider instanceof ethers.JsonRpcProvider)
-          provider.pollingInterval = 4000;
-
-        const contract = VouchVault__factory.connect(
-          config.contractAddress,
-          provider,
-        );
-        this.chains.push({ config, provider, contract, network });
-        this.setupEventListener(contract, network, config);
-      } catch (error) {
-        this.logger.error(
-          `Failed to connect to RPC at ${listenerUrl}: ${(error as Error).message}`,
-        );
-        // Destroy any partially-initialised WebSocketProvider so its internal
-        // reconnection loop doesn't keep firing unhandled errors that can crash
-        // the process and kill the listeners for other chains.
-        void provider?.destroy?.();
-      }
+      await this.connectChain(config);
     }
+  }
+
+  onModuleDestroy() {
+    for (const timer of this.heartbeatTimers.values()) clearInterval(timer);
+    for (const { provider } of this.chains) void provider.destroy?.();
+  }
+
+  private async connectChain(config: ChainConfig): Promise<void> {
+    const listenerUrl = config.wsRpcUrl ?? config.rpcUrl;
+    let provider: ethers.JsonRpcProvider | ethers.WebSocketProvider | undefined;
+    try {
+      if (listenerUrl.startsWith('ws')) {
+        provider = new ethers.WebSocketProvider(listenerUrl);
+      } else {
+        provider = new RetryingJsonRpcProvider(listenerUrl, undefined, {
+          polling: true,
+          onRetry: (attempt, err, delay) =>
+            this.logger.warn(
+              `Chain ${config.networkId} RPC retry ${attempt}: ${err.message} — waiting ${delay}ms`,
+            ),
+        });
+        provider.pollingInterval = 4000;
+      }
+
+      const network = await withRetry(() => provider!.getNetwork(), {
+        onRetry: (attempt, err, delay) =>
+          this.logger.warn(
+            `getNetwork retry ${attempt} for ${listenerUrl}: ${err.message} — waiting ${delay}ms`,
+          ),
+      });
+
+      this.logger.log(
+        `Connected to chain: ${network.chainId} (${network.name}) [${listenerUrl}]`,
+      );
+
+      const contract = VouchVault__factory.connect(
+        config.contractAddress,
+        provider,
+      );
+
+      // Remove any stale chain entry before pushing the fresh one
+      this.chains = this.chains.filter(
+        (c) => c.config.contractAddress !== config.contractAddress,
+      );
+      this.chains.push({ config, provider, contract, network });
+      this.setupEventListener(contract, network, config);
+
+      if (provider instanceof ethers.WebSocketProvider) {
+        this.startWsHeartbeat(config, provider);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to connect to RPC at ${listenerUrl}: ${(error as Error).message}`,
+      );
+      void provider?.destroy?.();
+    }
+  }
+
+  /**
+   * Ping the WebSocket provider every 30 s. If it stops responding, tear it
+   * down and reconnect — which re-registers all contract event listeners.
+   */
+  private startWsHeartbeat(
+    config: ChainConfig,
+    provider: ethers.WebSocketProvider,
+    intervalMs = 30_000,
+    maxMissed = 2,
+  ) {
+    const key = config.contractAddress;
+    const existing = this.heartbeatTimers.get(key);
+    if (existing) clearInterval(existing);
+
+    let missed = 0;
+
+    const tick = () => {
+      provider
+        .getBlockNumber()
+        .then(() => {
+          missed = 0;
+        })
+        .catch(() => {
+          missed++;
+          this.logger.warn(
+            `WebSocket heartbeat missed (${missed}/${maxMissed}) for chain ${config.networkId}`,
+          );
+          if (missed >= maxMissed) {
+            clearInterval(timer);
+            this.heartbeatTimers.delete(key);
+            this.logger.warn(
+              `WebSocket dead for chain ${config.networkId} — reconnecting...`,
+            );
+            void provider.destroy?.();
+            void sleep(2000).then(() => this.connectChain(config));
+          }
+        });
+    };
+
+    const timer = setInterval(tick, intervalMs);
+
+    this.heartbeatTimers.set(key, timer);
   }
 
   // Serializes event processing per chain so handlers run in arrival order
